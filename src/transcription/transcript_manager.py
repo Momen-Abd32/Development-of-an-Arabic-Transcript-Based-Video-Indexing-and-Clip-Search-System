@@ -1,3 +1,4 @@
+
 import json
 import math
 import os
@@ -37,7 +38,14 @@ class TranscriptManager:
                     f"Segment {index} timestamps must be numbers."
                 )
 
-            if not math.isfinite(start) or not math.isfinite(end):
+            try:
+                timestamps_are_finite = (
+                    math.isfinite(start) and math.isfinite(end)
+                )
+            except OverflowError:
+                timestamps_are_finite = False
+
+            if not timestamps_are_finite:
                 raise ValueError(
                     f"Segment {index} timestamps must be finite numbers."
                 )

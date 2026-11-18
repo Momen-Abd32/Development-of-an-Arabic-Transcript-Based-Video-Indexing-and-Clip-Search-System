@@ -88,6 +88,7 @@ def test_save_rejects_invalid_timestamps(tmp_path):
         (float("nan"), 2),
         (0, float("inf")),
         (float("-inf"), 2),
+        (10**1000, 10**1000 + 2),
     ],
 )
 def test_save_rejects_non_finite_timestamps(tmp_path, start, end):
