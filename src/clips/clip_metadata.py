@@ -69,22 +69,38 @@ class ClipMetadata:
 
         clips = self.load()
 
-        # A video segment represents one logical clip. Reuse its metadata
-        # instead of creating duplicate entries when the user saves it again.
+        # Re-saving the same video segment updates its existing metadata.
+        # Keep its ID and creation timestamp so the segment remains one
+        # logical clip in the metadata store.
         for existing_clip in clips:
+            if not isinstance(existing_clip, dict):
+                continue
+
             if (
                 existing_clip.get("video_id") == video_id
                 and existing_clip.get("start") == start
                 and existing_clip.get("end") == end
             ):
+                if (
+                    existing_clip.get("clip_path") != clip_path
+                    or existing_clip.get("notes") != notes
+                ):
+                    existing_clip["clip_path"] = clip_path
+                    existing_clip["notes"] = notes
+                    self._write(clips)
+
                 return existing_clip
 
+        # Ignore invalid legacy IDs and booleans (bool is a subclass of int).
+        # New IDs are always positive integers greater than existing valid IDs.
         next_id = max(
             (
-                clip.get("id", 0)
+                clip["id"]
                 for clip in clips
-                if isinstance(clip.get("id", 0), int)
-                and not isinstance(clip.get("id", 0), bool)
+                if isinstance(clip, dict)
+                and isinstance(clip.get("id"), int)
+                and not isinstance(clip.get("id"), bool)
+                and clip["id"] > 0
             ),
             default=0,
         ) + 1
