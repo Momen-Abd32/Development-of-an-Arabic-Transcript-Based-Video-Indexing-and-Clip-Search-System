@@ -1,120 +1,174 @@
 # Arabic Transcript-Based Video Indexing and Clip Search System
 
-An Arabic-focused video indexing and clip search system that transforms spoken content in videos into searchable, timestamped transcripts. The system allows users to search within video content, locate relevant moments, and save selected video segments as independent clips.
+An Arabic-focused application that converts speech in video files into timestamped transcripts, makes transcript content searchable, and allows users to extract and save relevant video segments as standalone clips.
 
-**GitHub Repository:** [Development of an Arabic Transcript-Based Video Indexing and Clip Search System](https://github.com/Momen-Abd32/Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System)
+**Repository:** [Momen-Abd32/Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System](https://github.com/Momen-Abd32/Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System)
 
 ---
 
-## 1. Project Overview
+## Table of Contents
 
-This project aims to make video content easier to explore by converting speech into timestamped text and providing search capabilities over the generated transcripts.
+- [Project Overview](#project-overview)
+- [Features](#features)
+- [Technologies](#technologies)
+- [System Workflow](#system-workflow)
+- [Application Architecture](#application-architecture)
+- [Database Schema](#database-schema)
+- [Data Storage Architecture](#data-storage-architecture)
+- [Project Structure](#project-structure)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Running the Application](#running-the-application)
+- [Running Tests](#running-tests)
+- [Evaluation Metrics](#evaluation-metrics)
+- [Configuration and Usage Notes](#configuration-and-usage-notes)
+- [Known Limitations](#known-limitations)
+- [Future Work](#future-work)
+- [License](#license)
 
-The system is primarily designed for Arabic speech. It uses automatic speech recognition to generate transcripts, processes and normalizes Arabic text, and indexes transcript segments to support efficient searching.
+## Project Overview
 
-Users can search for words or phrases, identify their corresponding timestamps, navigate to relevant moments in the video, and export selected portions as separate clips.
+Finding a specific moment in a long video can be time-consuming, particularly when the content is spoken in Arabic and the user does not know the exact timestamp. This project addresses that problem by turning spoken video content into searchable, timestamped transcript segments.
 
-## 2. Key Features
+The application provides an end-to-end workflow for uploading a video, extracting its audio, generating an Arabic transcript, reviewing and editing transcript segments, searching for words or phrases, and exporting selected moments as separate clips.
 
-- **Video Upload:** Upload video files for processing.
-- **Audio Extraction:** Extract audio from video files using FFmpeg.
-- **Speech-to-Text:** Generate timestamped transcripts using Faster-Whisper.
-- **Arabic Text Processing:** Normalize Arabic text to improve search consistency.
-- **Transcript Management:** View, manage, and edit transcript segments.
-- **Full-Text Search:** Search transcript content using SQLite FTS5.
-- **Fuzzy Search:** Support approximate text matching using RapidFuzz.
-- **Timestamp Navigation:** Locate relevant moments in the original video.
-- **Clip Management:** Select and save video segments with their timestamps and notes.
-- **Transcript Export:** Export transcript data to CSV.
-- **Clip Export:** Export selected video segments as separate video files.
-- **Evaluation:** Calculate Word Error Rate (WER) and Character Error Rate (CER).
+The interface supports **Arabic and English**, with Arabic as the default language.
 
-## 3. Technologies Used
+## Features
 
-| Technology | Purpose |
+- **Video upload and preview:** Upload and preview video files in common formats.
+- **Audio extraction:** Extract an audio track from the uploaded video using FFmpeg.
+- **Arabic speech recognition:** Generate timestamped transcript segments with Faster-Whisper.
+- **Transcript review and editing:** Review generated segments, correct their text, and save the updated transcript.
+- **Arabic text normalization:** Normalize common Arabic character variations, remove diacritics and tatweel, and standardize whitespace to improve search consistency.
+- **Exact full-text search:** Find transcript segments using SQLite FTS5.
+- **Fuzzy search:** Find approximate matches using RapidFuzz.
+- **Timestamped results:** Display matching transcript text with its position in the source video.
+- **Clip extraction:** Extract a selected time range from the source video as an MP4 clip.
+- **Saved clip management:** Store clip metadata and view saved clips associated with a video.
+- **CSV export:** Export transcript segments and saved clip metadata.
+- **Transcription evaluation utilities:** Calculate Word Error Rate (WER) and Character Error Rate (CER) against a reference transcript.
+
+### Supported video formats
+
+- MP4
+- MKV
+- MOV
+- AVI
+- WEBM
+
+The application upload limit is configured to **2 GB per video**. Actual processing capacity depends on available memory, storage, CPU, and video duration.
+
+## Technologies
+
+| Technology | Role |
 |---|---|
-| Python | Main programming language |
-| Streamlit | Interactive application interface |
-| Faster-Whisper | Automatic speech recognition |
-| FFmpeg | Audio extraction and video processing |
-| SQLite | Structured data storage |
-| SQLite FTS5 | Full-text search |
+| Python 3.12 | Main programming language |
+| Streamlit | Web application interface |
+| Faster-Whisper | Arabic automatic speech recognition |
+| FFmpeg | Audio extraction and video clip processing |
+| SQLite | Persistent transcript-segment storage |
+| SQLite FTS5 | Full-text transcript search |
 | RapidFuzz | Approximate text matching |
-| JiWER | Speech recognition evaluation |
+| JiWER | WER and CER evaluation |
 | Pytest | Automated testing |
 
-## 4. System Workflow
+## System Workflow
 
-The system follows these main processing stages:
+1. The user uploads a supported video file.
+2. The application identifies the video using a SHA-256 hash and stores the source file under `data/videos/`.
+3. FFmpeg extracts the video's audio and saves it under `data/audio/`.
+4. Faster-Whisper transcribes the audio in Arabic and produces timestamped segments.
+5. The transcript is saved as JSON under `data/transcripts/`.
+6. Arabic text is normalized and transcript segments are indexed in SQLite.
+7. The user reviews or edits transcript segments.
+8. The user searches the transcript using exact or fuzzy search.
+9. Search results show the matching text and its timestamps.
+10. The user can extract a selected segment as an MP4 clip and save its metadata.
+11. Transcript data and clip metadata can be exported as CSV files.
 
-1. The user uploads a video.
-2. The application extracts its audio.
-3. Faster-Whisper processes the audio and generates timestamped transcript segments.
-4. Arabic text is normalized to improve consistency.
-5. Transcript segments are stored and indexed in SQLite.
-6. The user searches for words or phrases.
-7. The search engine retrieves matching transcript segments.
-8. The user navigates to the corresponding video timestamps.
-9. Selected portions can be saved and exported as separate clips.
+## Application Architecture
 
-## 5. System Architecture
+The application separates its main responsibilities into modules under `src/`:
 
-The application is organized into separate modules, each responsible for a specific part of the processing pipeline.
+| Module | Responsibility |
+|---|---|
+| `media` | Extract audio from uploaded video files |
+| `transcription` | Run speech recognition, validate and manage transcripts, and export transcript data |
+| `indexing` | Normalize Arabic text and index transcript segments |
+| `search` | Perform exact and fuzzy transcript searches |
+| `database` | Create and manage SQLite tables, indexes, and triggers |
+| `clips` | Extract video clips, manage clip metadata, and export clip lists |
+| `evaluation` | Calculate transcription evaluation metrics |
 
-- **Media:** Handles audio extraction.
-- **Transcription:** Handles speech recognition and transcript management.
-- **Indexing:** Processes and indexes transcript text.
-- **Search:** Retrieves matching transcript segments.
-- **Database:** Manages structured storage and full-text search.
-- **Clips:** Handles clip metadata and video segment export.
-- **Evaluation:** Calculates transcription quality metrics.
+The Streamlit interface in `app.py` coordinates these modules and presents the workflow to the user.
 
-## 6. Database Schema
+## Database Schema
 
-The system uses SQLite for transcript segment storage and full-text search.
+The application uses SQLite to store transcript segments and power full-text search. The database is created at:
 
-### Main Table: `segments`
+```text
+data/database/videos.db
+```
+
+### Main table: `segments`
 
 | Column | Type | Description |
 |---|---|---|
-| id | INTEGER | Primary key |
-| video_id | TEXT | Identifier of the source video |
-| start | REAL | Segment start time in seconds |
-| end | REAL | Segment end time in seconds |
-| original_text | TEXT | Original transcript text |
-| normalized_text | TEXT | Normalized transcript text |
+| `id` | INTEGER PRIMARY KEY AUTOINCREMENT | Unique segment identifier |
+| `video_id` | TEXT | Identifier of the source video |
+| `start` | REAL | Segment start time in seconds |
+| `end` | REAL | Segment end time in seconds |
+| `original_text` | TEXT | Transcript text |
+| `normalized_text` | TEXT | Normalized text used for indexing and search |
 
-### Full-Text Search: `segments_fts`
+### Full-text search: `segments_fts`
 
-The `segments_fts` virtual table uses SQLite FTS5 with an external-content configuration referencing the `segments` table.
+The `segments_fts` virtual table uses SQLite FTS5 with an external-content configuration linked to `segments`.
 
-- `normalized_text` is indexed for full-text searching.
+- `normalized_text` is the indexed search content.
 - `content='segments'` identifies the source table.
-- `content_rowid='id'` maps the FTS row identifier to the primary key of the source table.
+- `content_rowid='id'` maps FTS rows to the primary keys in `segments`.
 
-### Indexes and Triggers
+### Indexes and triggers
 
-- `idx_segments_video_id`: Index on `video_id`.
-- `validate_segment_insert`: Validates timestamps before insertion.
-- `validate_segment_update`: Validates timestamps before updates.
-- `segments_ai`: Synchronizes inserted segments with the full-text index.
-- `segments_au`: Synchronizes updated segments with the full-text index.
-- `segments_ad`: Synchronizes deleted segments with the full-text index.
+- `idx_segments_video_id`: Indexes `video_id` to support video-specific queries.
+- `validate_segment_insert`: Rejects invalid segment timestamps on insertion.
+- `validate_segment_update`: Rejects invalid segment timestamps on update.
+- `segments_ai`: Adds inserted segment text to the FTS index.
+- `segments_au`: Updates the FTS index when a segment changes.
+- `segments_ad`: Removes deleted segment text from the FTS index.
 
-### Database Schema Diagram
+### Database schema diagram
 
 ```mermaid
 flowchart TB
     subgraph DB["SQLite Database - videos.db"]
-        SEG["segments<br/>id INTEGER PRIMARY KEY<br/>video_id TEXT<br/>start REAL<br/>end REAL<br/>original_text TEXT<br/>normalized_text TEXT"]
+        SEG["segments
+        id INTEGER PRIMARY KEY
+        video_id TEXT
+        start REAL
+        end REAL
+        original_text TEXT
+        normalized_text TEXT"]
 
-        FTS["segments_fts<br/>FTS5 Virtual Table<br/>normalized_text<br/>External content: segments<br/>content_rowid: id"]
+        FTS["segments_fts
+        FTS5 virtual table
+        normalized_text
+        External content: segments
+        content_rowid: id"]
 
-        IDX["idx_segments_video_id<br/>INDEX ON video_id"]
+        IDX["idx_segments_video_id
+        INDEX ON video_id"]
 
-        VALIDATE["Validation Triggers<br/>validate_segment_insert<br/>validate_segment_update"]
+        VALIDATE["Validation triggers
+        validate_segment_insert
+        validate_segment_update"]
 
-        SYNC["Synchronization Triggers<br/>segments_ai<br/>segments_au<br/>segments_ad"]
+        SYNC["FTS synchronization triggers
+        segments_ai
+        segments_au
+        segments_ad"]
 
         SEG -->|"id maps to rowid"| FTS
         SEG -.-> IDX
@@ -123,60 +177,71 @@ flowchart TB
     end
 ```
 
-**Note:** The FTS5 virtual table is not a separate application entity or a conventional relational table. It is an external-content search index synchronized with `segments` through triggers. The current schema does not define a separate `videos` or `clips` SQL table.
+**Schema note:** FTS5 is an external-content search index synchronized with the `segments` table through triggers. The current database schema does not define separate SQL tables for videos or clips. Saved clip metadata is stored in a JSON file, as described below.
 
-## 7. Data Storage Architecture
+## Data Storage Architecture
 
-The application uses both SQLite and file-based storage.
+The application uses a combination of local files and SQLite. The main runtime locations are:
 
-| Storage Location | Purpose |
+| Location | Stored data |
 |---|---|
-| `data/videos/` | Uploaded source videos |
-| `data/audio/` | Extracted audio files |
-| `data/transcripts/` | Stored transcript data |
-| `data/database/videos.db` | Transcript segments and full-text search index |
-| `data/database/clips.json` | Metadata of saved clips |
-| `exports/clips/` | Exported video clips |
-| `exports/` | Exported transcript and clip-list CSV files |
+| `data/videos/` | Uploaded source video files |
+| `data/audio/` | Extracted WAV audio files |
+| `data/transcripts/` | Transcript JSON files |
+| `data/database/videos.db` | Transcript segments and the FTS5 search index |
+| `data/database/clips.json` | Metadata for saved video clips |
+| `exports/clips/` | Extracted MP4 video clips |
+| `exports/` | Transcript and clip-list CSV exports |
 
-### Clip Metadata
+### Clip metadata
 
-Saved clip information is maintained separately in `clips.json`, rather than in a SQL table.
+Saved clip metadata is stored in `data/database/clips.json`, independently of the SQLite database.
 
-Each saved clip contains:
+Each clip record contains:
 
-- `id`
-- `video_id`
-- `clip_path`
-- `start`
-- `end`
-- `duration`
-- `notes`
-- `created_at`
+- `id`: Clip record identifier.
+- `video_id`: Identifier of the source video.
+- `clip_path`: Path to the extracted clip file.
+- `start` and `end`: Clip boundaries in seconds.
+- `duration`: Clip duration in seconds.
+- `notes`: Text associated with the clip.
+- `created_at`: Creation timestamp.
 
-The metadata manager validates clip information and writes updates through a temporary file before replacing the metadata file.
+When the same video segment is saved again, its existing metadata is updated rather than creating another logical record. Existing duplicate records for the same video and time range are consolidated.
 
-### Data Storage Diagram
+### Data storage diagram
 
 ```mermaid
 flowchart TB
     APP["Streamlit Application"]
 
-    APP --> VIDEO["data/videos/<br/>Source Videos"]
-    APP --> AUDIO["data/audio/<br/>Extracted Audio"]
-    APP --> TRANS["data/transcripts/<br/>Transcript JSON Files"]
+    APP --> VIDEO["data/videos/
+    Source video files"]
 
-    APP --> DB["data/database/videos.db<br/>SQLite"]
+    APP --> AUDIO["data/audio/
+    Extracted WAV files"]
+
+    APP --> TRANS["data/transcripts/
+    Transcript JSON files"]
+
+    APP --> DB["data/database/videos.db
+    SQLite database"]
     DB --> SEG["segments"]
     DB --> FTS["segments_fts (FTS5)"]
 
-    APP --> META["data/database/clips.json<br/>Saved Clip Metadata"]
+    APP --> META["data/database/clips.json
+    Saved clip metadata"]
+
     APP --> EXPORT["exports/"]
-    EXPORT --> CLIPS["exports/clips/<br/>Video Clip Files"]
-    EXPORT --> CSV["CSV Exports<br/>Transcripts and Clip Lists"]
+    EXPORT --> CLIPS["exports/clips/
+    Extracted MP4 clips"]
+    EXPORT --> CSV["Transcript and clip-list
+    CSV files"]
 ```
 
-## 8. Project Structure
+The application creates runtime directories and files as needed. These generated assets are local application data and are not required to be committed to the source repository.
+
+## Project Structure
 
 ```text
 Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
@@ -184,6 +249,9 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 ├── app.py
 ├── requirements.txt
 ├── README.md
+│
+├── .streamlit/
+│   └── config.toml
 │
 ├── src/
 │   ├── clips/
@@ -226,42 +294,25 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   ├── test_transcript_exporter.py
 │   └── test_transcript_manager.py
 │
-├── scripts/
-│   └── test_transcription.py
-│
-├── data/
-│   ├── videos/
-│   ├── audio/
-│   ├── transcripts/
-│   └── database/
-│
-├── exports/
-│   └── clips/
-│
-└── .streamlit/
-    └── config.toml
+└── scripts/
+    └── test_transcription.py
 ```
 
-Runtime-generated files and local test artifacts are not listed individually.
-
-## 9. Requirements
+## Requirements
 
 - Python 3.12
-- FFmpeg
-- pip
+- FFmpeg available on the system `PATH`
 - Git
+- pip
 
-The Python dependencies are listed in `requirements.txt`.
+Python package versions are pinned in `requirements.txt`.
 
-## 10. Installation and Setup
+## Installation
 
 ### 1. Clone the repository
 
 ```bash
 git clone https://github.com/Momen-Abd32/Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System.git
-```
-
-```bash
 cd Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System
 ```
 
@@ -273,27 +324,40 @@ python -m venv .venv
 
 ### 3. Activate the virtual environment
 
-Windows Git Bash:
+**Windows — Git Bash:**
 
 ```bash
 source .venv/Scripts/activate
 ```
 
-Windows Command Prompt:
+**Windows — Command Prompt:**
 
-```bash
+```bat
 .venv\Scripts\activate
 ```
 
-### 4. Install dependencies
+**Windows — PowerShell:**
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+**Linux / macOS:**
 
 ```bash
+source .venv/bin/activate
+```
+
+### 4. Install Python dependencies
+
+```bash
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 5. Install FFmpeg
+### 5. Install and verify FFmpeg
 
-Install FFmpeg separately and ensure that it is available through the system PATH.
+Install FFmpeg using the instructions for your operating system, then ensure that the FFmpeg executable is available through the system `PATH`.
 
 Verify the installation:
 
@@ -301,84 +365,97 @@ Verify the installation:
 ffmpeg -version
 ```
 
-## 11. Running the Application
+## Running the Application
 
-Start the Streamlit application:
+From the repository root, with the virtual environment activated, run:
 
 ```bash
 streamlit run app.py
 ```
 
-The application will be available through the local URL displayed in the terminal, usually:
+Streamlit prints a local URL in the terminal. The default address is usually:
 
 ```text
 http://localhost:8501
 ```
 
-## 12. Running Tests
+On the first transcription run, Faster-Whisper may need to download its model files. An internet connection is therefore required for the initial model download unless the model is already available locally.
 
-Run the complete automated test suite:
+## Running Tests
 
-```bash
-pytest
-```
-
-For verbose output:
+Run the complete automated test suite from the repository root:
 
 ```bash
-pytest -v
+python -m pytest tests
 ```
 
-### Current Test Results
+For more detailed output:
 
-The project test suite was executed successfully.
+```bash
+python -m pytest tests -v
+```
 
-**127 tests passed.**
+### Latest test result
 
-These results represent the automated tests included in the repository. They do not independently establish real-world transcription accuracy or replace end-to-end testing with different video and audio inputs.
+**138 tests passed.**
 
-## 13. Evaluation Metrics
+This result reflects a local run of the complete project test suite on the development branch. Automated tests help verify individual components and expected behavior; they do not by themselves establish real-world transcription accuracy or replace end-to-end testing with varied video and audio inputs.
 
-The project includes two standard metrics for evaluating speech recognition output.
+## Evaluation Metrics
+
+The `src/evaluation/metrics.py` module provides two metrics for comparing a generated transcript with a reference transcript. Both inputs are normalized using the project's Arabic text processor before calculation.
 
 ### Word Error Rate (WER)
 
-WER measures the difference between the reference transcript and the generated transcript at the word level.
+WER measures transcription differences at the word level, based on substitutions, deletions, and insertions relative to the reference.
 
 ### Character Error Rate (CER)
 
-CER measures the difference between the reference transcript and the generated transcript at the character level.
+CER measures transcription differences at the character level.
 
-Both metrics help assess transcription quality and identify recognition errors.
+These metrics are evaluation utilities; they do not represent a claimed accuracy score for the application. A meaningful score requires a suitable reference transcript and test dataset.
 
-## 14. Configuration
+## Configuration and Usage Notes
 
-The Streamlit configuration is stored in:
+### Upload size
 
-```text
-.streamlit/config.toml
-```
-
-The current server upload limit is configured as:
+The Streamlit upload limit is configured in `.streamlit/config.toml`:
 
 ```toml
 [server]
 maxUploadSize = 2048
 ```
 
-This configures the application upload limit to 2048 MB. Actual processing capacity also depends on available system memory, storage, and hardware resources.
+The application also checks the uploaded file size and supported extension.
 
-## 15. Future Improvements
+### Transcription model
 
-Potential future enhancements include:
+The current application initializes Faster-Whisper with the `tiny` model. The engine defaults to CPU execution with `int8` computation. Transcription is configured for Arabic speech.
 
-- Improving Arabic speech recognition accuracy.
-- Supporting additional languages.
-- Enhancing search ranking and relevance.
-- Improving processing performance for long videos.
-- Adding more advanced transcript evaluation and analysis.
-- Improving clip organization and metadata management.
+### Persistent files and application session
 
-## 16. License
+Uploaded videos, extracted audio, transcript JSON files, the SQLite database, clip metadata, and exported clips are written to local storage. However, the current interface uses Streamlit session state for the active video and its in-memory workflow state. Persisting files on disk does **not** mean that the active video and interface state are automatically restored when the application process is restarted.
 
-No license has currently been specified for this repository.
+## Known Limitations
+
+- Transcription quality depends on audio clarity, accents, background noise, and the selected speech-recognition model.
+- The default `tiny` model favors lower resource usage; it may not provide the highest transcription accuracy.
+- Fuzzy search compares transcript segments and can require more processing as the indexed transcript collection grows.
+- The application currently uses local file storage and a local SQLite database; it is not designed as a multi-user hosted service.
+- Active application session state is not automatically reconstructed after a process restart.
+- WER and CER require reference transcripts and are not standalone measures of application quality.
+
+## Future Work
+
+Potential areas for further development include:
+
+- Improving Arabic transcription accuracy and evaluating it on a representative Arabic speech dataset.
+- Supporting configurable speech-recognition models and hardware acceleration.
+- Improving search ranking and performance for larger transcript collections.
+- Adding reliable video and transcript session recovery after application restarts.
+- Expanding evaluation with documented datasets and reproducible experiments.
+- Improving clip organization and transcript navigation.
+
+## License
+
+No open-source license has been specified for this repository. All rights remain with the respective copyright holder unless a license is added.
