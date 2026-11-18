@@ -92,6 +92,55 @@ def test_saving_same_video_segment_without_changes_preserves_metadata(tmp_path):
     assert len(manager.get_all_clips()) == 1
 
 
+def test_saving_segment_removes_existing_legacy_duplicates(tmp_path):
+    path = tmp_path / "clips.json"
+    path.write_text(
+        json.dumps([
+            {
+                "id": 4,
+                "video_id": "video1",
+                "clip_path": "old_clip.mp4",
+                "start": 0,
+                "end": 2,
+                "notes": "first record",
+                "created_at": "2026-01-01T10:00:00",
+            },
+            {
+                "id": 9,
+                "video_id": "video1",
+                "clip_path": "duplicate_clip.mp4",
+                "start": 0,
+                "end": 2,
+                "notes": "duplicate record",
+                "created_at": "2026-01-02T10:00:00",
+            },
+            {
+                "id": 10,
+                "video_id": "video2",
+                "clip_path": "other_clip.mp4",
+                "start": 0,
+                "end": 2,
+                "notes": "different video",
+                "created_at": "2026-01-03T10:00:00",
+            },
+        ]),
+        encoding="utf-8",
+    )
+    manager = ClipMetadata(str(path))
+
+    saved = manager.save_clip(
+        "video1", "updated_clip.mp4", 0, 2, "updated notes"
+    )
+    clips = manager.get_all_clips()
+
+    assert len(clips) == 2
+    assert saved["id"] == 4
+    assert saved["created_at"] == "2026-01-01T10:00:00"
+    assert saved["clip_path"] == "updated_clip.mp4"
+    assert saved["notes"] == "updated notes"
+    assert clips[1]["video_id"] == "video2"
+
+
 def test_new_clip_id_ignores_invalid_legacy_ids(tmp_path):
     path = tmp_path / "clips.json"
     path.write_text(
@@ -207,6 +256,7 @@ def test_invalid_timestamps_raise_error(tmp_path, start, end):
         (0, False),
         (float("nan"), 2),
         (0, float("inf")),
+        (10**1000, 10**1000 + 2),
     ],
 )
 def test_non_finite_timestamps_raise_error(tmp_path, start, end):
