@@ -1,0 +1,104 @@
+import pytest
+
+from src.search.search_engine import SearchEngine
+
+
+@pytest.fixture
+def search_engine(tmp_path):
+    db_path = tmp_path / "test_search.db"
+    engine = SearchEngine(str(db_path))
+
+    engine.db.connection.executemany(
+        """
+        INSERT INTO segments (
+            video_id,
+            start,
+            end,
+            original_text,
+            normalized_text
+        )
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        [
+            ("video1", 0, 2, "البرمجة جميلة", "البرمجة جميلة"),
+            ("video1", 3, 5, "تعلم لغة بايثون", "تعلم لغة بايثون"),
+            ("video2", 0, 2, "البرمجة ممتعة", "البرمجة ممتعة"),
+            ("video2", 3, 5, "هبة مجتهدة", "هبة مجتهدة"),
+            ("video2", 6, 8, "هدى ذكية", "هدى ذكية"),
+        ],
+    )
+
+    engine.db.connection.commit()
+
+    yield engine
+    engine.close()
+
+
+def test_exact_search_finds_matching_phrase(search_engine):
+    results = search_engine.exact_search("البرمجة جميلة")
+
+    assert len(results) == 1
+    assert results[0]["original_text"] == "البرمجة جميلة"
+
+
+def test_exact_search_filters_by_video(search_engine):
+    results = search_engine.exact_search(
+        "البرمجة",
+        video_id="video2",
+    )
+
+    assert len(results) == 1
+    assert results[0]["video_id"] == "video2"
+
+
+def test_exact_search_empty_query_returns_empty(search_engine):
+    assert search_engine.exact_search("   ") == []
+
+
+def test_fuzzy_search_finds_similar_text(search_engine):
+    results = search_engine.fuzzy_search(
+        "البرمجة جميله",
+        threshold=70,
+    )
+
+    assert len(results) >= 1
+    assert results[0]["original_text"] == "البرمجة جميلة"
+
+
+def test_fuzzy_search_filters_by_video(search_engine):
+    results = search_engine.fuzzy_search(
+        "البرمجة",
+        video_id="video2",
+    )
+
+    assert all(result["video_id"] == "video2" for result in results)
+
+
+def test_fuzzy_search_empty_query_returns_empty(search_engine):
+    assert search_engine.fuzzy_search("   ") == []
+
+
+def test_search_distinguishes_taa_marbuta_and_haa(search_engine):
+    taa_results = search_engine.exact_search("هبة")
+    haa_results = search_engine.exact_search("هبه")
+
+    assert len(taa_results) == 1
+    assert len(haa_results) == 0
+
+
+def test_search_distinguishes_alef_maqsura_and_yaa(search_engine):
+    maqsura_results = search_engine.exact_search("هدى")
+    yaa_results = search_engine.exact_search("هدي")
+
+    assert len(maqsura_results) == 1
+    assert len(yaa_results) == 0
+
+
+def test_invalid_limit_is_rejected(search_engine):
+    with pytest.raises(ValueError):
+        search_engine.exact_search("البرمجة", limit=0)
+
+
+def test_invalid_threshold_is_rejected(search_engine):
+    with pytest.raises(ValueError):
+        search_engine.fuzzy_search("البرمجة", threshold=101)

@@ -1,0 +1,57 @@
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local data
+data/videos/*
+data/audio/*
+data/transcripts/*
+data/database/*
+!data/videos/.gitkeep
+!data/audio/.gitkeep
+!data/transcripts/.gitkeep
+!data/database/.gitkeep
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Dataset cache
+datasets/cache/
+datasets/downloads/
+
+# Generated exports
+exports/*
+
+# Model cache
+models/
+.cache/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test coverage
+.coverage
+.coverage.*
+htmlcov/
