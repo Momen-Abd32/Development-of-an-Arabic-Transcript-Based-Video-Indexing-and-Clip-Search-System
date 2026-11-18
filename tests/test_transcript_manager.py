@@ -110,3 +110,23 @@ def test_save_rejects_non_string_text(tmp_path):
 
     with pytest.raises(TypeError):
         TranscriptManager.save(segments, str(tmp_path / "sample.json"))
+
+
+def test_save_preserves_original_file_when_replace_fails(tmp_path, monkeypatch):
+    output = tmp_path / "sample.json"
+    original_content = '{"segments": [], "total_segments": 0}'
+    output.write_text(original_content, encoding="utf-8")
+
+    def fail_replace(source, destination):
+        raise OSError("simulated replace failure")
+
+    monkeypatch.setattr(
+        "src.transcription.transcript_manager.os.replace",
+        fail_replace,
+    )
+
+    with pytest.raises(OSError, match="simulated replace failure"):
+        TranscriptManager.save(sample_segments(), str(output))
+
+    assert output.read_text(encoding="utf-8") == original_content
+    assert list(tmp_path.glob(f".{output.name}.*.tmp")) == []
