@@ -60,15 +60,55 @@ def test_clip_ids_increment(tmp_path):
     assert second["id"] == 2
 
 
-def test_saving_same_video_segment_does_not_duplicate_metadata(tmp_path):
+def test_saving_same_video_segment_updates_existing_metadata(tmp_path):
     manager = ClipMetadata(str(tmp_path / "clips.json"))
 
-    first = manager.save_clip("video1", "clip.mp4", 0, 2, "first save")
-    repeated = manager.save_clip("video1", "clip.mp4", 0, 2, "second save")
+    first = manager.save_clip("video1", "old_clip.mp4", 0, 2, "first save")
+    original_id = first["id"]
+    original_created_at = first["created_at"]
+
+    repeated = manager.save_clip(
+        "video1",
+        "updated_clip.mp4",
+        0,
+        2,
+        "updated notes",
+    )
+
+    assert repeated["id"] == original_id
+    assert repeated["created_at"] == original_created_at
+    assert repeated["clip_path"] == "updated_clip.mp4"
+    assert repeated["notes"] == "updated notes"
+    assert len(manager.get_all_clips()) == 1
+
+
+def test_saving_same_video_segment_without_changes_preserves_metadata(tmp_path):
+    manager = ClipMetadata(str(tmp_path / "clips.json"))
+
+    first = manager.save_clip("video1", "clip.mp4", 0, 2, "same notes")
+    repeated = manager.save_clip("video1", "clip.mp4", 0, 2, "same notes")
 
     assert repeated == first
     assert len(manager.get_all_clips()) == 1
-    assert repeated["notes"] == "first save"
+
+
+def test_new_clip_id_ignores_invalid_legacy_ids(tmp_path):
+    path = tmp_path / "clips.json"
+    path.write_text(
+        json.dumps([
+            {"id": -4},
+            {"id": True},
+            {"id": "12"},
+            {"id": 7},
+            None,
+        ]),
+        encoding="utf-8",
+    )
+    manager = ClipMetadata(str(path))
+
+    clip = manager.save_clip("video1", "clip.mp4", 0, 2)
+
+    assert clip["id"] == 8
 
 
 def test_same_timestamps_in_different_videos_are_distinct(tmp_path):
