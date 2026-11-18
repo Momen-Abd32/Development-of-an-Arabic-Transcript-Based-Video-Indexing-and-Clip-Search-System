@@ -1,4 +1,3 @@
-
 import json
 import pytest
 
@@ -80,6 +79,21 @@ def test_save_rejects_invalid_timestamps(tmp_path):
     segments = [{"start": 3, "end": 2, "text": "مرحبا"}]
 
     with pytest.raises(ValueError):
+        TranscriptManager.save(segments, str(tmp_path / "sample.json"))
+
+
+@pytest.mark.parametrize(
+    ("start", "end"),
+    [
+        (float("nan"), 2),
+        (0, float("inf")),
+        (float("-inf"), 2),
+    ],
+)
+def test_save_rejects_non_finite_timestamps(tmp_path, start, end):
+    segments = [{"start": start, "end": end, "text": "مرحبا"}]
+
+    with pytest.raises(ValueError, match="finite"):
         TranscriptManager.save(segments, str(tmp_path / "sample.json"))
 
 
