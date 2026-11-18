@@ -69,8 +69,23 @@ class ClipMetadata:
 
         clips = self.load()
 
+        # A video segment represents one logical clip. Reuse its metadata
+        # instead of creating duplicate entries when the user saves it again.
+        for existing_clip in clips:
+            if (
+                existing_clip.get("video_id") == video_id
+                and existing_clip.get("start") == start
+                and existing_clip.get("end") == end
+            ):
+                return existing_clip
+
         next_id = max(
-            (clip.get("id", 0) for clip in clips),
+            (
+                clip.get("id", 0)
+                for clip in clips
+                if isinstance(clip.get("id", 0), int)
+                and not isinstance(clip.get("id", 0), bool)
+            ),
             default=0,
         ) + 1
 
