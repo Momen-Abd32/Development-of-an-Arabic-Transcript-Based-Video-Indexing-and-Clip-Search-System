@@ -1,4 +1,3 @@
-
 import json
 import pytest
 
@@ -59,6 +58,28 @@ def test_clip_ids_increment(tmp_path):
 
     assert first["id"] == 1
     assert second["id"] == 2
+
+
+def test_saving_same_video_segment_does_not_duplicate_metadata(tmp_path):
+    manager = ClipMetadata(str(tmp_path / "clips.json"))
+
+    first = manager.save_clip("video1", "clip.mp4", 0, 2, "first save")
+    repeated = manager.save_clip("video1", "clip.mp4", 0, 2, "second save")
+
+    assert repeated == first
+    assert len(manager.get_all_clips()) == 1
+    assert repeated["notes"] == "first save"
+
+
+def test_same_timestamps_in_different_videos_are_distinct(tmp_path):
+    manager = ClipMetadata(str(tmp_path / "clips.json"))
+
+    first = manager.save_clip("video1", "one.mp4", 0, 2)
+    second = manager.save_clip("video2", "two.mp4", 0, 2)
+
+    assert first["id"] == 1
+    assert second["id"] == 2
+    assert len(manager.get_all_clips()) == 2
 
 
 def test_get_all_clips_returns_saved_clips(tmp_path):
