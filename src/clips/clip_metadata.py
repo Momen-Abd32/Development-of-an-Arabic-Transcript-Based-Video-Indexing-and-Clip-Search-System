@@ -89,6 +89,10 @@ class ClipMetadata:
 
         if matching_clips:
             existing_clip = matching_clips[0]
+            metadata_changed = (
+                existing_clip.get("clip_path") != clip_path
+                or existing_clip.get("notes") != notes
+            )
             existing_clip["clip_path"] = clip_path
             existing_clip["notes"] = notes
 
@@ -108,10 +112,7 @@ class ClipMetadata:
 
                 deduplicated_clips.append(clip)
 
-            if len(deduplicated_clips) != len(clips) or (
-                matching_clips[0].get("clip_path") != clip_path
-                or matching_clips[0].get("notes") != notes
-            ):
+            if len(deduplicated_clips) != len(clips) or metadata_changed:
                 self._write(deduplicated_clips)
 
             return existing_clip
