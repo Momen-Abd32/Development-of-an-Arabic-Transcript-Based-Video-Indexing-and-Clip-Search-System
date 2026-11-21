@@ -114,3 +114,35 @@ def test_extract_empty_output_raises_error(tmp_path, monkeypatch):
 
     with pytest.raises(RuntimeError, match="empty"):
         AudioExtractor.extract(str(video), str(output))
+
+
+
+def test_prepare_normalizes_standalone_audio_file(tmp_path, monkeypatch):
+    audio = tmp_path / "recording.mp3"
+    audio.write_bytes(b"fake audio")
+    output = tmp_path / "normalized" / "recording.wav"
+    captured = {}
+
+    monkeypatch.setattr(
+        "src.media.audio_extractor.shutil.which",
+        lambda name: "ffmpeg",
+    )
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"normalized wav")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(
+        "src.media.audio_extractor.subprocess.run",
+        fake_run,
+    )
+
+    result = AudioExtractor.prepare(str(audio), str(output))
+
+    assert result == output
+    assert output.exists()
+    assert "-vn" in captured["command"]
+    assert captured["command"][captured["command"].index("-i") + 1] == str(audio)
+    assert captured["command"][captured["command"].index("-ar") + 1] == "16000"
