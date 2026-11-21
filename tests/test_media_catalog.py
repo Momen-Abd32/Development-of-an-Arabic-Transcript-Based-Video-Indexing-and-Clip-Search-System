@@ -116,3 +116,70 @@ def test_corrupt_catalog_is_not_silently_overwritten(tmp_path):
         catalog.get_all()
 
     assert path.read_text(encoding="utf-8") == '{"not": "a list"}'
+
+
+@pytest.mark.parametrize("invalid_value", [None, [], {}])
+def test_register_rejects_non_string_type_and_status_values(
+    tmp_path,
+    invalid_value,
+):
+    catalog = MediaCatalog(str(tmp_path / "media_catalog.json"))
+
+    with pytest.raises(ValueError):
+        catalog.register_media(
+            MEDIA_ID,
+            invalid_value,
+            "file.mp3",
+            "file.mp3",
+        )
+
+    with pytest.raises(ValueError):
+        catalog.register_media(
+            MEDIA_ID,
+            "audio",
+            "file.mp3",
+            "file.mp3",
+            status=invalid_value,
+        )
+
+
+def test_catalog_rejects_invalid_persisted_record_without_overwriting(tmp_path):
+    path = tmp_path / "media_catalog.json"
+    record = {
+        "media_id": MEDIA_ID,
+        "media_type": "audio",
+        "source_name": "recording.mp3",
+        "stored_path": "data/audio/recording.mp3",
+        "status": "unknown",
+        "created_at": "2026-11-21T10:00:00+00:00",
+    }
+    original = __import__("json").dumps([record])
+    path.write_text(original, encoding="utf-8")
+    catalog = MediaCatalog(str(path))
+
+    with pytest.raises(ValueError, match="status"):
+        catalog.get_all()
+
+    assert path.read_text(encoding="utf-8") == original
+
+
+def test_catalog_rejects_duplicate_media_ids(tmp_path):
+    import json
+
+    path = tmp_path / "media_catalog.json"
+    record = {
+        "media_id": MEDIA_ID,
+        "media_type": "audio",
+        "source_name": "recording.mp3",
+        "stored_path": "data/audio/recording.mp3",
+        "status": "uploaded",
+        "created_at": "2026-11-21T10:00:00+00:00",
+    }
+    path.write_text(
+        json.dumps([record, record]),
+        encoding="utf-8",
+    )
+    catalog = MediaCatalog(str(path))
+
+    with pytest.raises(ValueError, match="duplicate ID"):
+        catalog.get_all()
