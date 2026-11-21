@@ -56,17 +56,19 @@ class MediaBatchProcessor:
         expected_sha256: str,
     ) -> Path:
         """Store a verified copy without exposing a partially copied file."""
+        if MediaBatchProcessor._calculate_sha256(source) != expected_sha256:
+            raise RuntimeError("Source media changed during import.")
+
         destination.parent.mkdir(parents=True, exist_ok=True)
 
         if source.resolve() == destination.resolve():
-            if MediaBatchProcessor._calculate_sha256(source) != expected_sha256:
-                raise RuntimeError("Source media changed while it was being imported.")
             return destination
 
         if (
             destination.exists()
             and destination.is_file()
-            and MediaBatchProcessor._calculate_sha256(destination) == expected_sha256
+            and MediaBatchProcessor._calculate_sha256(destination)
+            == expected_sha256
         ):
             return destination
 
