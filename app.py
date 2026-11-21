@@ -816,11 +816,14 @@ with tab_search:
                 f"### {t['results']} ({len(st.session_state.search_results)})"
             )
 
-            catalog = MediaCatalog()
+            catalog_records = {
+                record["media_id"]: record
+                for record in MediaCatalog().get_all()
+            }
             for result in st.session_state.search_results:
                 with st.container(border=True):
                     media_id = result["video_id"]
-                    media_record = catalog.get_by_id(media_id)
+                    media_record = catalog_records.get(media_id)
                     media_path = None
                     media_type = None
                     source_name = media_id[:12]
