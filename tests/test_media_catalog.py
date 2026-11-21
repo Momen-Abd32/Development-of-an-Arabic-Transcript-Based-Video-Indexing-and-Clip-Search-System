@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -153,7 +154,7 @@ def test_catalog_rejects_invalid_persisted_record_without_overwriting(tmp_path):
         "status": "unknown",
         "created_at": "2026-11-21T10:00:00+00:00",
     }
-    original = __import__("json").dumps([record])
+    original = json.dumps([record])
     path.write_text(original, encoding="utf-8")
     catalog = MediaCatalog(str(path))
 
@@ -164,8 +165,6 @@ def test_catalog_rejects_invalid_persisted_record_without_overwriting(tmp_path):
 
 
 def test_catalog_rejects_duplicate_media_ids(tmp_path):
-    import json
-
     path = tmp_path / "media_catalog.json"
     record = {
         "media_id": MEDIA_ID,
