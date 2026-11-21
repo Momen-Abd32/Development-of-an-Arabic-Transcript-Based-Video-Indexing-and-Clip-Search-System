@@ -21,7 +21,9 @@ class AudioExtractor:
             raise ValueError("Media path must point to a file.")
 
         if media.resolve() == output.resolve():
-            raise ValueError("Input media and normalized audio paths must be different.")
+            raise ValueError(
+                "Input media and normalized audio paths must be different."
+            )
 
         ffmpeg_path = shutil.which("ffmpeg")
         if ffmpeg_path is None:
@@ -61,7 +63,7 @@ class AudioExtractor:
 
             if result.returncode != 0:
                 raise RuntimeError(
-                    f"Audio preparation failed:\\n{result.stderr.strip()}"
+                    f"Audio preparation failed:\n{result.stderr.strip()}"
                 )
 
             if not temporary_path.exists() or temporary_path.stat().st_size == 0:
