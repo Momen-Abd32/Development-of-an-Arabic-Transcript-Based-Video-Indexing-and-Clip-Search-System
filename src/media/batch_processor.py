@@ -117,6 +117,7 @@ class MediaBatchProcessor:
                 else "audio"
             )
 
+            media_id = None
             try:
                 media_id = self._calculate_sha256(source)
 
@@ -182,7 +183,7 @@ class MediaBatchProcessor:
             except Exception as error:
                 results.append({
                     "source": str(source),
-                    "media_id": media_id if "media_id" in locals() else None,
+                    "media_id": media_id,
                     "media_type": media_type,
                     "status": "failed",
                     "segments": 0,
