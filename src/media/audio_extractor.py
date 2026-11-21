@@ -7,15 +7,16 @@ class AudioExtractor:
     """Extract mono 16 kHz WAV audio from a video file."""
 
     @staticmethod
-    def extract(video_path: str, output_path: str) -> Path:
-        video = Path(video_path)
+    def prepare(media_path: str, output_path: str) -> Path:
+        """Convert an audio or video file to mono 16 kHz WAV for transcription."""
+        media = Path(media_path)
         output = Path(output_path)
 
-        if not video.exists():
-            raise FileNotFoundError(f"Video not found: {video}")
+        if not media.exists():
+            raise FileNotFoundError(f"Media file not found: {media}")
 
-        if not video.is_file():
-            raise ValueError("Video path must point to a file.")
+        if not media.is_file():
+            raise ValueError("Media path must point to a file.")
 
         if shutil.which("ffmpeg") is None:
             raise RuntimeError(
@@ -27,7 +28,7 @@ class AudioExtractor:
         command = [
             "ffmpeg",
             "-y",
-            "-i", str(video),
+            "-i", str(media),
             "-vn",
             "-ac", "1",
             "-ar", "16000",
