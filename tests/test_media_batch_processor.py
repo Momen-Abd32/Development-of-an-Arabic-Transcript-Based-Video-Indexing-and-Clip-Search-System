@@ -78,12 +78,31 @@ def test_batch_processor_skips_duplicate_content_in_same_batch(
     first.write_bytes(b"same media bytes")
     second.write_bytes(b"same media bytes")
 
-    def fail_if_called(*args, **kwargs):
-        raise AssertionError("Duplicate media should not be processed twice.")
+    def fake_prepare(source, output):
+        output_path = Path(output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"normalized audio")
+        return output_path
 
+    class FakeEngine:
+        def __init__(self, **kwargs):
+            pass
+
+        def transcribe(self, audio_path):
+            return [{"start": 0.0, "end": 1.0, "text": "نص"}]
+
+    FakeIndexer.indexed = []
     monkeypatch.setattr(
         "src.media.batch_processor.AudioExtractor.prepare",
-        fail_if_called,
+        fake_prepare,
+    )
+    monkeypatch.setattr(
+        "src.media.batch_processor.FasterWhisperEngine",
+        FakeEngine,
+    )
+    monkeypatch.setattr(
+        "src.media.batch_processor.TranscriptIndexer",
+        FakeIndexer,
     )
 
     processor = MediaBatchProcessor(
@@ -96,12 +115,10 @@ def test_batch_processor_skips_duplicate_content_in_same_batch(
     results = processor.process_directory(str(input_dir))
 
     assert [item["status"] for item in results] == [
-        "failed",
+        "processed",
         "duplicate_in_batch",
     ]
-    assert "FasterWhisperEngine" in results[0]["error"] or (
-        "AudioExtractor" in results[0]["error"]
-    )
+    assert len(FakeIndexer.indexed) == 1
 
 
 def test_batch_processor_reuses_existing_transcript(tmp_path, monkeypatch):
