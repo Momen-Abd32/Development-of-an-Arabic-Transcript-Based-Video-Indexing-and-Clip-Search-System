@@ -1,5 +1,7 @@
-import subprocess
+import os
 import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 
@@ -18,39 +20,58 @@ class AudioExtractor:
         if not media.is_file():
             raise ValueError("Media path must point to a file.")
 
-        if shutil.which("ffmpeg") is None:
-            raise RuntimeError(
-                "FFmpeg is not installed or not available in PATH."
-            )
+        if media.resolve() == output.resolve():
+            raise ValueError("Input media and normalized audio paths must be different.")
+
+        ffmpeg_path = shutil.which("ffmpeg")
+        if ffmpeg_path is None:
+            raise RuntimeError("FFmpeg is not installed or not available in PATH.")
 
         output.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path = None
 
-        command = [
-            "ffmpeg",
-            "-y",
-            "-i", str(media),
-            "-vn",
-            "-ac", "1",
-            "-ar", "16000",
-            "-c:a", "pcm_s16le",
-            str(output),
-        ]
+        try:
+            file_descriptor, temporary_name = tempfile.mkstemp(
+                prefix=f".{output.stem}.",
+                suffix=output.suffix or ".wav",
+                dir=output.parent,
+            )
+            os.close(file_descriptor)
+            temporary_path = Path(temporary_name)
 
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-        )
+            command = [
+                ffmpeg_path,
+                "-nostdin",
+                "-hide_banner",
+                "-loglevel", "error",
+                "-y",
+                "-i", str(media),
+                "-vn",
+                "-ac", "1",
+                "-ar", "16000",
+                "-c:a", "pcm_s16le",
+                str(temporary_path),
+            ]
 
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"Audio extraction failed:\n{result.stderr}"
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
             )
 
-        if not output.exists() or output.stat().st_size == 0:
-            raise RuntimeError("Extracted audio file is empty.")
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"Audio preparation failed:\\n{result.stderr.strip()}"
+                )
 
-        return output
+            if not temporary_path.exists() or temporary_path.stat().st_size == 0:
+                raise RuntimeError("Prepared audio file is empty.")
+
+            os.replace(temporary_path, output)
+            return output
+        finally:
+            if temporary_path is not None and temporary_path.exists():
+                temporary_path.unlink()
 
     @staticmethod
     def extract(video_path: str, output_path: str) -> Path:
