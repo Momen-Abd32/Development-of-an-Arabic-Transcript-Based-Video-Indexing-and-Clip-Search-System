@@ -616,7 +616,7 @@ with tab_upload:
         except Exception as error:
             try:
                 MediaCatalog().update_status(media_id, "failed", str(error))
-            except KeyError:
+            except Exception:
                 pass
             st.error(f'{t["transcription_failed"]}: {error}')
 
