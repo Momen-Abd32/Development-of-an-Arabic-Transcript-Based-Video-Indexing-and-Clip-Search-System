@@ -41,6 +41,8 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - **Standalone audio upload and playback:** Upload audio recordings without requiring a video container.
 - **Audio preparation:** Use FFmpeg to normalize audio from video or standalone audio files to mono 16 kHz WAV for transcription.
 - **Batch media import:** Recursively scan a local folder and process supported audio and video files one by one.
+- **Media catalog:** Persist each media file's type, original filename, stored path, and processing status.
+- **Archive-wide search:** Search transcript segments across all imported media or limit the search to the currently selected file.
 - **Duplicate detection:** Identify identical files using SHA-256 and avoid processing duplicate content within the same batch.
 - **Transcript reuse:** Reuse existing transcript JSON files and rebuild their search index instead of transcribing the same media again.
 - **Arabic speech recognition:** Generate timestamped transcript segments with Faster-Whisper.
@@ -204,6 +206,7 @@ The application uses a combination of local files and SQLite. The main runtime l
 | `data/audio/` | Normalized WAV audio files prepared for transcription |
 | `data/transcripts/` | Transcript JSON files |
 | `data/database/videos.db` | Transcript segments and the FTS5 search index |
+| `data/database/media_catalog.json` | Media identifiers, original filenames, source paths, types, and processing status |
 | `data/database/clips.json` | Metadata for saved video clips |
 | `exports/clips/` | Extracted MP4 video clips |
 | `exports/` | Transcript and clip-list CSV exports |
@@ -244,6 +247,8 @@ flowchart TB
     DB --> SEG["segments"]
     DB --> FTS["segments_fts (FTS5)"]
 
+    APP --> CATALOG["data/database/media_catalog.json
+    Media metadata and processing status"]
     APP --> META["data/database/clips.json
     Saved clip metadata"]
 
@@ -286,7 +291,8 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   │
 │   ├── media/
 │   │   ├── audio_extractor.py
-│   │   └── batch_processor.py
+│   │   ├── batch_processor.py
+│   │   └── media_catalog.py
 │   │
 │   ├── search/
 │   │   └── search_engine.py
@@ -299,6 +305,7 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 ├── tests/
 │   ├── test_audio_extractor.py
 │   ├── test_media_batch_processor.py
+│   ├── test_media_catalog.py
 │   ├── test_clip_exporter.py
 │   ├── test_clip_manager.py
 │   ├── test_clip_metadata.py
@@ -477,7 +484,7 @@ The current application initializes Faster-Whisper with the `tiny` model. The en
 
 ### Persistent files and application session
 
-Uploaded videos, extracted audio, transcript JSON files, the SQLite database, clip metadata, and exported clips are written to local storage. However, the current interface uses Streamlit session state for the active video and its in-memory workflow state. Persisting files on disk does **not** mean that the active video and interface state are automatically restored when the application process is restarted.
+Uploaded videos, original audio files, normalized audio, transcript JSON files, the SQLite database, media catalog, clip metadata, and exported clips are written to local storage. However, the current interface uses Streamlit session state for the active video and its in-memory workflow state. Persisting files on disk does **not** mean that the active video and interface state are automatically restored when the application process is restarted.
 
 ## Known Limitations
 
@@ -487,6 +494,7 @@ Uploaded videos, extracted audio, transcript JSON files, the SQLite database, cl
 - The application currently uses local file storage and a local SQLite database; it is not designed as a multi-user hosted service.
 - Batch import currently reads local or mounted folders. Direct cloud-provider APIs, remote URL ingestion, and continuous folder monitoring are not implemented yet.
 - The SQLite segment table retains the legacy `video_id` column name; for audio records, it stores the SHA-256 media identifier as well.
+- The media catalog is a local JSON file intended for the current single-instance application; concurrent multi-process writes are not coordinated.
 - Active application session state is not automatically reconstructed after a process restart.
 - WER and CER require reference transcripts and are not standalone measures of application quality.
 
