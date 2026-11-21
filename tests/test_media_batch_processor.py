@@ -257,3 +257,53 @@ def test_batch_processor_retries_duplicate_after_first_failure(
 
     assert [item["status"] for item in results] == ["failed", "processed"]
     assert len(prepare_calls) == 2
+
+
+def test_store_source_replaces_corrupt_existing_archive_copy(tmp_path):
+    import hashlib
+
+    source = tmp_path / "incoming.mp3"
+    source.write_bytes(b"correct media bytes")
+    expected_hash = hashlib.sha256(source.read_bytes()).hexdigest()
+
+    destination = tmp_path / "archive" / f"{expected_hash}.mp3"
+    destination.parent.mkdir(parents=True)
+    destination.write_bytes(b"corrupt partial copy")
+
+    stored = MediaBatchProcessor._store_source(
+        source,
+        destination,
+        expected_hash,
+    )
+
+    assert stored == destination
+    assert destination.read_bytes() == source.read_bytes()
+
+
+def test_store_source_rejects_changed_file_during_copy(tmp_path, monkeypatch):
+    import hashlib
+
+    source = tmp_path / "incoming.mp3"
+    source.write_bytes(b"original media bytes")
+    expected_hash = hashlib.sha256(source.read_bytes()).hexdigest()
+    destination = tmp_path / "archive" / f"{expected_hash}.mp3"
+
+    def copy_changed_content(source_path, destination_path):
+        Path(destination_path).write_bytes(b"changed while copying")
+
+    monkeypatch.setattr(
+        "src.media.batch_processor.shutil.copy2",
+        copy_changed_content,
+    )
+
+    import pytest
+
+    with pytest.raises(RuntimeError, match="changed"):
+        MediaBatchProcessor._store_source(
+            source,
+            destination,
+            expected_hash,
+        )
+
+    assert not destination.exists()
+    assert not list(destination.parent.glob(".*.tmp"))
