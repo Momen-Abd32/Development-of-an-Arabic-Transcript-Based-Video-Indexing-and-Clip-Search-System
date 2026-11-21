@@ -189,3 +189,57 @@ def test_batch_processor_validates_input_directory(tmp_path):
         pass
     else:
         raise AssertionError("A file path should raise ValueError.")
+
+
+
+def test_batch_processor_retries_duplicate_after_first_failure(
+    tmp_path,
+    monkeypatch,
+):
+    input_dir = tmp_path / "incoming"
+    input_dir.mkdir()
+    (input_dir / "first.mp3").write_bytes(b"same bytes")
+    (input_dir / "second.wav").write_bytes(b"same bytes")
+    prepare_calls = []
+
+    def flaky_prepare(source, output):
+        prepare_calls.append(source)
+        if len(prepare_calls) == 1:
+            raise RuntimeError("temporary conversion failure")
+        output_path = Path(output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"normalized audio")
+        return output_path
+
+    class FakeEngine:
+        def __init__(self, **kwargs):
+            pass
+
+        def transcribe(self, audio_path):
+            return [{"start": 0.0, "end": 1.0, "text": "نص"}]
+
+    FakeIndexer.indexed = []
+    monkeypatch.setattr(
+        "src.media.batch_processor.AudioExtractor.prepare",
+        flaky_prepare,
+    )
+    monkeypatch.setattr(
+        "src.media.batch_processor.FasterWhisperEngine",
+        FakeEngine,
+    )
+    monkeypatch.setattr(
+        "src.media.batch_processor.TranscriptIndexer",
+        FakeIndexer,
+    )
+
+    processor = MediaBatchProcessor(
+        video_dir=str(tmp_path / "videos"),
+        audio_source_dir=str(tmp_path / "audio_sources"),
+        audio_dir=str(tmp_path / "audio"),
+        transcript_dir=str(tmp_path / "transcripts"),
+        database_path=str(tmp_path / "database.db"),
+    )
+    results = processor.process_directory(str(input_dir))
+
+    assert [item["status"] for item in results] == ["failed", "processed"]
+    assert len(prepare_calls) == 2
