@@ -1,6 +1,6 @@
-# Arabic Transcript-Based Video Indexing and Clip Search System
+# Arabic Media Archiving, Transcription and Search System
 
-An Arabic-focused application that converts speech in video files into timestamped transcripts, makes transcript content searchable, and allows users to extract and save relevant video segments as standalone clips.
+An Arabic-focused application that converts speech in video and standalone audio files into timestamped transcripts, makes transcript content searchable, and allows users to locate relevant moments. Video segments can also be extracted as standalone clips.
 
 **Repository:** [Momen-Abd32/Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System](https://github.com/Momen-Abd32/Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System)
 
@@ -19,6 +19,7 @@ An Arabic-focused application that converts speech in video files into timestamp
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Running the Application](#running-the-application)
+- [Batch Importing a Media Dataset](#batch-importing-a-media-dataset)
 - [Running Tests](#running-tests)
 - [Evaluation Metrics](#evaluation-metrics)
 - [Configuration and Usage Notes](#configuration-and-usage-notes)
@@ -28,22 +29,28 @@ An Arabic-focused application that converts speech in video files into timestamp
 
 ## Project Overview
 
-Finding a specific moment in a long video can be time-consuming, particularly when the content is spoken in Arabic and the user does not know the exact timestamp. This project addresses that problem by turning spoken video content into searchable, timestamped transcript segments.
+Finding a specific moment in a long video or audio recording can be time-consuming, particularly when the content is spoken in Arabic and the user does not know the exact timestamp. This project addresses that problem by turning spoken media content into searchable, timestamped transcript segments.
 
-The application provides an end-to-end workflow for uploading a video, extracting its audio, generating an Arabic transcript, reviewing and editing transcript segments, searching for words or phrases, and exporting selected moments as separate clips.
+The application supports individual video and audio uploads, while a batch-import utility can process a local folder of media files. It prepares audio, generates Arabic transcripts, indexes transcript segments, and allows users to search for words or phrases. Video search results can also be exported as separate clips.
 
 The interface supports **Arabic and English**, with Arabic as the default language.
 
 ## Features
 
-- **Video upload and preview:** Upload and preview video files in common formats.
-- **Audio extraction:** Extract an audio track from the uploaded video using FFmpeg.
+- **Video upload and preview:** Upload and preview supported video files.
+- **Standalone audio upload and playback:** Upload audio recordings without requiring a video container.
+- **Audio preparation:** Use FFmpeg to normalize audio from video or standalone audio files to mono 16 kHz WAV for transcription.
+- **Batch media import:** Recursively scan a local folder and process supported audio and video files one by one.
+- **Media catalog:** Persist each media file's type, original filename, stored path, and processing status.
+- **Archive-wide search:** Search transcript segments across all imported media or limit the search to the currently selected file.
+- **Duplicate detection:** Identify identical files using SHA-256 and avoid processing duplicate content within the same batch.
+- **Transcript reuse:** Reuse existing transcript JSON files and rebuild their search index instead of transcribing the same media again.
 - **Arabic speech recognition:** Generate timestamped transcript segments with Faster-Whisper.
 - **Transcript review and editing:** Review generated segments, correct their text, and save the updated transcript.
 - **Arabic text normalization:** Normalize common Arabic character variations, remove diacritics and tatweel, and standardize whitespace to improve search consistency.
 - **Exact full-text search:** Find transcript segments using SQLite FTS5.
 - **Fuzzy search:** Find approximate matches using RapidFuzz.
-- **Timestamped results:** Display matching transcript text with its position in the source video.
+- **Timestamped results:** Display matching transcript text with its position in the source video or audio recording.
 - **Clip extraction:** Extract a selected time range from the source video as an MP4 clip.
 - **Saved clip management:** Store clip metadata and view saved clips associated with a video.
 - **CSV export:** Export transcript segments and saved clip metadata.
@@ -57,7 +64,16 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - AVI
 - WEBM
 
-The application upload limit is configured to **2 GB per video**. Actual processing capacity depends on available memory, storage, CPU, and video duration.
+### Supported audio formats
+
+- MP3
+- WAV
+- M4A
+- AAC
+- FLAC
+- OGG
+
+The Streamlit application upload limit is configured to **2 GB per file**. Actual processing capacity depends on available memory, storage, CPU, and media duration.
 
 ## Technologies
 
@@ -75,16 +91,16 @@ The application upload limit is configured to **2 GB per video**. Actual process
 
 ## System Workflow
 
-1. The user uploads a supported video file.
-2. The application identifies the video using a SHA-256 hash and stores the source file under `data/videos/`.
-3. FFmpeg extracts the video's audio and saves it under `data/audio/`.
-4. Faster-Whisper transcribes the audio in Arabic and produces timestamped segments.
-5. The transcript is saved as JSON under `data/transcripts/`.
+1. The user uploads an individual video or audio file, or selects a local folder for batch import.
+2. The application calculates a SHA-256 media identifier and stores the original source file in the appropriate media directory.
+3. FFmpeg prepares a mono 16 kHz WAV file from the video or standalone audio source.
+4. Faster-Whisper transcribes the Arabic speech and produces timestamped segments.
+5. The transcript is saved as JSON under `data/transcripts/`, and the media catalog records the source filename, type, path, and processing status.
 6. Arabic text is normalized and transcript segments are indexed in SQLite.
-7. The user reviews or edits transcript segments.
-8. The user searches the transcript using exact or fuzzy search.
-9. Search results show the matching text and its timestamps.
-10. The user can extract a selected segment as an MP4 clip and save its metadata.
+7. The user can review or edit the transcript for the currently selected media file.
+8. The user searches either the selected file or the entire indexed archive using exact or fuzzy search.
+9. Search results show the source media, matching text, and timestamps, with a preview of the original file.
+10. The user can extract a selected video segment as an MP4 clip.
 11. Transcript data and clip metadata can be exported as CSV files.
 
 ## Application Architecture
@@ -93,7 +109,7 @@ The application separates its main responsibilities into modules under `src/`:
 
 | Module | Responsibility |
 |---|---|
-| `media` | Extract audio from uploaded video files |
+| `media` | Prepare normalized audio from video and standalone audio files; batch-import media folders |
 | `transcription` | Run speech recognition, validate and manage transcripts, and export transcript data |
 | `indexing` | Normalize Arabic text and index transcript segments |
 | `search` | Perform exact and fuzzy transcript searches |
@@ -116,7 +132,7 @@ data/database/videos.db
 | Column | Type | Description |
 |---|---|---|
 | `id` | INTEGER PRIMARY KEY AUTOINCREMENT | Unique segment identifier |
-| `video_id` | TEXT | Identifier of the source video |
+| `video_id` | TEXT | Identifier of the source media file (video or audio) |
 | `start` | REAL | Segment start time in seconds |
 | `end` | REAL | Segment end time in seconds |
 | `original_text` | TEXT | Transcript text |
@@ -132,7 +148,7 @@ The `segments_fts` virtual table uses SQLite FTS5 with an external-content confi
 
 ### Indexes and triggers
 
-- `idx_segments_video_id`: Indexes `video_id` to support video-specific queries.
+- `idx_segments_video_id`: Indexes the source media identifier used to filter transcript segments.
 - `validate_segment_insert`: Rejects invalid segment timestamps on insertion.
 - `validate_segment_update`: Rejects invalid segment timestamps on update.
 - `segments_ai`: Adds inserted segment text to the FTS index.
@@ -185,10 +201,12 @@ The application uses a combination of local files and SQLite. The main runtime l
 
 | Location | Stored data |
 |---|---|
-| `data/videos/` | Uploaded source video files |
-| `data/audio/` | Extracted WAV audio files |
+| `data/videos/` | Uploaded or batch-imported source video files |
+| `data/audio/originals/` | Original standalone audio files |
+| `data/audio/` | Normalized WAV audio files prepared for transcription |
 | `data/transcripts/` | Transcript JSON files |
 | `data/database/videos.db` | Transcript segments and the FTS5 search index |
+| `data/database/media_catalog.json` | Media identifiers, original filenames, source paths, types, and processing status |
 | `data/database/clips.json` | Metadata for saved video clips |
 | `exports/clips/` | Extracted MP4 video clips |
 | `exports/` | Transcript and clip-list CSV exports |
@@ -229,6 +247,8 @@ flowchart TB
     DB --> SEG["segments"]
     DB --> FTS["segments_fts (FTS5)"]
 
+    APP --> CATALOG["data/database/media_catalog.json
+    Media metadata and processing status"]
     APP --> META["data/database/clips.json
     Saved clip metadata"]
 
@@ -270,7 +290,9 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   │   └── text_processor.py
 │   │
 │   ├── media/
-│   │   └── audio_extractor.py
+│   │   ├── audio_extractor.py
+│   │   ├── batch_processor.py
+│   │   └── media_catalog.py
 │   │
 │   ├── search/
 │   │   └── search_engine.py
@@ -282,6 +304,8 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │
 ├── tests/
 │   ├── test_audio_extractor.py
+│   ├── test_media_batch_processor.py
+│   ├── test_media_catalog.py
 │   ├── test_clip_exporter.py
 │   ├── test_clip_manager.py
 │   ├── test_clip_metadata.py
@@ -295,6 +319,7 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   └── test_transcript_manager.py
 │
 └── scripts/
+    ├── import_media_dataset.py
     └── test_transcription.py
 ```
 
@@ -381,6 +406,35 @@ http://localhost:8501
 
 On the first transcription run, Faster-Whisper may need to download its model files. An internet connection is therefore required for the initial model download unless the model is already available locally.
 
+## Batch Importing a Media Dataset
+
+Place the media files in a local folder, external drive, or a directory that is accessible to the machine running the application. The importer scans subdirectories by default and supports the video and audio formats listed above.
+
+Run the importer from the repository root:
+
+```bash
+python scripts/import_media_dataset.py --input-dir "path/to/media-folder"
+```
+
+On Windows, for example:
+
+```powershell
+python scripts/import_media_dataset.py --input-dir "D:\DukkanMedia\Incoming"
+```
+
+Optional arguments:
+
+- `--non-recursive`: Process only files directly inside the selected folder.
+- `--model-size`: Select a Faster-Whisper model; defaults to `tiny`.
+- `--device`: Select `cpu` or `cuda`; defaults to `cpu`.
+- `--compute-type`: Set the CTranslate2 compute type; defaults to `int8`.
+
+The importer stores source videos in `data/videos/`, original audio files in `data/audio/originals/`, normalized WAV files in `data/audio/`, and transcript JSON files in `data/transcripts/`. Transcript segments are indexed in the existing SQLite database.
+
+Each file is processed independently. A failure for one file is reported without stopping the rest of the batch. Identical content is processed once per batch, and an existing valid transcript is reused and re-indexed. The first new file that requires transcription initializes the Whisper model, which is then reused for the remaining files in that run.
+
+A USB drive or network share can be used by passing its mounted folder path. Direct cloud-provider synchronization, remote URL downloading, and continuous folder watching are not included yet.
+
 ## Running Tests
 
 Run the complete automated test suite from the repository root:
@@ -395,11 +449,7 @@ For more detailed output:
 python -m pytest tests -v
 ```
 
-### Latest test result
-
-**138 tests passed.**
-
-This result reflects a local run of the complete project test suite on the development branch. Automated tests help verify individual components and expected behavior; they do not by themselves establish real-world transcription accuracy or replace end-to-end testing with varied video and audio inputs.
+The complete test suite should be run after pulling the current development branch. Automated tests help verify individual components and expected behavior; they do not by themselves establish real-world transcription accuracy or replace end-to-end testing with varied video and audio inputs.
 
 ## Evaluation Metrics
 
@@ -434,7 +484,7 @@ The current application initializes Faster-Whisper with the `tiny` model. The en
 
 ### Persistent files and application session
 
-Uploaded videos, extracted audio, transcript JSON files, the SQLite database, clip metadata, and exported clips are written to local storage. However, the current interface uses Streamlit session state for the active video and its in-memory workflow state. Persisting files on disk does **not** mean that the active video and interface state are automatically restored when the application process is restarted.
+Uploaded videos, original audio files, normalized audio, transcript JSON files, the SQLite database, media catalog, clip metadata, and exported clips are written to local storage. The active media selection and interface state still use Streamlit session state and are not automatically restored after an application restart. When a previously imported file is selected again, the application can reload its saved transcript and rebuild its search index without repeating speech recognition.
 
 ## Known Limitations
 
@@ -442,6 +492,9 @@ Uploaded videos, extracted audio, transcript JSON files, the SQLite database, cl
 - The default `tiny` model favors lower resource usage; it may not provide the highest transcription accuracy.
 - Fuzzy search compares transcript segments and can require more processing as the indexed transcript collection grows.
 - The application currently uses local file storage and a local SQLite database; it is not designed as a multi-user hosted service.
+- Batch import currently reads local or mounted folders. Direct cloud-provider APIs, remote URL ingestion, and continuous folder monitoring are not implemented yet.
+- The SQLite segment table retains the legacy `video_id` column name; for audio records, it stores the SHA-256 media identifier as well.
+- The media catalog is a local JSON file intended for the current single-instance application; concurrent multi-process writes are not coordinated.
 - Active application session state is not automatically reconstructed after a process restart.
 - WER and CER require reference transcripts and are not standalone measures of application quality.
 
@@ -449,6 +502,7 @@ Uploaded videos, extracted audio, transcript JSON files, the SQLite database, cl
 
 Potential areas for further development include:
 
+- Adding direct cloud-storage integrations, supported remote media URL ingestion, and scheduled folder monitoring.
 - Improving Arabic transcription accuracy and evaluating it on a representative Arabic speech dataset.
 - Supporting configurable speech-recognition models and hardware acceleration.
 - Improving search ranking and performance for larger transcript collections.
