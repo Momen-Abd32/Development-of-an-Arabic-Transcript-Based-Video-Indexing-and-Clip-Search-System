@@ -50,13 +50,24 @@ class MediaBatchProcessor:
         return digest.hexdigest()
 
     @staticmethod
-    def _store_source(source: Path, destination: Path) -> Path:
+    def _store_source(
+        source: Path,
+        destination: Path,
+        expected_sha256: str,
+    ) -> Path:
+        """Store a verified copy without exposing a partially copied file."""
         destination.parent.mkdir(parents=True, exist_ok=True)
 
         if source.resolve() == destination.resolve():
+            if MediaBatchProcessor._calculate_sha256(source) != expected_sha256:
+                raise RuntimeError("Source media changed while it was being imported.")
             return destination
 
-        if destination.exists():
+        if (
+            destination.exists()
+            and destination.is_file()
+            and MediaBatchProcessor._calculate_sha256(destination) == expected_sha256
+        ):
             return destination
 
         file_descriptor, temporary_name = tempfile.mkstemp(
@@ -69,6 +80,12 @@ class MediaBatchProcessor:
 
         try:
             shutil.copy2(source, temporary_path)
+            copied_hash = MediaBatchProcessor._calculate_sha256(temporary_path)
+            if copied_hash != expected_sha256:
+                raise RuntimeError(
+                    "Source media changed while it was being copied."
+                )
+
             os.replace(temporary_path, destination)
         finally:
             if temporary_path.exists():
@@ -143,7 +160,7 @@ class MediaBatchProcessor:
                         f"{media_id}{source.suffix.lower()}"
                     )
 
-                self._store_source(source, stored_source)
+                self._store_source(source, stored_source, media_id)
                 self.catalog.register_media(
                     media_id,
                     media_type,
