@@ -412,7 +412,7 @@ python scripts/import_media_dataset.py --input-dir "path/to/media-folder"
 On Windows, for example:
 
 ```powershell
-python scripts/import_media_dataset.py --input-dir "D:\\DukkanMedia\\Incoming"
+python scripts/import_media_dataset.py --input-dir "D:\DukkanMedia\Incoming"
 ```
 
 Optional arguments:
