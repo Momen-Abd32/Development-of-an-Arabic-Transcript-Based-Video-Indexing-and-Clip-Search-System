@@ -200,7 +200,7 @@ class MediaBatchProcessor:
                             "failed",
                             str(error),
                         )
-                    except KeyError:
+                    except Exception:
                         pass
 
                 results.append({
