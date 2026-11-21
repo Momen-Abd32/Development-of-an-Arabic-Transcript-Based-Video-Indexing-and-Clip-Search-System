@@ -66,7 +66,10 @@ class AudioExtractor:
                     f"Audio preparation failed:\n{result.stderr.strip()}"
                 )
 
-            if not temporary_path.exists() or temporary_path.stat().st_size == 0:
+            if (
+                not temporary_path.exists()
+                or temporary_path.stat().st_size == 0
+            ):
                 raise RuntimeError("Prepared audio file is empty.")
 
             os.replace(temporary_path, output)
