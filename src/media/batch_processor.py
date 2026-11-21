@@ -6,6 +6,7 @@ from pathlib import Path
 
 from src.indexing.indexer import TranscriptIndexer
 from src.media.audio_extractor import AudioExtractor
+from src.media.media_catalog import MediaCatalog
 from src.transcription.faster_whisper_engine import FasterWhisperEngine
 from src.transcription.transcript_manager import TranscriptManager
 
@@ -25,6 +26,7 @@ class MediaBatchProcessor:
         audio_dir: str = "data/audio",
         transcript_dir: str = "data/transcripts",
         database_path: str = "data/database/videos.db",
+        catalog_path: str = "data/database/media_catalog.json",
         model_size: str = "tiny",
         device: str = "cpu",
         compute_type: str = "int8",
@@ -34,6 +36,7 @@ class MediaBatchProcessor:
         self.audio_dir = Path(audio_dir)
         self.transcript_dir = Path(transcript_dir)
         self.database_path = database_path
+        self.catalog = MediaCatalog(catalog_path)
         self.model_size = model_size
         self.device = device
         self.compute_type = compute_type
@@ -141,12 +144,20 @@ class MediaBatchProcessor:
                     )
 
                 self._store_source(source, stored_source)
+                self.catalog.register_media(
+                    media_id,
+                    media_type,
+                    source.name,
+                    str(stored_source),
+                    status="processing",
+                )
 
                 transcript_path = self.transcript_dir / f"{media_id}.json"
 
                 if transcript_path.exists():
                     segments = TranscriptManager.load(str(transcript_path))
                     self._index(media_id, segments)
+                    self.catalog.update_status(media_id, "transcribed")
                     seen_hashes.add(media_id)
                     results.append({
                         "source": str(source),
@@ -170,6 +181,7 @@ class MediaBatchProcessor:
                 segments = engine.transcribe(str(audio_path))
                 TranscriptManager.save(segments, str(transcript_path))
                 self._index(media_id, segments)
+                self.catalog.update_status(media_id, "transcribed")
                 seen_hashes.add(media_id)
 
                 results.append({
@@ -181,6 +193,16 @@ class MediaBatchProcessor:
                 })
 
             except Exception as error:
+                if media_id is not None:
+                    try:
+                        self.catalog.update_status(
+                            media_id,
+                            "failed",
+                            str(error),
+                        )
+                    except KeyError:
+                        pass
+
                 results.append({
                     "source": str(source),
                     "media_id": media_id,
