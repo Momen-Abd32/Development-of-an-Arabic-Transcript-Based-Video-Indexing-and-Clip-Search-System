@@ -15,12 +15,11 @@ class MediaCatalog:
     def __init__(self, catalog_path="data/database/media_catalog.json"):
         self.catalog_path = Path(catalog_path)
 
-    @classmethod
-    def _load(cls, catalog_path: Path) -> list[dict]:
-        if not catalog_path.exists():
+    def _load(self) -> list[dict]:
+        if not self.catalog_path.exists():
             return []
 
-        data = json.loads(catalog_path.read_text(encoding="utf-8"))
+        data = json.loads(self.catalog_path.read_text(encoding="utf-8"))
         if not isinstance(data, list):
             raise ValueError("Media catalog must contain a JSON list.")
 
@@ -44,7 +43,7 @@ class MediaCatalog:
                     f"Media catalog item {index} is missing required fields."
                 )
 
-            cls._validate_media(
+            self._validate_media(
                 item["media_id"],
                 item["media_type"],
                 item["source_name"],
