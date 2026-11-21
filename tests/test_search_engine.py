@@ -102,3 +102,25 @@ def test_invalid_limit_is_rejected(search_engine):
 def test_invalid_threshold_is_rejected(search_engine):
     with pytest.raises(ValueError):
         search_engine.fuzzy_search("البرمجة", threshold=101)
+
+def test_fuzzy_search_respects_result_limit(search_engine):
+    results = search_engine.fuzzy_search(
+        "البرمجة",
+        threshold=0,
+        limit=1,
+    )
+
+    assert len(results) == 1
+
+
+def test_boolean_search_limit_is_rejected(search_engine):
+    with pytest.raises(ValueError):
+        search_engine.exact_search("البرمجة", limit=True)
+
+    with pytest.raises(ValueError):
+        search_engine.fuzzy_search("البرمجة", limit=True)
+
+
+def test_boolean_fuzzy_threshold_is_rejected(search_engine):
+    with pytest.raises(ValueError):
+        search_engine.fuzzy_search("البرمجة", threshold=True)
