@@ -91,16 +91,16 @@ The Streamlit application upload limit is configured to **2 GB per file**. Actua
 
 ## System Workflow
 
-1. The user uploads a supported video file.
-2. The application identifies the video using a SHA-256 hash and stores the source file under `data/videos/`.
-3. FFmpeg extracts the video's audio and saves it under `data/audio/`.
-4. Faster-Whisper transcribes the audio in Arabic and produces timestamped segments.
-5. The transcript is saved as JSON under `data/transcripts/`.
+1. The user uploads an individual video or audio file, or selects a local folder for batch import.
+2. The application calculates a SHA-256 media identifier and stores the original source file in the appropriate media directory.
+3. FFmpeg prepares a mono 16 kHz WAV file from the video or standalone audio source.
+4. Faster-Whisper transcribes the Arabic speech and produces timestamped segments.
+5. The transcript is saved as JSON under `data/transcripts/`, and the media catalog records the source filename, type, path, and processing status.
 6. Arabic text is normalized and transcript segments are indexed in SQLite.
-7. The user reviews or edits transcript segments.
-8. The user searches the transcript using exact or fuzzy search.
-9. Search results show the matching text and its timestamps.
-10. The user can extract a selected segment as an MP4 clip and save its metadata.
+7. The user can review or edit the transcript for the currently selected media file.
+8. The user searches either the selected file or the entire indexed archive using exact or fuzzy search.
+9. Search results show the source media, matching text, and timestamps, with a preview of the original file.
+10. The user can extract a selected video segment as an MP4 clip.
 11. Transcript data and clip metadata can be exported as CSV files.
 
 ## Application Architecture
@@ -484,7 +484,7 @@ The current application initializes Faster-Whisper with the `tiny` model. The en
 
 ### Persistent files and application session
 
-Uploaded videos, original audio files, normalized audio, transcript JSON files, the SQLite database, media catalog, clip metadata, and exported clips are written to local storage. However, the current interface uses Streamlit session state for the active video and its in-memory workflow state. Persisting files on disk does **not** mean that the active video and interface state are automatically restored when the application process is restarted.
+Uploaded videos, original audio files, normalized audio, transcript JSON files, the SQLite database, media catalog, clip metadata, and exported clips are written to local storage. The active media selection and interface state still use Streamlit session state and are not automatically restored after an application restart. When a previously imported file is selected again, the application can reload its saved transcript and rebuild its search index without repeating speech recognition.
 
 ## Known Limitations
 
