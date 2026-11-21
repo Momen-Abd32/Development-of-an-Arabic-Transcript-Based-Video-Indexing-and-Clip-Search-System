@@ -20,7 +20,9 @@ from src.clips.clip_exporter import ClipExporter
 
 MAX_UPLOAD_SIZE_MB = 2048
 MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
-ALLOWED_EXTENSIONS = {".mp4", ".mkv", ".mov", ".avi", ".webm"}
+VIDEO_EXTENSIONS = {".mp4", ".mkv", ".mov", ".avi", ".webm"}
+AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"}
+ALLOWED_EXTENSIONS = VIDEO_EXTENSIONS | AUDIO_EXTENSIONS
 
 st.set_page_config(
     page_title="فهرسة الفيديو والبحث",
@@ -36,36 +38,36 @@ st.set_page_config(
 
 TEXT = {
     "ar": {
-        "page_title": "نظام فهرسة الفيديو والبحث في المقاطع",
-        "subtitle": "حوّل محتوى الفيديو العربي إلى نص قابل للبحث، واعثر على اللحظات المهمة واستخرجها بسهولة.",
+        "page_title": "نظام أرشفة وفهرسة الوسائط والبحث في محتواها",
+        "subtitle": "حوّل محتوى الفيديو والتسجيلات الصوتية العربية إلى نص قابل للبحث، واعثر على اللحظات المهمة بسهولة.",
         "language": "اللغة / Language",
         "arabic": "العربية",
         "english": "English",
         "project": "مشروع التخرج",
         "sidebar_title": "القائمة الرئيسية",
-        "sidebar_hint": "ارفع فيديو للبدء باستخدام أدوات التفريغ والبحث.",
-        "upload_tab": "رفع الفيديو",
+        "sidebar_hint": "ارفع فيديو أو ملفاً صوتياً للبدء باستخدام أدوات التفريغ والبحث.",
+        "upload_tab": "إضافة وسائط",
         "transcript_tab": "التفريغ النصي",
         "search_tab": "البحث داخل الفيديو",
         "clips_tab": "المقاطع المحفوظة",
-        "upload_title": "ارفع الفيديو",
-        "upload_help": "الصيغ المدعومة: MP4, MKV, MOV, AVI, WEBM — الحد الأقصى 2 GB",
-        "choose_video": "اختر ملف فيديو",
-        "unsupported": "صيغة الفيديو غير مدعومة.",
-        "too_large": "حجم الفيديو يتجاوز الحد الأقصى البالغ 2 GB.",
+        "upload_title": "ارفع فيديو أو ملفاً صوتياً",
+        "upload_help": "الفيديو: MP4, MKV, MOV, AVI, WEBM | الصوت: MP3, WAV, M4A, AAC, FLAC, OGG — الحد الأقصى 2 GB",
+        "choose_video": "اختر ملف فيديو أو صوت",
+        "unsupported": "صيغة الملف غير مدعومة.",
+        "too_large": "حجم الملف يتجاوز الحد الأقصى البالغ 2 GB.",
         "save_failed": "تعذر حفظ الفيديو",
-        "uploaded": "تم رفع الفيديو بنجاح.",
+        "uploaded": "تمت إضافة الملف بنجاح.",
         "file": "الملف",
         "size": "الحجم",
-        "video_preview": "معاينة الفيديو",
+        "video_preview": "معاينة الملف",
         "transcription_title": "التفريغ الصوتي باللغة العربية",
-        "transcription_desc": "استخرج الصوت من الفيديو ثم حوّله إلى نص مع التوقيتات.",
+        "transcription_desc": "جهّز الصوت من الفيديو أو الملف الصوتي ثم حوّله إلى نص عربي مع التوقيتات.",
         "start_transcription": "بدء التفريغ",
         "extracting_audio": "جاري استخراج الصوت...",
         "loading_model": "جاري تحميل نموذج Whisper والتفريغ...",
         "transcription_done": "اكتمل التفريغ. عدد المقاطع النصية",
         "transcription_failed": "فشل التفريغ",
-        "need_video": "ارفع فيديو أولاً حتى تتمكن من استخدام هذه الأدوات.",
+        "need_video": "أضف فيديو أو ملفاً صوتياً أولاً حتى تتمكن من استخدام هذه الأدوات.",
         "transcript_title": "مراجعة وتعديل النص",
         "transcript_desc": "راجع المقاطع النصية وعدّل الكلمات عند الحاجة، ثم احفظ التغييرات لإعادة فهرستها.",
         "segment": "المقطع",
@@ -109,38 +111,39 @@ TEXT = {
         "status_transcribed": "اكتمل التفريغ",
         "video_status": "حالة الفيديو",
         "duration_note": "تظهر نتائج البحث مع توقيتاتها لتسهيل الوصول إلى اللحظة المطلوبة.",
+        "audio_clip_unavailable": "استخراج المقاطع متاح للفيديوهات فقط؛ يمكن البحث في هذا التسجيل الصوتي وعرض توقيتاته.",
     },
     "en": {
-        "page_title": "Arabic Video Indexing & Clip Search",
-        "subtitle": "Turn Arabic video content into searchable text, find important moments, and extract clips with ease.",
+        "page_title": "Arabic Media Archiving & Search",
+        "subtitle": "Turn Arabic video and audio content into searchable text and find important moments with ease.",
         "language": "Language / اللغة",
         "arabic": "العربية",
         "english": "English",
         "project": "Graduation Project",
         "sidebar_title": "Main Menu",
-        "sidebar_hint": "Upload a video to start using transcription and search tools.",
-        "upload_tab": "Video Upload",
+        "sidebar_hint": "Upload a video or audio file to start transcription and search.",
+        "upload_tab": "Add Media",
         "transcript_tab": "Transcript",
         "search_tab": "Video Search",
         "clips_tab": "Saved Clips",
-        "upload_title": "Upload a Video",
-        "upload_help": "Supported formats: MP4, MKV, MOV, AVI, WEBM — Maximum size: 2 GB",
-        "choose_video": "Choose a video file",
-        "unsupported": "Unsupported video format.",
-        "too_large": "The video exceeds the maximum upload size of 2 GB.",
+        "upload_title": "Upload a Video or Audio File",
+        "upload_help": "Video: MP4, MKV, MOV, AVI, WEBM | Audio: MP3, WAV, M4A, AAC, FLAC, OGG — Maximum size: 2 GB",
+        "choose_video": "Choose a video or audio file",
+        "unsupported": "Unsupported media format.",
+        "too_large": "The file exceeds the maximum upload size of 2 GB.",
         "save_failed": "Failed to save video",
-        "uploaded": "Video uploaded successfully.",
+        "uploaded": "Media file added successfully.",
         "file": "File",
         "size": "Size",
-        "video_preview": "Video Preview",
+        "video_preview": "Media Preview",
         "transcription_title": "Arabic Speech Transcription",
-        "transcription_desc": "Extract audio from the video and convert speech into timestamped text.",
+        "transcription_desc": "Prepare audio from a video or audio file and convert speech into timestamped Arabic text.",
         "start_transcription": "Start Transcription",
         "extracting_audio": "Extracting audio...",
         "loading_model": "Loading Whisper model and transcribing...",
         "transcription_done": "Transcription completed. Number of segments",
         "transcription_failed": "Transcription failed",
-        "need_video": "Upload a video first to use these tools.",
+        "need_video": "Upload a video or audio file first to use these tools.",
         "transcript_title": "Review and Edit Transcript",
         "transcript_desc": "Review transcript segments, edit words when needed, and save changes to rebuild the search index.",
         "segment": "Segment",
@@ -183,7 +186,8 @@ TEXT = {
         "status_uploaded": "Video uploaded",
         "status_transcribed": "Transcription complete",
         "video_status": "Video Status",
-        "duration_note": "Search results include timestamps to help you jump to the required moment.",
+        "duration_note": "Search results include timestamps to help you locate the required moment.",
+        "audio_clip_unavailable": "Clip extraction is available for video files only. You can still search this audio recording and view its timestamps.",
     },
 }
 
@@ -197,6 +201,12 @@ if "language" not in st.session_state:
 
 if "video_path" not in st.session_state:
     st.session_state.video_path = None
+
+if "media_path" not in st.session_state:
+    st.session_state.media_path = None
+
+if "media_type" not in st.session_state:
+    st.session_state.media_type = None
 
 if "video_id" not in st.session_state:
     st.session_state.video_id = None
@@ -430,8 +440,7 @@ tab_upload, tab_transcript, tab_search, tab_clips = st.tabs(
 
 
 # --------------------------------------------------
-# 1. Upload and transcription
-# --------------------------------------------------
+# 1. Media upload and transcription
 
 with tab_upload:
     st.subheader("📤 " + t["upload_title"])
@@ -439,13 +448,16 @@ with tab_upload:
 
     uploaded_file = st.file_uploader(
         t["choose_video"],
-        type=["mp4", "mkv", "mov", "avi", "webm"],
+        type=[extension.lstrip(".") for extension in sorted(ALLOWED_EXTENSIONS)],
         max_upload_size=MAX_UPLOAD_SIZE_MB,
         key="video_uploader",
     )
 
     if uploaded_file is not None:
         file_extension = Path(uploaded_file.name).suffix.lower()
+        media_type = (
+            "video" if file_extension in VIDEO_EXTENSIONS else "audio"
+        )
 
         if file_extension not in ALLOWED_EXTENSIONS:
             st.error(t["unsupported"])
@@ -454,12 +466,21 @@ with tab_upload:
         else:
             file_buffer = uploaded_file.getbuffer()
             try:
-                video_id = hashlib.sha256(file_buffer).hexdigest()
-                video_path = Path("data/videos") / f"{video_id}{file_extension}"
-                video_path.parent.mkdir(parents=True, exist_ok=True)
+                media_id = hashlib.sha256(file_buffer).hexdigest()
+                if media_type == "video":
+                    media_path = (
+                        Path("data/videos") / f"{media_id}{file_extension}"
+                    )
+                else:
+                    media_path = (
+                        Path("data/audio/originals")
+                        / f"{media_id}{file_extension}"
+                    )
 
-                if not video_path.exists():
-                    with video_path.open("wb") as output_file:
+                media_path.parent.mkdir(parents=True, exist_ok=True)
+
+                if not media_path.exists():
+                    with media_path.open("wb") as output_file:
                         output_file.write(file_buffer)
             except Exception as error:
                 st.error(f'{t["save_failed"]}: {error}')
@@ -467,40 +488,57 @@ with tab_upload:
             finally:
                 file_buffer.release()
 
-            if st.session_state.video_id != video_id:
-                st.session_state.video_id = video_id
+            if (
+                st.session_state.video_id != media_id
+                or st.session_state.media_type != media_type
+            ):
+                st.session_state.video_id = media_id
                 st.session_state.transcribed = False
                 st.session_state.segments = []
                 st.session_state.search_results = []
                 st.session_state.transcript_export_path = None
                 st.session_state.clips_export_path = None
 
-            st.session_state.video_path = str(video_path)
+            st.session_state.media_path = str(media_path)
+            st.session_state.media_type = media_type
+            st.session_state.video_path = (
+                str(media_path) if media_type == "video" else None
+            )
             st.success(t["uploaded"])
 
             info_col1, info_col2 = st.columns(2)
             with info_col1:
                 st.metric(t["file"], uploaded_file.name)
             with info_col2:
-                st.metric(t["size"], f"{uploaded_file.size / (1024 * 1024):.2f} MB")
+                st.metric(
+                    t["size"],
+                    f"{uploaded_file.size / (1024 * 1024):.2f} MB",
+                )
 
             st.markdown("#### " + t["video_preview"])
-            st.video(str(video_path))
+            if media_type == "video":
+                st.video(str(media_path))
+            else:
+                st.audio(str(media_path))
 
     st.divider()
     st.subheader("🎙️ " + t["transcription_title"])
     st.write(t["transcription_desc"])
 
-    if not st.session_state.video_path:
+    if not st.session_state.media_path:
         st.info(t["need_video"])
-    elif st.button(t["start_transcription"], type="primary", use_container_width=True):
-        video_id = st.session_state.video_id
-        video_path = Path(st.session_state.video_path)
-        audio_path = Path("data/audio") / f"{video_id}.wav"
+    elif st.button(
+        t["start_transcription"],
+        type="primary",
+        use_container_width=True,
+    ):
+        media_id = st.session_state.video_id
+        media_path = Path(st.session_state.media_path)
+        audio_path = Path("data/audio") / f"{media_id}.wav"
 
         try:
             with st.spinner(t["extracting_audio"]):
-                AudioExtractor.extract(str(video_path), str(audio_path))
+                AudioExtractor.prepare(str(media_path), str(audio_path))
 
             with st.spinner(t["loading_model"]):
                 engine = FasterWhisperEngine(model_size="tiny")
@@ -508,12 +546,12 @@ with tab_upload:
 
             TranscriptManager.save(
                 segments,
-                f"data/transcripts/{video_id}.json",
+                f"data/transcripts/{media_id}.json",
             )
 
             indexer = TranscriptIndexer()
             try:
-                indexer.index_segments(video_id, segments)
+                indexer.index_segments(media_id, segments)
             finally:
                 indexer.close()
 
@@ -528,7 +566,6 @@ with tab_upload:
             st.error(f'{t["transcription_failed"]}: {error}')
 
 
-# --------------------------------------------------
 # 2. Transcript editor and export
 # --------------------------------------------------
 
@@ -663,27 +700,30 @@ with tab_search:
                             text=f'{t["similarity"]}: {result["similarity"]}%',
                         )
 
-                    if st.button(
-                        "✂️ " + t["save_clip"],
-                        key=f"save_clip_{video_id}_{result['id']}",
-                    ):
-                        try:
-                            clip_path = ClipManager().create_clip(
-                                st.session_state.video_path,
-                                result["start"],
-                                result["end"],
-                                f"{video_id}_clip_{result['id']}",
-                            )
-                            ClipMetadata().save_clip(
-                                video_id,
-                                str(clip_path),
-                                result["start"],
-                                result["end"],
-                                result["original_text"],
-                            )
-                            st.success(t["clip_saved"])
-                        except Exception as error:
-                            st.error(f'{t["clip_failed"]}: {error}')
+                    if st.session_state.media_type == "video":
+                        if st.button(
+                            "✂️ " + t["save_clip"],
+                            key=f"save_clip_{video_id}_{result['id']}",
+                        ):
+                            try:
+                                clip_path = ClipManager().create_clip(
+                                    st.session_state.video_path,
+                                    result["start"],
+                                    result["end"],
+                                    f"{video_id}_clip_{result['id']}",
+                                )
+                                ClipMetadata().save_clip(
+                                    video_id,
+                                    str(clip_path),
+                                    result["start"],
+                                    result["end"],
+                                    result["original_text"],
+                                )
+                                st.success(t["clip_saved"])
+                            except Exception as error:
+                                st.error(f'{t["clip_failed"]}: {error}')
+                    else:
+                        st.caption(t["audio_clip_unavailable"])
         else:
             st.info(t["no_results"])
 
@@ -698,6 +738,8 @@ with tab_clips:
 
     if not st.session_state.video_id:
         st.info(t["need_video"])
+    elif st.session_state.media_type != "video":
+        st.info(t["audio_clip_unavailable"])
     else:
         video_id = st.session_state.video_id
 
