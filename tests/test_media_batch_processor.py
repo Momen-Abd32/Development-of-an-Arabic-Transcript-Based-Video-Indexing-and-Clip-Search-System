@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from src.media.batch_processor import MediaBatchProcessor
@@ -57,6 +58,7 @@ def test_batch_processor_handles_audio_and_video(tmp_path, monkeypatch):
         audio_dir=str(tmp_path / "normalized_audio"),
         transcript_dir=str(tmp_path / "transcripts"),
         database_path=str(tmp_path / "database.db"),
+        catalog_path=str(tmp_path / "media_catalog.json"),
     )
     results = processor.process_directory(str(input_dir))
 
@@ -65,6 +67,11 @@ def test_batch_processor_handles_audio_and_video(tmp_path, monkeypatch):
     assert all(item["segments"] == 1 for item in results)
     assert len(FakeIndexer.indexed) == 2
     assert len(list((tmp_path / "transcripts").glob("*.json"))) == 2
+    catalog = json.loads(
+        (tmp_path / "media_catalog.json").read_text(encoding="utf-8")
+    )
+    assert len(catalog) == 2
+    assert all(item["status"] == "transcribed" for item in catalog)
 
 
 def test_batch_processor_skips_duplicate_content_in_same_batch(
@@ -111,6 +118,7 @@ def test_batch_processor_skips_duplicate_content_in_same_batch(
         audio_dir=str(tmp_path / "audio"),
         transcript_dir=str(tmp_path / "transcripts"),
         database_path=str(tmp_path / "database.db"),
+        catalog_path=str(tmp_path / "media_catalog.json"),
     )
     results = processor.process_directory(str(input_dir))
 
@@ -119,6 +127,10 @@ def test_batch_processor_skips_duplicate_content_in_same_batch(
         "duplicate_in_batch",
     ]
     assert len(FakeIndexer.indexed) == 1
+    catalog = json.loads(
+        (tmp_path / "media_catalog.json").read_text(encoding="utf-8")
+    )
+    assert catalog[0]["status"] == "transcribed"
 
 
 def test_batch_processor_reuses_existing_transcript(tmp_path, monkeypatch):
@@ -162,6 +174,7 @@ def test_batch_processor_reuses_existing_transcript(tmp_path, monkeypatch):
         audio_dir=str(tmp_path / "audio"),
         transcript_dir=str(transcript_dir),
         database_path=str(tmp_path / "database.db"),
+        catalog_path=str(tmp_path / "media_catalog.json"),
     )
     results = processor.process_directory(str(input_dir))
 
@@ -238,6 +251,7 @@ def test_batch_processor_retries_duplicate_after_first_failure(
         audio_dir=str(tmp_path / "audio"),
         transcript_dir=str(tmp_path / "transcripts"),
         database_path=str(tmp_path / "database.db"),
+        catalog_path=str(tmp_path / "media_catalog.json"),
     )
     results = processor.process_directory(str(input_dir))
 
