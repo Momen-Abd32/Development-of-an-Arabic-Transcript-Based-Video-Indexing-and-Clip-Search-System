@@ -51,6 +51,7 @@ class AudioExtractor:
             raise RuntimeError("Extracted audio file is empty.")
 
         return output
+
     @staticmethod
     def extract(video_path: str, output_path: str) -> Path:
         """Backward-compatible alias for extracting audio from a video."""
