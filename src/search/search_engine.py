@@ -113,14 +113,14 @@ class SearchEngine:
                 result["similarity"] = round(score, 2)
                 heapq.heappush(
                     best_results,
-                    (score, result["id"], result),
+                    (score, -result["id"], result),
                 )
 
                 if len(best_results) > limit:
                     heapq.heappop(best_results)
 
         best_results.sort(
-            key=lambda item: (item[0], item[1]),
+            key=lambda item: (-item[0], -item[1]),
             reverse=True,
         )
         return [item[2] for item in best_results]
