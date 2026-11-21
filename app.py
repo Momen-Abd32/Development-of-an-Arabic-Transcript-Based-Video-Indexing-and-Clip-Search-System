@@ -512,6 +512,27 @@ with tab_upload:
                 st.session_state.transcript_export_path = None
                 st.session_state.clips_export_path = None
 
+                existing_transcript = Path(
+                    f"data/transcripts/{media_id}.json"
+                )
+                if existing_transcript.exists():
+                    try:
+                        saved_segments = TranscriptManager.load(
+                            str(existing_transcript)
+                        )
+                        indexer = TranscriptIndexer()
+                        try:
+                            indexer.index_segments(media_id, saved_segments)
+                        finally:
+                            indexer.close()
+
+                        st.session_state.segments = saved_segments
+                        st.session_state.transcribed = True
+                    except Exception as error:
+                        st.warning(
+                            f'{t["no_transcript"]} {error}'
+                        )
+
             st.session_state.media_path = str(media_path)
             st.session_state.media_type = media_type
             st.session_state.video_path = (
