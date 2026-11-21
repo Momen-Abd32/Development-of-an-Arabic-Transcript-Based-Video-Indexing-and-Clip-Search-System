@@ -1,3 +1,5 @@
+import heapq
+
 from rapidfuzz import fuzz
 from src.database.database_manager import DatabaseManager
 from src.indexing.text_processor import ArabicTextProcessor
@@ -10,7 +12,7 @@ class SearchEngine:
 
     @staticmethod
     def _validate_limit(limit: int):
-        if not isinstance(limit, int) or limit <= 0:
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
             raise ValueError("Limit must be a positive integer.")
 
     def exact_search(
@@ -65,7 +67,11 @@ class SearchEngine:
 
         self._validate_limit(limit)
 
-        if not isinstance(threshold, (int, float)) or not 0 <= threshold <= 100:
+        if (
+            isinstance(threshold, bool)
+            or not isinstance(threshold, (int, float))
+            or not 0 <= threshold <= 100
+        ):
             raise ValueError("Threshold must be between 0 and 100.")
 
         normalized_query = ArabicTextProcessor.normalize(query)
@@ -87,29 +93,37 @@ class SearchEngine:
 
         cursor = self.db.connection.execute(sql, params)
 
-        results = []
+        # Stream rows from SQLite and retain only the best matches. This keeps
+        # memory usage bounded by the requested result limit for large archives.
+        best_results = []
 
-        for row in cursor.fetchall():
-            row = dict(row)
+        for row in cursor:
+            result = dict(row)
+            normalized_text = result["normalized_text"]
 
-            if not row["normalized_text"]:
+            if not normalized_text:
                 continue
 
             score = fuzz.partial_ratio(
                 normalized_query,
-                row["normalized_text"],
+                normalized_text,
             )
 
             if score >= threshold:
-                row["similarity"] = round(score, 2)
-                results.append(row)
+                result["similarity"] = round(score, 2)
+                heapq.heappush(
+                    best_results,
+                    (score, result["id"], result),
+                )
 
-        results.sort(
-            key=lambda item: item["similarity"],
+                if len(best_results) > limit:
+                    heapq.heappop(best_results)
+
+        best_results.sort(
+            key=lambda item: (item[0], item[1]),
             reverse=True,
         )
-
-        return results[:limit]
+        return [item[2] for item in best_results]
 
     def close(self):
         self.db.close()
