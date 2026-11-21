@@ -15,17 +15,22 @@ class MediaCatalog:
     def __init__(self, catalog_path="data/database/media_catalog.json"):
         self.catalog_path = Path(catalog_path)
 
-    def _load(self) -> list[dict]:
-        if not self.catalog_path.exists():
+    @classmethod
+    def _load(cls, catalog_path: Path) -> list[dict]:
+        if not catalog_path.exists():
             return []
 
-        data = json.loads(self.catalog_path.read_text(encoding="utf-8"))
+        data = json.loads(catalog_path.read_text(encoding="utf-8"))
         if not isinstance(data, list):
             raise ValueError("Media catalog must contain a JSON list.")
 
+        seen_ids = set()
         for index, item in enumerate(data):
             if not isinstance(item, dict):
-                raise ValueError(f"Media catalog item {index} must be an object.")
+                raise ValueError(
+                    f"Media catalog item {index} must be an object."
+                )
+
             required = {
                 "media_id",
                 "media_type",
@@ -38,6 +43,33 @@ class MediaCatalog:
                 raise ValueError(
                     f"Media catalog item {index} is missing required fields."
                 )
+
+            cls._validate_media(
+                item["media_id"],
+                item["media_type"],
+                item["source_name"],
+                item["stored_path"],
+                item["status"],
+            )
+
+            if (
+                not isinstance(item["created_at"], str)
+                or not item["created_at"].strip()
+            ):
+                raise ValueError(
+                    f"Media catalog item {index} has an invalid creation date."
+                )
+
+            if "error" in item and not isinstance(item["error"], str):
+                raise ValueError(
+                    f"Media catalog item {index} has an invalid error message."
+                )
+
+            if item["media_id"] in seen_ids:
+                raise ValueError(
+                    f"Media catalog contains duplicate ID: {item['media_id']}"
+                )
+            seen_ids.add(item["media_id"])
 
         return data
 
@@ -77,7 +109,7 @@ class MediaCatalog:
         ):
             raise ValueError("Media ID must be a lowercase SHA-256 hash.")
 
-        if media_type not in MediaCatalog.VALID_TYPES:
+        if not isinstance(media_type, str) or media_type not in MediaCatalog.VALID_TYPES:
             raise ValueError("Media type must be 'audio' or 'video'.")
 
         if not isinstance(source_name, str) or not source_name.strip():
@@ -86,7 +118,7 @@ class MediaCatalog:
         if not isinstance(stored_path, str) or not stored_path.strip():
             raise ValueError("Stored path cannot be empty.")
 
-        if status not in MediaCatalog.VALID_STATUSES:
+        if not isinstance(status, str) or status not in MediaCatalog.VALID_STATUSES:
             raise ValueError("Invalid media processing status.")
 
     def register_media(
@@ -140,8 +172,14 @@ class MediaCatalog:
         status: str,
         error: str | None = None,
     ) -> dict:
-        if status not in self.VALID_STATUSES:
+        if not isinstance(media_id, str) or not media_id.strip():
+            raise ValueError("Media ID cannot be empty.")
+
+        if not isinstance(status, str) or status not in self.VALID_STATUSES:
             raise ValueError("Invalid media processing status.")
+
+        if error is not None and not isinstance(error, str):
+            raise TypeError("Error message must be a string or None.")
 
         items = self._load()
         record = next(
@@ -153,7 +191,7 @@ class MediaCatalog:
 
         record["status"] = status
         if error:
-            record["error"] = str(error)
+            record["error"] = error
         else:
             record.pop("error", None)
 
