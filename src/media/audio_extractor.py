@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 class AudioExtractor:
-    """Extract mono 16 kHz WAV audio from a video file."""
+    """Prepare mono 16 kHz WAV audio from video or standalone audio media."""
 
     @staticmethod
     def prepare(media_path: str, output_path: str) -> Path:
@@ -51,3 +51,7 @@ class AudioExtractor:
             raise RuntimeError("Extracted audio file is empty.")
 
         return output
+    @staticmethod
+    def extract(video_path: str, output_path: str) -> Path:
+        """Backward-compatible alias for extracting audio from a video."""
+        return AudioExtractor.prepare(video_path, output_path)
