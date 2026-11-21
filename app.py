@@ -523,7 +523,11 @@ with tab_upload:
                     media_type,
                     uploaded_file.name,
                     str(media_path),
-                    status="uploaded",
+                    status=(
+                        "transcribed"
+                        if Path(f"data/transcripts/{media_id}.json").exists()
+                        else "uploaded"
+                    ),
                 )
             except Exception as error:
                 st.error(f'{t["save_failed"]}: {error}')
@@ -687,6 +691,10 @@ with tab_search:
         key=f"search_scope_{st.session_state.video_id or 'archive'}",
     )
 
+    if st.session_state.get("search_results_scope") != search_scope:
+        st.session_state.search_results = []
+        st.session_state.search_results_scope = search_scope
+
     current_scope = search_scope == t["current_media"]
     if current_scope and not st.session_state.transcribed:
         st.info(t["no_transcript"])
@@ -731,6 +739,7 @@ with tab_search:
                         )
 
                     st.session_state.search_results = results
+                    st.session_state.search_results_scope = search_scope
                 except Exception as error:
                     st.error(f'{t["search_failed"]}: {error}')
                 finally:
