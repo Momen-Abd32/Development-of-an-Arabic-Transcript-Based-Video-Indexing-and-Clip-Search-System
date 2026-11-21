@@ -4,6 +4,7 @@ from pathlib import Path
 import streamlit as st
 
 from src.media.audio_extractor import AudioExtractor
+from src.media.media_catalog import MediaCatalog
 from src.transcription.faster_whisper_engine import FasterWhisperEngine
 from src.transcription.transcript_manager import TranscriptManager
 from src.transcription.transcript_exporter import TranscriptExporter
@@ -112,6 +113,12 @@ TEXT = {
         "video_status": "حالة الملف",
         "duration_note": "تظهر نتائج البحث مع توقيتاتها لتسهيل الوصول إلى اللحظة المطلوبة.",
         "audio_clip_unavailable": "استخراج المقاطع متاح للفيديوهات فقط؛ يمكن البحث في هذا التسجيل الصوتي وعرض توقيتاته.",
+        "search_scope": "نطاق البحث",
+        "current_media": "الملف الحالي",
+        "entire_archive": "كامل الأرشيف",
+        "media_source": "المصدر",
+        "media_preview": "معاينة المصدر",
+        "no_archive_media": "لا توجد ملفات مفهرسة في الأرشيف حتى الآن.",
     },
     "en": {
         "page_title": "Arabic Media Archiving & Search",
@@ -188,6 +195,12 @@ TEXT = {
         "video_status": "Media Status",
         "duration_note": "Search results include timestamps to help you locate the required moment.",
         "audio_clip_unavailable": "Clip extraction is available for video files only. You can still search this audio recording and view its timestamps.",
+        "search_scope": "Search scope",
+        "current_media": "Current file",
+        "entire_archive": "Entire archive",
+        "media_source": "Source",
+        "media_preview": "Preview source",
+        "no_archive_media": "There are no indexed media files in the archive yet.",
     },
 }
 
@@ -504,6 +517,18 @@ with tab_upload:
             st.session_state.video_path = (
                 str(media_path) if media_type == "video" else None
             )
+            try:
+                MediaCatalog().register_media(
+                    media_id,
+                    media_type,
+                    uploaded_file.name,
+                    str(media_path),
+                    status="uploaded",
+                )
+            except Exception as error:
+                st.error(f'{t["save_failed"]}: {error}')
+                st.stop()
+
             st.success(t["uploaded"])
 
             info_col1, info_col2 = st.columns(2)
@@ -555,6 +580,7 @@ with tab_upload:
             finally:
                 indexer.close()
 
+            MediaCatalog().update_status(media_id, "transcribed")
             st.session_state.segments = segments
             st.session_state.transcribed = True
             st.session_state.search_results = []
@@ -563,6 +589,10 @@ with tab_upload:
             st.rerun()
 
         except Exception as error:
+            try:
+                MediaCatalog().update_status(media_id, "failed", str(error))
+            except KeyError:
+                pass
             st.error(f'{t["transcription_failed"]}: {error}')
 
 
@@ -645,23 +675,38 @@ with tab_transcript:
 
 # --------------------------------------------------
 # 3. Search and clip creation
-# --------------------------------------------------
 
 with tab_search:
     st.subheader("🔎 " + t["search_title"])
     st.write(t["search_desc"])
 
-    if not st.session_state.transcribed:
+    search_scope = st.radio(
+        t["search_scope"],
+        [t["current_media"], t["entire_archive"]],
+        horizontal=True,
+        key=f"search_scope_{st.session_state.video_id or 'archive'}",
+    )
+
+    current_scope = search_scope == t["current_media"]
+    if current_scope and not st.session_state.transcribed:
         st.info(t["no_transcript"])
     else:
-        video_id = st.session_state.video_id
+        if not current_scope and not MediaCatalog().get_all():
+            st.info(t["no_archive_media"])
 
-        query = st.text_input(t["query"], key=f"search_query_{video_id}")
+        scope_key = (
+            st.session_state.video_id if current_scope
+            else "entire_archive"
+        )
+        query = st.text_input(
+            t["query"],
+            key=f"search_query_{scope_key}",
+        )
         search_type = st.radio(
             t["search_type"],
             [t["exact"], t["fuzzy"]],
             horizontal=True,
-            key=f"search_type_{video_id}",
+            key=f"search_type_{scope_key}",
         )
 
         if st.button(t["search_button"], type="primary"):
@@ -671,10 +716,19 @@ with tab_search:
                 search_engine = None
                 try:
                     search_engine = SearchEngine()
+                    media_filter = (
+                        st.session_state.video_id if current_scope else None
+                    )
                     if search_type == t["exact"]:
-                        results = search_engine.exact_search(query, video_id=video_id)
+                        results = search_engine.exact_search(
+                            query,
+                            video_id=media_filter,
+                        )
                     else:
-                        results = search_engine.fuzzy_search(query, video_id=video_id)
+                        results = search_engine.fuzzy_search(
+                            query,
+                            video_id=media_filter,
+                        )
 
                     st.session_state.search_results = results
                 except Exception as error:
@@ -686,34 +740,65 @@ with tab_search:
         st.caption(t["duration_note"])
 
         if st.session_state.search_results:
-            st.markdown(f"### {t['results']} ({len(st.session_state.search_results)})")
+            st.markdown(
+                f"### {t['results']} ({len(st.session_state.search_results)})"
+            )
 
+            catalog = MediaCatalog()
             for result in st.session_state.search_results:
                 with st.container(border=True):
+                    media_id = result["video_id"]
+                    media_record = catalog.get_by_id(media_id)
+                    media_path = None
+                    media_type = None
+                    source_name = media_id[:12]
+
+                    if media_record:
+                        media_path = Path(media_record["stored_path"])
+                        media_type = media_record["media_type"]
+                        source_name = media_record["source_name"]
+                    elif (
+                        media_id == st.session_state.video_id
+                        and st.session_state.media_path
+                    ):
+                        media_path = Path(st.session_state.media_path)
+                        media_type = st.session_state.media_type
+
+                    st.caption(f'{t["media_source"]}: {source_name}')
                     st.markdown(f'**{t["text"]}:** {result["original_text"]}')
                     st.markdown(
                         f'**{t["time"]}:** {result["start"]}s – {result["end"]}s'
                     )
+
                     if "similarity" in result:
                         st.progress(
                             max(0, min(100, int(result["similarity"]))) / 100,
                             text=f'{t["similarity"]}: {result["similarity"]}%',
                         )
 
-                    if st.session_state.media_type == "video":
+                    if media_path and media_path.exists():
+                        with st.expander(t["media_preview"]):
+                            if media_type == "video":
+                                st.video(str(media_path))
+                            else:
+                                st.audio(str(media_path))
+                    else:
+                        st.caption(t["missing_clip"])
+
+                    if media_type == "video" and media_path and media_path.exists():
                         if st.button(
                             "✂️ " + t["save_clip"],
-                            key=f"save_clip_{video_id}_{result['id']}",
+                            key=f"save_clip_{media_id}_{result['id']}",
                         ):
                             try:
                                 clip_path = ClipManager().create_clip(
-                                    st.session_state.video_path,
+                                    str(media_path),
                                     result["start"],
                                     result["end"],
-                                    f"{video_id}_clip_{result['id']}",
+                                    f"{media_id}_clip_{result['id']}",
                                 )
                                 ClipMetadata().save_clip(
-                                    video_id,
+                                    media_id,
                                     str(clip_path),
                                     result["start"],
                                     result["end"],
@@ -722,13 +807,12 @@ with tab_search:
                                 st.success(t["clip_saved"])
                             except Exception as error:
                                 st.error(f'{t["clip_failed"]}: {error}')
-                    else:
+                    elif media_type == "audio":
                         st.caption(t["audio_clip_unavailable"])
         else:
             st.info(t["no_results"])
 
 
-# --------------------------------------------------
 # 4. Saved clips
 # --------------------------------------------------
 
