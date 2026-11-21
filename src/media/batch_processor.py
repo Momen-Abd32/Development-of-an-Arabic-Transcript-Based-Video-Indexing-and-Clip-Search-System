@@ -62,6 +62,10 @@ class MediaBatchProcessor:
         destination.parent.mkdir(parents=True, exist_ok=True)
 
         if source.resolve() == destination.resolve():
+            if MediaBatchProcessor._calculate_sha256(source) != expected_sha256:
+                raise RuntimeError(
+                    "Source media changed while it was being imported."
+                )
             return destination
 
         if (
