@@ -130,8 +130,6 @@ class MediaBatchProcessor:
                     })
                     continue
 
-                seen_hashes.add(media_id)
-
                 if media_type == "video":
                     stored_source = self.video_dir / (
                         f"{media_id}{source.suffix.lower()}"
@@ -148,6 +146,7 @@ class MediaBatchProcessor:
                 if transcript_path.exists():
                     segments = TranscriptManager.load(str(transcript_path))
                     self._index(media_id, segments)
+                    seen_hashes.add(media_id)
                     results.append({
                         "source": str(source),
                         "media_id": media_id,
@@ -170,6 +169,7 @@ class MediaBatchProcessor:
                 segments = engine.transcribe(str(audio_path))
                 TranscriptManager.save(segments, str(transcript_path))
                 self._index(media_id, segments)
+                seen_hashes.add(media_id)
 
                 results.append({
                     "source": str(source),
@@ -182,6 +182,7 @@ class MediaBatchProcessor:
             except Exception as error:
                 results.append({
                     "source": str(source),
+                    "media_id": media_id if "media_id" in locals() else None,
                     "media_type": media_type,
                     "status": "failed",
                     "segments": 0,
