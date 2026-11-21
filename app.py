@@ -1,4 +1,6 @@
 import hashlib
+import os
+import tempfile
 from pathlib import Path
 
 import streamlit as st
@@ -24,6 +26,15 @@ MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".mov", ".avi", ".webm"}
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"}
 ALLOWED_EXTENSIONS = VIDEO_EXTENSIONS | AUDIO_EXTENSIONS
+
+
+def calculate_file_sha256(file_path: Path) -> str:
+    digest = hashlib.sha256()
+    with file_path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
 
 st.set_page_config(
     page_title="فهرسة الفيديو والبحث",
@@ -492,9 +503,38 @@ with tab_upload:
 
                 media_path.parent.mkdir(parents=True, exist_ok=True)
 
-                if not media_path.exists():
-                    with media_path.open("wb") as output_file:
-                        output_file.write(file_buffer)
+                stored_file_is_valid = (
+                    media_path.is_file()
+                    and calculate_file_sha256(media_path) == media_id
+                )
+
+                if not stored_file_is_valid:
+                    temporary_path = None
+                    try:
+                        file_descriptor, temporary_name = tempfile.mkstemp(
+                            prefix=f".{media_id}.",
+                            suffix=file_extension,
+                            dir=media_path.parent,
+                        )
+                        temporary_path = Path(temporary_name)
+
+                        with os.fdopen(file_descriptor, "wb") as output_file:
+                            output_file.write(file_buffer)
+                            output_file.flush()
+                            os.fsync(output_file.fileno())
+
+                        if calculate_file_sha256(temporary_path) != media_id:
+                            raise RuntimeError(
+                                "Uploaded media changed while being saved."
+                            )
+
+                        os.replace(temporary_path, media_path)
+                    finally:
+                        if (
+                            temporary_path is not None
+                            and temporary_path.exists()
+                        ):
+                            temporary_path.unlink()
             except Exception as error:
                 st.error(f'{t["save_failed"]}: {error}')
                 st.stop()
@@ -546,7 +586,7 @@ with tab_upload:
                     str(media_path),
                     status=(
                         "transcribed"
-                        if Path(f"data/transcripts/{media_id}.json").exists()
+                        if st.session_state.transcribed
                         else "uploaded"
                     ),
                 )
@@ -587,6 +627,8 @@ with tab_upload:
         audio_path = Path("data/audio") / f"{media_id}.wav"
 
         try:
+            MediaCatalog().update_status(media_id, "processing")
+
             with st.spinner(t["extracting_audio"]):
                 AudioExtractor.prepare(str(media_path), str(audio_path))
 
