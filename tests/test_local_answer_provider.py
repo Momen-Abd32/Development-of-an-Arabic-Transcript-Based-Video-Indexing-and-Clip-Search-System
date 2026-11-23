@@ -66,6 +66,7 @@ def test_ollama_provider_posts_question_and_bounded_evidence_to_loopback(monkeyp
     assert captured["payload"]["stream"] is False
     assert captured["payload"]["format"] == "json"
     assert captured["payload"]["messages"][1]["content"].find("وصلت الشحنة") >= 0
+    assert "untrusted data" in captured["payload"]["messages"][0]["content"]
     assert isinstance(captured["handlers"][0], provider_module.ProxyHandler)
     assert captured["handlers"][0].proxies == {}
 
