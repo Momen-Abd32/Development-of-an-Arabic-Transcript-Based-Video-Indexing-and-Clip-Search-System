@@ -8,6 +8,7 @@ import shutil
 import sqlite3
 import tempfile
 import uuid
+import unicodedata
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -201,14 +202,19 @@ class ArchiveBackup:
 
             expected_names = {"manifest.json"}
             seen_paths = set()
+            seen_portable_paths = set()
             for item in manifest["files"]:
                 if not isinstance(item, dict):
                     raise ValueError("Backup manifest file entries must be objects.")
                 relative = item.get("path")
                 cls._safe_archive_path(relative)
-                if relative in seen_paths:
-                    raise ValueError("Backup manifest contains duplicate file paths.")
+                portable_path = unicodedata.normalize("NFC", relative).casefold()
+                if relative in seen_paths or portable_path in seen_portable_paths:
+                    raise ValueError(
+                        "Backup manifest contains duplicate or cross-platform colliding paths."
+                    )
                 seen_paths.add(relative)
+                seen_portable_paths.add(portable_path)
                 expected_names.add(relative)
 
                 expected_hash = item.get("sha256")
