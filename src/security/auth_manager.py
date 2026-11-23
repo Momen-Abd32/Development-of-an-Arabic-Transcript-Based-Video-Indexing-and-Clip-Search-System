@@ -249,7 +249,7 @@ class AuthManager:
             return None
         normalized = username.strip().lower()
         username_valid = bool(self.USERNAME_PATTERN.fullmatch(normalized))
-        attempt_key = (normalized[:64] or "<invalid>")
+        attempt_key = normalized if username_valid else "<invalid>"
         now = datetime.now(timezone.utc)
         cutoff = (now - timedelta(minutes=self.lockout_minutes)).isoformat()
         attempts = self.connection.execute(
