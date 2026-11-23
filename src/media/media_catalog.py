@@ -2,7 +2,7 @@ import json
 import os
 import re
 import tempfile
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from src.media.audit_log import AuditLog
@@ -347,12 +347,25 @@ class MediaCatalog:
         self,
         collection: str | None = None,
         tags: list[str] | None = None,
+        media_type: str | None = None,
+        source_contains: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> list[dict]:
-        """Filter catalog records by collection and all requested tags."""
+        """Filter catalog records by organization, source, type, and added date."""
         if collection is not None and (
             not isinstance(collection, str) or not collection.strip()
         ):
             raise ValueError("Collection filter must be a non-empty string.")
+        if media_type is not None and media_type not in self.VALID_TYPES:
+            raise ValueError("Media type filter must be 'audio' or 'video'.")
+        if source_contains is not None and not isinstance(source_contains, str):
+            raise TypeError("Source filter must be a string or None.")
+        parsed_start = date.fromisoformat(start_date) if start_date else None
+        parsed_end = date.fromisoformat(end_date) if end_date else None
+        if parsed_start and parsed_end and parsed_start > parsed_end:
+            raise ValueError("Start date cannot be after end date.")
+
         required_tags = self._normalize_tags(tags or [])
         records = self._load()
         filtered = []
@@ -360,6 +373,15 @@ class MediaCatalog:
             if collection is not None and (
                 item.get("collection", "").casefold() != collection.strip().casefold()
             ):
+                continue
+            if media_type is not None and item["media_type"] != media_type:
+                continue
+            if source_contains and source_contains.casefold() not in item["source_name"].casefold():
+                continue
+            created = item["created_at"][:10]
+            if parsed_start and created < parsed_start.isoformat():
+                continue
+            if parsed_end and created > parsed_end.isoformat():
                 continue
             item_tags = {tag.casefold() for tag in item.get("tags", [])}
             if not all(tag.casefold() in item_tags for tag in required_tags):
