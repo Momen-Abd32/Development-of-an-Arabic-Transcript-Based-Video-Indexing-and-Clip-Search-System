@@ -76,6 +76,7 @@ def main() -> int:
     report = {
         "database": args.database,
         "dataset": str(args.dataset),
+        "model": provider.model_name,
         "top_k": args.top_k,
         **evaluate_rankings(cases, rankings, k=args.top_k),
     }
