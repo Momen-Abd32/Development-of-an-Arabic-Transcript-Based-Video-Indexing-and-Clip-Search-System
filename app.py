@@ -292,7 +292,7 @@ TEXT = {
         "queue_progress": "Progress",
         "queue_status": "Status",
         "queue_path_required": "Enter a valid folder path on the application host.",
-        "queue_note": "Run a job manually here, or start an independent worker with python scripts/run_processing_worker.py so processing continues without an open browser. Cancelling an active job is not supported yet.",
+        "queue_note": "Run a job manually here, or start an independent worker with python scripts/run_processing_worker.py so processing continues without an open browser. Active jobs can be asked to cancel safely after the current file finishes.",
         "archive_title": "Organize the Archive",
         "archive_desc": "Organize media into collections and add tags for easier archive management.",
         "archive_media": "Select an archive item",
