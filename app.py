@@ -174,7 +174,7 @@ TEXT = {
         "visual_search_tab": "البحث البصري",
         "visual_play_at_time": "معاينة الفيديو عند هذا التوقيت",
         "visual_search_title": "البحث البصري داخل الفيديو",
-        "visual_skipped": "تم تجاوز فيديوهات بلا لقطات",
+        "visual_skipped": "تم تجاوز فيديوهات لأن ملف المصدر مفقود",
         "visual_search_hint": "ابحث بوصف نصي عربي أو بصورة مرجعية. يتطلب بناء فهرس اللقطات أولاً وتثبيت المتطلبات الاختيارية؛ يستخدم النموذج متعدد اللغات CLIP لمقارنة النصوص بالصور، وتُحفظ توقيتات الإطارات من FFmpeg.",
         "visual_time_note": "التوقيت مأخوذ من طوابع الإطارات التي يعيدها FFmpeg.",
         "visual_search_query": "صف المشهد الذي تبحث عنه",
@@ -364,7 +364,7 @@ TEXT = {
         "visual_search_tab": "Visual Search",
         "visual_play_at_time": "Preview video at this timestamp",
         "visual_search_title": "Visual Video Search",
-        "visual_skipped": "Videos skipped (no keyframes)",
+        "visual_skipped": "Videos skipped (source file missing)",
         "visual_search_hint": "Search with an Arabic text description or a reference image. Build the keyframe index first and install the optional dependencies; multilingual CLIP compares text and images in a shared embedding space.",
         "visual_time_note": "Timestamps come from FFmpeg frame presentation timestamps.",
         "visual_search_query": "Describe the scene you are looking for",
@@ -1430,8 +1430,21 @@ with tab_visual:
             for position, record in enumerate(visual_media_records, start=1):
                 frame_dir = Path("data/keyframes") / record["media_id"]
                 frames = sorted(frame_dir.glob("keyframe_*.jpg"))
-                if not frames:
-                    skipped += 1
+                source_path = Path(record["stored_path"])
+                if not frames or not source_path.is_file():
+                    if not source_path.is_file():
+                        skipped += 1
+                        progress.progress(position / max(len(visual_media_records), 1))
+                        continue
+                    timestamped_frames = KeyframeExtractor.extract(
+                        source_path,
+                        frame_dir,
+                        return_timestamps=True,
+                    )
+                    visual_index.replace_media_keyframes(
+                        record["media_id"], timestamped_frames
+                    )
+                    frames = [item[0] for item in timestamped_frames]
                 else:
                     existing_frames = visual_index.get_media_keyframes(
                         record["media_id"]
@@ -1441,11 +1454,6 @@ with tab_visual:
                     ]
                     current_paths = [str(path.resolve()) for path in frames]
                     if existing_paths != current_paths:
-                        source_path = Path(record["stored_path"])
-                        if not source_path.is_file():
-                            raise FileNotFoundError(
-                                f'Original video is missing: {source_path}'
-                            )
                         timestamped_frames = KeyframeExtractor.extract(
                             source_path,
                             frame_dir,
@@ -1454,9 +1462,9 @@ with tab_visual:
                         visual_index.replace_media_keyframes(
                             record["media_id"], timestamped_frames
                         )
-                    total_indexed += visual_index.index_media(
-                        record["media_id"], visual_provider
-                    )
+                total_indexed += visual_index.index_media(
+                    record["media_id"], visual_provider
+                )
                 progress.progress(position / max(len(visual_media_records), 1))
             st.success(
                 f'{t["visual_index_done"]}: {total_indexed} · '
