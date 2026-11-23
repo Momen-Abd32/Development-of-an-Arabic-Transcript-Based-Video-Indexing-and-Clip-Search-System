@@ -96,6 +96,7 @@ TEXT = {
         "dashboard_ffmpeg": "FFmpeg",
         "dashboard_whisper": "Faster-Whisper",
         "dashboard_semantic": "البحث الدلالي",
+        "dashboard_visual": "البحث البصري",
         "dashboard_diarization": "تمييز المتحدثين",
         "available": "متاح",
         "unavailable": "غير متاح",
@@ -286,6 +287,7 @@ TEXT = {
         "dashboard_ffmpeg": "FFmpeg",
         "dashboard_whisper": "Faster-Whisper",
         "dashboard_semantic": "Semantic Search",
+        "dashboard_visual": "Visual Search",
         "dashboard_diarization": "Speaker Diarization",
         "available": "Available",
         "unavailable": "Unavailable",
@@ -1928,6 +1930,7 @@ with tab_dashboard:
             (t["dashboard_ffmpeg"], snapshot["ffmpeg_available"]),
             (t["dashboard_whisper"], snapshot["faster_whisper_available"]),
             (t["dashboard_semantic"], snapshot["semantic_search_available"]),
+            (t["dashboard_visual"], snapshot["visual_search_available"]),
             (t["dashboard_diarization"], snapshot["diarization_available"]),
         ]
         for label, available in health_checks:
