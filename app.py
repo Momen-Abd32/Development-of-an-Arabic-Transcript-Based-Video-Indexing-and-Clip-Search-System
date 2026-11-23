@@ -8,6 +8,8 @@ import streamlit as st
 from src.media.audio_extractor import AudioExtractor
 from src.media.media_catalog import MediaCatalog
 from src.media.keyframe_extractor import KeyframeExtractor
+from src.media.processing_queue import ProcessingQueue
+from src.media.batch_processor import MediaBatchProcessor
 from src.transcription.faster_whisper_engine import FasterWhisperEngine
 from src.transcription.transcript_manager import TranscriptManager
 from src.transcription.speaker_diarizer import PyannoteSpeakerDiarizer
@@ -67,6 +69,26 @@ TEXT = {
         "search_tab": "البحث داخل الفيديو",
         "clips_tab": "المقاطع المحفوظة",
         "archive_tab": "إدارة الأرشيف",
+        "queue_tab": "قائمة المعالجة",
+        "queue_title": "مهام معالجة الوسائط",
+        "queue_desc": "أضف مجلدًا إلى قائمة المعالجة الدائمة، ثم نفّذ المهام وأعد المحاولة أو ألغِ المهام المنتظرة.",
+        "queue_input": "مسار مجلد الوسائط على الخادم",
+        "queue_add": "إضافة مهمة إلى القائمة",
+        "queue_added": "تمت إضافة المهمة إلى قائمة المعالجة.",
+        "queue_run_next": "تنفيذ المهمة التالية",
+        "queue_running": "جاري تنفيذ المهمة...",
+        "queue_completed": "اكتملت مهمة المعالجة.",
+        "queue_failed": "فشلت المهمة",
+        "queue_empty": "لا توجد مهام منتظرة.",
+        "queue_recover": "استعادة المهام المتوقفة بعد إعادة تشغيل التطبيق",
+        "queue_recovered": "عدد المهام المستعادة",
+        "queue_cancel": "إلغاء",
+        "queue_retry": "إعادة المحاولة",
+        "queue_attempts": "المحاولات",
+        "queue_progress": "التقدم",
+        "queue_status": "الحالة",
+        "queue_path_required": "أدخل مسار مجلد صحيحًا على جهاز تشغيل التطبيق.",
+        "queue_note": "المعالجة تُنفّذ حاليًا عند الضغط على زر التنفيذ داخل جلسة التطبيق؛ لا تعمل كخدمة خلفية مستقلة بعد إغلاق الواجهة.",
         "archive_title": "تنظيم الأرشيف",
         "archive_desc": "نظّم ملفات الوسائط داخل مجموعات وأضف وسومًا لتسهيل إدارتها.",
         "archive_media": "اختر ملفًا من الأرشيف",
@@ -184,6 +206,26 @@ TEXT = {
         "search_tab": "Video Search",
         "clips_tab": "Saved Clips",
         "archive_tab": "Archive Management",
+        "queue_tab": "Processing Queue",
+        "queue_title": "Media Processing Jobs",
+        "queue_desc": "Add a media folder to the durable queue, then run, retry, or cancel pending jobs.",
+        "queue_input": "Media folder path on the application host",
+        "queue_add": "Add Job to Queue",
+        "queue_added": "Job added to the processing queue.",
+        "queue_run_next": "Run Next Job",
+        "queue_running": "Processing job...",
+        "queue_completed": "Processing job completed.",
+        "queue_failed": "Job failed",
+        "queue_empty": "There are no queued jobs.",
+        "queue_recover": "Recover interrupted jobs after application restart",
+        "queue_recovered": "Jobs recovered",
+        "queue_cancel": "Cancel",
+        "queue_retry": "Retry",
+        "queue_attempts": "Attempts",
+        "queue_progress": "Progress",
+        "queue_status": "Status",
+        "queue_path_required": "Enter a valid folder path on the application host.",
+        "queue_note": "Processing currently runs when you click Run inside the app session; it is not an independent background service after the UI closes.",
         "archive_title": "Organize the Archive",
         "archive_desc": "Organize media into collections and add tags for easier archive management.",
         "archive_media": "Select an archive item",
@@ -532,8 +574,8 @@ with metric_col3:
 # Main sections
 # --------------------------------------------------
 
-tab_upload, tab_transcript, tab_search, tab_clips, tab_archive = st.tabs(
-    [t["upload_tab"], t["transcript_tab"], t["search_tab"], t["clips_tab"], t["archive_tab"]]
+tab_upload, tab_transcript, tab_search, tab_clips, tab_archive, tab_queue = st.tabs(
+    [t["upload_tab"], t["transcript_tab"], t["search_tab"], t["clips_tab"], t["archive_tab"], t["queue_tab"]]
 )
 
 
@@ -1245,6 +1287,115 @@ with tab_archive:
                 if item.get("tags"):
                     st.write(" · ".join(item["tags"]))
                 st.caption(item["media_id"])
+
+
+# 6. Durable processing queue
+# --------------------------------------------------
+
+with tab_queue:
+    st.subheader("⚙️ " + t["queue_title"])
+    st.write(t["queue_desc"])
+    st.info(t["queue_note"])
+
+    queue = ProcessingQueue()
+    with st.form("enqueue_media_folder"):
+        input_directory = st.text_input(t["queue_input"])
+        add_job = st.form_submit_button(t["queue_add"])
+
+    if add_job:
+        candidate = Path(input_directory).expanduser()
+        if not input_directory.strip() or not candidate.exists() or not candidate.is_dir():
+            st.error(t["queue_path_required"])
+        else:
+            try:
+                queue.enqueue(
+                    "batch_import",
+                    {"input_directory": str(candidate.resolve()), "recursive": True},
+                    max_attempts=3,
+                )
+                st.success(t["queue_added"])
+                st.rerun()
+            except Exception as error:
+                st.error(f'{t["queue_failed"]}: {error}')
+
+    if st.button(t["queue_recover"]):
+        try:
+            recovered = queue.recover_interrupted_jobs()
+            st.success(f'{t["queue_recovered"]}: {recovered}')
+            st.rerun()
+        except Exception as error:
+            st.error(f'{t["queue_failed"]}: {error}')
+
+    if st.button(t["queue_run_next"], type="primary"):
+        job = queue.claim_next()
+        if job is None:
+            st.info(t["queue_empty"])
+        else:
+            try:
+                queue.update_progress(job["job_id"], 5)
+                payload = job["payload"]
+                processor = MediaBatchProcessor()
+                results = processor.process_directory(
+                    payload["input_directory"],
+                    recursive=payload.get("recursive", True),
+                )
+                failures = [item for item in results if item["status"] == "failed"]
+                if failures:
+                    detail = "; ".join(
+                        f'{item["source"]}: {item.get("error", "unknown error")}'
+                        for item in failures
+                    )
+                    failed_job = queue.fail(job["job_id"], detail)
+                    st.error(f'{t["queue_failed"]}: {detail}')
+                    st.caption(
+                        f'{t["queue_attempts"]}: {failed_job["attempts"]}/'
+                        f'{failed_job["max_attempts"]}'
+                    )
+                else:
+                    queue.update_progress(job["job_id"], 95)
+                    queue.complete(job["job_id"])
+                    st.success(t["queue_completed"])
+                    st.json(results)
+                st.rerun()
+            except Exception as error:
+                try:
+                    failed_job = queue.fail(job["job_id"], str(error))
+                    st.error(f'{t["queue_failed"]}: {error}')
+                    st.caption(
+                        f'{t["queue_attempts"]}: {failed_job["attempts"]}/'
+                        f'{failed_job["max_attempts"]}'
+                    )
+                except Exception:
+                    st.error(f'{t["queue_failed"]}: {error}')
+
+    st.divider()
+    jobs = queue.list_jobs(limit=50)
+    if not jobs:
+        st.info(t["queue_empty"])
+    for job in jobs:
+        with st.container(border=True):
+            st.markdown(f'**{job["job_type"]} · {job["job_id"][:12]}**')
+            st.caption(job["payload"].get("input_directory", ""))
+            st.write(
+                f'{t["queue_status"]}: {job["status"]} · '
+                f'{t["queue_attempts"]}: {job["attempts"]}/{job["max_attempts"]}'
+            )
+            st.progress(float(job["progress"]) / 100, text=f'{t["queue_progress"]}: {job["progress"]:.0f}%')
+            if job.get("error"):
+                st.error(job["error"])
+            action_columns = st.columns(2)
+            if job["status"] == "queued":
+                with action_columns[0]:
+                    if st.button(t["queue_cancel"], key=f'cancel_{job["job_id"]}'):
+                        queue.cancel(job["job_id"])
+                        st.rerun()
+            elif job["status"] == "failed":
+                with action_columns[0]:
+                    if st.button(t["queue_retry"], key=f'retry_{job["job_id"]}'):
+                        queue.retry(job["job_id"])
+                        st.rerun()
+
+    queue.close()
 
 
 # --------------------------------------------------
