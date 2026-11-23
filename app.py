@@ -80,7 +80,7 @@ TEXT = {
         "queue_completed": "اكتملت مهمة المعالجة.",
         "queue_failed": "فشلت المهمة",
         "queue_empty": "لا توجد مهام منتظرة.",
-        "queue_recover": "استعادة المهام المتوقفة بعد إعادة تشغيل التطبيق",
+        "queue_recover": "استعادة المهام التي انتهت مهلة تشغيلها (15 دقيقة)",
         "queue_recovered": "عدد المهام المستعادة",
         "queue_cancel": "إلغاء",
         "queue_retry": "إعادة المحاولة",
@@ -217,7 +217,7 @@ TEXT = {
         "queue_completed": "Processing job completed.",
         "queue_failed": "Job failed",
         "queue_empty": "There are no queued jobs.",
-        "queue_recover": "Recover interrupted jobs after application restart",
+        "queue_recover": "Recover jobs with an expired worker lease (15 minutes)",
         "queue_recovered": "Jobs recovered",
         "queue_cancel": "Cancel",
         "queue_retry": "Retry",
@@ -1321,7 +1321,7 @@ with tab_queue:
 
     if st.button(t["queue_recover"]):
         try:
-            recovered = queue.recover_interrupted_jobs()
+            recovered = queue.recover_interrupted_jobs(900)
             st.success(f'{t["queue_recovered"]}: {recovered}')
             queue.close()
             st.rerun()
