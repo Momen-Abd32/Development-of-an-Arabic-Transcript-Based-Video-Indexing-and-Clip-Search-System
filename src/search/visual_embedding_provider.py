@@ -7,7 +7,7 @@ from pathlib import Path
 class SentenceTransformerVisualProvider:
     """Use a shared CLIP text/image space through sentence-transformers."""
 
-    def __init__(self, model_name: str = "clip-ViT-B-32-multilingual-v1"):
+    def __init__(self):
         try:
             from sentence_transformers import SentenceTransformer
         except ImportError as error:
@@ -15,15 +15,11 @@ class SentenceTransformerVisualProvider:
                 "Visual search requires sentence-transformers. "
                 "Install requirements-visual.txt first."
             ) from error
-        self.model_name = (
-            "clip-ViT-B-32+clip-ViT-B-32-multilingual-v1"
-            if model_name == "clip-ViT-B-32-multilingual-v1"
-            else model_name
-        )
+        self.model_name = "clip-ViT-B-32+clip-ViT-B-32-multilingual-v1"
         # The multilingual checkpoint is a text encoder aligned to the
         # original CLIP image encoder; it does not encode images itself.
         self._image_model = SentenceTransformer("clip-ViT-B-32")
-        self._text_model = SentenceTransformer(model_name)
+        self._text_model = SentenceTransformer("clip-ViT-B-32-multilingual-v1")
 
     @staticmethod
     def _as_vectors(encoded):
