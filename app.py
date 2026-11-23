@@ -2392,7 +2392,7 @@ with tab_notes:
                             try:
                                 note_manager.delete_note(
                                     note["note_id"],
-                                    actor="local_user",
+                                    actor=current_user["username"],
                                 )
                                 st.success(t["archive_notes_deleted"])
                                 st.rerun()
