@@ -44,6 +44,7 @@ class SearchEngine:
                 segments.start,
                 segments.end,
                 segments.original_text,
+                segments.speaker,
                 bm25(segments_fts) AS score
             FROM segments_fts
             JOIN segments ON segments.id = segments_fts.rowid
