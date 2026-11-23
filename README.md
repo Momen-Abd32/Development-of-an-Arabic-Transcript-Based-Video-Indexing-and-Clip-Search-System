@@ -321,6 +321,8 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   │   └── processing_worker.py
 │   │
 │   ├── search/
+│   │   ├── cross_modal_evaluation.py
+│   │   ├── cross_modal_search.py
 │   │   ├── evaluation.py
 │   │   ├── keyframe_search.py
 │   │   ├── search_engine.py
@@ -356,12 +358,16 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   ├── test_visual_embedding_provider.py
 │   ├── test_visual_evaluation.py
 │   ├── test_visual_search_evaluation_cli.py
+│   ├── test_cross_modal_search.py
+│   ├── test_cross_modal_evaluation.py
+│   ├── test_cross_modal_search_evaluation_cli.py
 │   ├── test_transcript_insights.py
 │   ├── test_transcript_exporter.py
 │   ├── test_transcript_manager.py
 │   └── test_speaker_diarizer.py
 │
 └── scripts/
+    ├── evaluate_cross_modal_search.py
     ├── evaluate_visual_search.py
     ├── import_media_dataset.py
     ├── run_processing_worker.py
@@ -454,6 +460,15 @@ python scripts/evaluate_visual_search.py --dataset data/evaluation/visual_querie
 ```
 
 The report includes macro Precision@k, Recall@k, and MRR. The checked-in dataset is only a template; it is not a benchmark and must not be used to claim real archive accuracy.
+
+To evaluate the **combined transcript + visual ranking**, copy `data/evaluation/cross_modal_queries.example.json` to `data/evaluation/cross_modal_queries.json`, then replace the placeholder media IDs, transcript timestamps, and frame indices with human-reviewed relevance judgments:
+
+```bash
+python scripts/evaluate_cross_modal_search.py --dataset data/evaluation/cross_modal_queries.json --top-k 5
+```
+
+This evaluator measures the fused RRF result list with macro Precision@k, Recall@k, and MRR. It requires the optional visual dependencies and a built keyframe index. The example judgments are placeholders, not measured performance.
+
 
 
 ### Optional: enable speaker diarization
