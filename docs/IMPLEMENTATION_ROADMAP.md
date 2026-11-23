@@ -38,6 +38,7 @@ Evolve the existing Arabic media archiving, transcription, indexing, and clip-se
 5. Role-based access control (administrator, editor, search-only user) before exposing the archive to multiple users.
 6. Modular ingestion adapters: local folders first, then watched folders/shared NAS, cloud storage, and supported URLs. Each adapter must validate sources and use the same deduplication and processing pipeline.
 7. Verified archive backup and restore with consistent SQLite snapshots, checksums, and safe non-overwriting restoration.
+8. Optional local account authentication and role-based permissions before enabling multi-user collaboration.
 
 ## Phase 4 — Advanced discovery and collaboration
 
@@ -62,6 +63,7 @@ The current feature branch contains initial foundations for multilingual semanti
 - A polling-based watched-folder adapter now monitors one or more local or mounted folders, waits for stable file size/mtime across consecutive scans, persists per-file signatures, and enqueues explicit file-import jobs. The normal worker dispatches those files through the existing SHA-256, transcription, and indexing pipeline.
 - A direct-media URL adapter now downloads HTTPS files only from exact operator-allowlisted hosts, validates redirects and public DNS answers, disables environment proxies, enforces content-type/size/time limits, and queues the downloaded file through the same processing pipeline. Authenticated streaming pages, playlists, and direct cloud-provider APIs remain future adapters.
 - Archive backup tooling now snapshots the `data/` and `exports/` trees, uses SQLite's online backup API for `.db` files, writes per-file SHA-256 manifests, verifies archive membership and checksums, and restores only into a new target directory. Source code, secrets, and model caches are intentionally excluded.
+- Optional account authentication now uses PBKDF2-HMAC-SHA256 password hashes with per-user salts, an additive user/attempt schema in the processing database, temporary lockout after repeated failures, and audited user/role/password changes. The UI gates upload/edit/queue/notes/admin sections by administrator, editor, and search-only roles; authentication remains opt-in and is not a replacement for SSO/MFA or a hardened public-facing identity service.
 - An append-only SQLite audit history now records media registration/status/metadata changes and processing-job lifecycle transitions, with UTC timestamps, actor labels, entity IDs, and JSON change details. The default actor is `system` until authenticated identities exist; tamper-evident storage and retention policies remain future work.
 - The archive dashboard now reports media-type and processing-state counts, stored media size, transcript file count, missing source files, SQLite integrity, and availability of FFmpeg and optional model packages. Runtime metrics are read-only and do not imply that a model is downloaded or loaded.
 - Speaker diarization requires optional pyannote dependencies, model access, and validation against representative Arabic recordings.
