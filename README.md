@@ -323,7 +323,8 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   │   ├── evaluation.py
 │   │   ├── keyframe_search.py
 │   │   ├── search_engine.py
-│   │   └── visual_embedding_provider.py
+│   │   ├── visual_embedding_provider.py
+│   │   └── visual_evaluation.py
 │   │
 │   └── transcription/
 │       ├── faster_whisper_engine.py
@@ -352,12 +353,15 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   ├── test_search_evaluation.py
 │   ├── test_search_evaluation_cli.py
 │   ├── test_visual_embedding_provider.py
+│   ├── test_visual_evaluation.py
+│   ├── test_visual_search_evaluation_cli.py
 │   ├── test_transcript_insights.py
 │   ├── test_transcript_exporter.py
 │   ├── test_transcript_manager.py
 │   └── test_speaker_diarizer.py
 │
 └── scripts/
+    ├── evaluate_visual_search.py
     ├── import_media_dataset.py
     ├── run_processing_worker.py
     └── test_transcription.py
