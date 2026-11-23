@@ -65,6 +65,16 @@ def test_fuzzy_search_finds_similar_text(search_engine):
     assert results[0]["original_text"] == "البرمجة جميلة"
 
 
+def test_fuzzy_search_orders_results_by_descending_similarity(search_engine):
+    results = search_engine.fuzzy_search(
+        "البرمجة جميله",
+        threshold=0,
+    )
+
+    scores = [result["similarity"] for result in results]
+    assert scores == sorted(scores, reverse=True)
+
+
 def test_fuzzy_search_filters_by_video(search_engine):
     results = search_engine.fuzzy_search(
         "البرمجة",
