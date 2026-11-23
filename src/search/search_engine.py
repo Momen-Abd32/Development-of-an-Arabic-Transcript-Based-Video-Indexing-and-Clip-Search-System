@@ -199,6 +199,12 @@ class SearchEngine:
         self._validate_limit(limit)
         if isinstance(rrf_k, bool) or not isinstance(rrf_k, int) or rrf_k <= 0:
             raise ValueError("RRF k must be a positive integer.")
+        if media_ids == [] or (
+            video_id is not None
+            and media_ids is not None
+            and video_id not in media_ids
+        ):
+            return []
 
         lexical = self.exact_search(query, limit=limit * 3, video_id=video_id, media_ids=media_ids, speaker=speaker)
         fuzzy = self.fuzzy_search(
