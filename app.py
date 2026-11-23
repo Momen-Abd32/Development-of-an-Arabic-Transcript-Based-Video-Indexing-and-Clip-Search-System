@@ -19,6 +19,7 @@ from src.transcription.transcript_insights import TranscriptInsights
 from src.transcription.transcript_exporter import TranscriptExporter
 from src.indexing.indexer import TranscriptIndexer
 from src.search.search_engine import SearchEngine
+from src.search.cross_modal_search import CrossModalSearch
 from src.search.keyframe_search import KeyframeSearchIndex
 from src.search.visual_embedding_provider import SentenceTransformerVisualProvider
 from src.search.embedding_provider import SentenceTransformerProvider
@@ -172,6 +173,19 @@ TEXT = {
         "extracting_keyframes": "جاري استخراج الصور المصغّرة...",
         "keyframes_failed": "تعذر استخراج الصور المصغّرة",
         "keyframes_title": "الصور المصغّرة / اللقطات الرئيسية",
+        "cross_modal_tab": "البحث الموحّد",
+        "cross_modal_title": "بحث موحّد في النصوص واللقطات",
+        "cross_modal_desc": "اجمع نتائج التفريغ النصي واللقطات البصرية في قائمة مرتبة واحدة. تُدمج الرتب ولا تُقارن درجات التشابه الخام بين النماذج.",
+        "cross_modal_query": "اكتب وصفاً أو كلمة للبحث في النصوص والمشاهد",
+        "cross_modal_button": "ابحث في النصوص واللقطات",
+        "cross_modal_include_visual": "تضمين نتائج اللقطات البصرية",
+        "cross_modal_image": "أو ابحث بصورة مرجعية (اللقطات المشابهة فقط)",
+        "cross_modal_no_results": "لا توجد نتائج. تأكد من وجود تفريغات نصية وبناء فهرس اللقطات البصري.",
+        "cross_modal_result_transcript": "نتيجة تفريغ نصي",
+        "cross_modal_result_frame": "لقطة بصرية",
+        "cross_modal_rank_score": "درجة دمج الرتب (RRF)",
+        "cross_modal_visual_note": "يتطلب البحث البصري تثبيت المتطلبات الاختيارية وبناء فهرس اللقطات من تبويب البحث البصري.",
+        "cross_modal_preview": "معاينة المصدر عند التوقيت",
         "visual_search_tab": "البحث البصري",
         "visual_play_at_time": "معاينة الفيديو عند هذا التوقيت",
         "visual_search_title": "البحث البصري داخل الفيديو",
@@ -363,6 +377,19 @@ TEXT = {
         "extracting_keyframes": "Extracting video keyframes...",
         "keyframes_failed": "Keyframe extraction failed",
         "keyframes_title": "Thumbnails / Keyframes",
+        "cross_modal_tab": "Unified Search",
+        "cross_modal_title": "Unified Transcript & Visual Search",
+        "cross_modal_desc": "Combine transcript and visual keyframe matches in one ranked list. Ranks are fused; raw similarity scores from different models are not compared.",
+        "cross_modal_query": "Search words, phrases, or describe a scene",
+        "cross_modal_button": "Search Text and Keyframes",
+        "cross_modal_include_visual": "Include visual keyframe matches",
+        "cross_modal_image": "Or search with a reference image (similar keyframes only)",
+        "cross_modal_no_results": "No results. Check that transcripts exist and the visual keyframe index has been built.",
+        "cross_modal_result_transcript": "Transcript match",
+        "cross_modal_result_frame": "Visual keyframe",
+        "cross_modal_rank_score": "Reciprocal Rank Fusion score",
+        "cross_modal_visual_note": "Visual search requires optional dependencies and a keyframe index built from the Visual Search tab.",
+        "cross_modal_preview": "Preview source at timestamp",
         "visual_search_tab": "Visual Search",
         "visual_play_at_time": "Preview video at this timestamp",
         "visual_search_title": "Visual Video Search",
@@ -686,10 +713,10 @@ with metric_col3:
 # Main sections
 # --------------------------------------------------
 
-tab_upload, tab_transcript, tab_search, tab_visual, tab_clips, tab_archive, tab_queue, tab_dashboard, tab_audit = st.tabs(
+tab_upload, tab_transcript, tab_search, tab_visual, tab_cross_modal, tab_clips, tab_archive, tab_queue, tab_dashboard, tab_audit = st.tabs(
     [
         t["upload_tab"], t["transcript_tab"], t["search_tab"],
-        t["visual_search_tab"], t["clips_tab"], t["archive_tab"],
+        t["visual_search_tab"], t["cross_modal_tab"], t["clips_tab"], t["archive_tab"],
         t["queue_tab"], t["dashboard_tab"], t["audit_tab"],
     ]
 )
@@ -1581,7 +1608,153 @@ with tab_visual:
         st.info(t["no_visual_results"])
 
 
-# 5. Saved clips
+# 5. Unified transcript + visual search
+# --------------------------------------------------
+
+with tab_cross_modal:
+    st.subheader("🔎 " + t["cross_modal_title"])
+    st.caption(t["cross_modal_desc"])
+    cross_scope = st.radio(
+        t["search_scope"],
+        [t["current_media"], t["entire_archive"]],
+        horizontal=True,
+        key="cross_modal_scope",
+    )
+    current_media_id = st.session_state.get("video_id")
+    cross_records = MediaCatalog().get_all()
+    if cross_scope == t["current_media"]:
+        if not current_media_id:
+            st.info(t["no_archive_media"])
+            cross_media_ids = []
+        else:
+            cross_media_ids = [current_media_id]
+    else:
+        cross_media_ids = [item["media_id"] for item in cross_records]
+
+    cross_query = st.text_input(
+        t["cross_modal_query"], key="cross_modal_query_input"
+    )
+    include_visual = st.checkbox(
+        t["cross_modal_include_visual"],
+        value=True,
+        key="cross_modal_include_visual_toggle",
+        help=t["cross_modal_visual_note"],
+    )
+    cross_reference = st.file_uploader(
+        t["cross_modal_image"],
+        type=["png", "jpg", "jpeg", "webp"],
+        key="cross_modal_reference_image",
+    )
+    if st.button(t["cross_modal_button"], type="primary", key="run_cross_modal_search"):
+        if not cross_query.strip() and cross_reference is None:
+            st.warning(t["empty_query"])
+        elif not cross_media_ids:
+            st.info(t["cross_modal_no_results"])
+        else:
+            cross_engine = None
+            cross_index = None
+            temporary_reference = None
+            try:
+                cross_engine = SearchEngine()
+                cross_index = KeyframeSearchIndex()
+                cross_search = CrossModalSearch(cross_engine, cross_index)
+                if cross_reference is not None:
+                    cross_provider = SentenceTransformerVisualProvider()
+                    suffix = Path(cross_reference.name).suffix or ".jpg"
+                    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp_file:
+                        temp_file.write(cross_reference.getvalue())
+                        temporary_reference = Path(temp_file.name)
+                    cross_results = cross_search.search_image(
+                        temporary_reference,
+                        cross_provider,
+                        media_ids=cross_media_ids,
+                    )
+                else:
+                    cross_provider = (
+                        SentenceTransformerVisualProvider()
+                        if include_visual else None
+                    )
+                    cross_results = cross_search.search_text(
+                        cross_query,
+                        media_ids=cross_media_ids,
+                        visual_provider=cross_provider,
+                        include_visual=include_visual,
+                    )
+                st.session_state.cross_modal_results = cross_results
+                st.session_state.cross_modal_context = (
+                    cross_scope, tuple(cross_media_ids), cross_query,
+                    cross_reference.name if cross_reference else None,
+                )
+            except Exception as error:
+                st.error(f'{t["search_failed"]}: {error}')
+            finally:
+                if temporary_reference and temporary_reference.exists():
+                    temporary_reference.unlink()
+                if cross_index is not None:
+                    cross_index.close()
+                if cross_engine is not None:
+                    cross_engine.close()
+
+    cross_results = st.session_state.get("cross_modal_results")
+    cross_catalog = {item["media_id"]: item for item in cross_records}
+    if cross_results:
+        st.markdown(f'### {t["results"]} ({len(cross_results)})')
+        for result_index, result in enumerate(cross_results):
+            media_id = result["media_id"]
+            source_record = cross_catalog.get(media_id)
+            source_name = (
+                source_record["source_name"] if source_record
+                else media_id[:12]
+            )
+            source_path = (
+                Path(source_record["stored_path"]) if source_record else None
+            )
+            with st.container(border=True):
+                result_label = (
+                    t["cross_modal_result_frame"]
+                    if result["result_type"] == "keyframe"
+                    else t["cross_modal_result_transcript"]
+                )
+                st.markdown(f'**{result_index + 1}. {result_label}**')
+                st.caption(f'{t["media_source"]}: {source_name}')
+                st.caption(
+                    f'{t["time"]}: {result["timestamp_seconds"]:.2f}s · '
+                    f'{t["cross_modal_rank_score"]}: {result["cross_modal_score"]:.4f}'
+                )
+                st.caption(" + ".join(result["matched_by"]))
+                if result["result_type"] == "keyframe":
+                    frame_path = Path(result["image_path"])
+                    if frame_path.is_file():
+                        st.image(str(frame_path), use_container_width=True)
+                    if source_path and source_path.is_file() and st.button(
+                        t["cross_modal_preview"],
+                        key=f'cross_modal_preview_{result["keyframe_id"]}_{result_index}',
+                    ):
+                        st.video(
+                            str(source_path),
+                            start_time=int(result["timestamp_seconds"]),
+                        )
+                else:
+                    st.markdown(f'**{t["text"]}:** {result["original_text"]}')
+                    st.caption(
+                        f'{t["start"]}: {result["start"]}s · '
+                        f'{t["end"]}: {result["end"]}s'
+                    )
+                    if result.get("speaker"):
+                        st.caption(f'{t["speaker"]}: {result["speaker"]}')
+                    if source_path and source_path.is_file() and st.button(
+                        t["cross_modal_preview"],
+                        key=f'cross_modal_preview_{result["id"]}_{result_index}',
+                    ):
+                        if source_record and source_record["media_type"] == "video":
+                            st.video(str(source_path), start_time=int(result["start"]))
+                        else:
+                            st.audio(str(source_path), start_time=int(result["start"]))
+    elif cross_results == []:
+        st.info(t["cross_modal_no_results"])
+
+
+# 6. Saved clips
 # --------------------------------------------------
 
 with tab_clips:
