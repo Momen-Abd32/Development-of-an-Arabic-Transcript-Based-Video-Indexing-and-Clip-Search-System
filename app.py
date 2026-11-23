@@ -19,6 +19,8 @@ from src.transcription.transcript_insights import TranscriptInsights
 from src.transcription.transcript_exporter import TranscriptExporter
 from src.indexing.indexer import TranscriptIndexer
 from src.search.search_engine import SearchEngine
+from src.search.keyframe_search import KeyframeSearchIndex
+from src.search.visual_embedding_provider import SentenceTransformerVisualProvider
 from src.search.embedding_provider import SentenceTransformerProvider
 from src.clips.clip_manager import ClipManager
 from src.clips.clip_metadata import ClipMetadata
@@ -939,10 +941,19 @@ with tab_transcript:
             if st.button(t["extract_keyframes"]):
                 try:
                     with st.spinner(t["extracting_keyframes"]):
-                        KeyframeExtractor.extract(
+                        extracted_frames = KeyframeExtractor.extract(
                             st.session_state.media_path,
                             keyframe_dir,
                         )
+                        keyframe_index = KeyframeSearchIndex()
+                        try:
+                            keyframe_index.replace_media_keyframes(
+                                video_id,
+                                extracted_frames,
+                                interval_seconds=30,
+                            )
+                        finally:
+                            keyframe_index.close()
                     st.success(t["keyframes_done"])
                 except Exception as error:
                     st.error(f'{t["keyframes_failed"]}: {error}')
@@ -1311,6 +1322,136 @@ with tab_search:
         else:
             st.info(t["no_results"])
 
+
+        with st.expander(t["visual_search_title"], expanded=False):
+            st.caption(t["visual_search_hint"])
+            visual_query = st.text_input(
+                t["visual_search_query"],
+                key=f"visual_search_query_{scope_key}",
+            )
+            reference_image = st.file_uploader(
+                t["visual_reference_image"],
+                type=["png", "jpg", "jpeg", "webp"],
+                key=f"visual_reference_{scope_key}",
+            )
+            if st.button(t["build_visual_index"], key=f"build_visual_index_{scope_key}"):
+                visual_index = None
+                try:
+                    visual_provider = SentenceTransformerVisualProvider()
+                    visual_index = KeyframeSearchIndex()
+                    video_records = [
+                        record for record in MediaCatalog().get_all()
+                        if record["media_type"] == "video"
+                    ]
+                    if current_scope:
+                        video_records = [
+                            record for record in video_records
+                            if record["media_id"] == st.session_state.video_id
+                        ]
+                    elif allowed_media_ids is not None:
+                        allowed = set(allowed_media_ids)
+                        video_records = [
+                            record for record in video_records
+                            if record["media_id"] in allowed
+                        ]
+                    total_indexed = 0
+                    progress = st.progress(0.0)
+                    for position, record in enumerate(video_records, start=1):
+                        frame_dir = Path("data/keyframes") / record["media_id"]
+                        frames = sorted(frame_dir.glob("keyframe_*.jpg"))
+                        if frames:
+                            visual_index.replace_media_keyframes(
+                                record["media_id"], frames, interval_seconds=30
+                            )
+                            total_indexed += visual_index.index_media(
+                                record["media_id"], visual_provider
+                            )
+                        progress.progress(position / max(len(video_records), 1))
+                    st.success(f'{t["visual_index_done"]}: {total_indexed}')
+                except Exception as error:
+                    st.error(f'{t["visual_search_failed"]}: {error}')
+                finally:
+                    if visual_index is not None:
+                        visual_index.close()
+
+            if st.button(t["visual_search_button"], key=f"run_visual_search_{scope_key}"):
+                if not visual_query.strip() and reference_image is None:
+                    st.warning(t["visual_search_empty"])
+                else:
+                    visual_index = None
+                    temporary_reference = None
+                    try:
+                        visual_provider = SentenceTransformerVisualProvider()
+                        visual_index = KeyframeSearchIndex()
+                        visual_media_ids = (
+                            [st.session_state.video_id]
+                            if current_scope else (
+                                [
+                                    record["media_id"] for record in catalog_records
+                                    if record["media_type"] == "video"
+                                    and (
+                                        allowed_media_ids is None
+                                        or record["media_id"] in set(allowed_media_ids)
+                                    )
+                                ]
+                            )
+                        )
+                        if reference_image is not None:
+                            suffix = Path(reference_image.name).suffix or ".jpg"
+                            with tempfile.NamedTemporaryFile(
+                                suffix=suffix, delete=False
+                            ) as temp_file:
+                                temp_file.write(reference_image.getvalue())
+                                temporary_reference = Path(temp_file.name)
+                            visual_results = visual_index.search_image(
+                                temporary_reference,
+                                visual_provider,
+                                media_ids=visual_media_ids,
+                            )
+                        else:
+                            visual_results = visual_index.search_text(
+                                visual_query,
+                                visual_provider,
+                                media_ids=visual_media_ids,
+                            )
+                        st.session_state.visual_search_results = visual_results
+                    except Exception as error:
+                        st.error(f'{t["visual_search_failed"]}: {error}')
+                    finally:
+                        if temporary_reference and temporary_reference.exists():
+                            temporary_reference.unlink()
+                        if visual_index is not None:
+                            visual_index.close()
+
+            visual_results = st.session_state.get("visual_search_results", [])
+            if visual_results:
+                st.markdown(f'#### {t["visual_results"]} ({len(visual_results)})')
+                visual_catalog = {
+                    item["media_id"]: item for item in MediaCatalog().get_all()
+                }
+                for visual_result in visual_results:
+                    with st.container(border=True):
+                        image_path = Path(visual_result["image_path"])
+                        if image_path.is_file():
+                            st.image(
+                                str(image_path),
+                                caption=(
+                                    f'{visual_catalog.get(visual_result["media_id"], {}).get("source_name", visual_result["media_id"][:12])} · '
+                                    f'{visual_result["timestamp_seconds"]:.1f}s'
+                                ),
+                                use_container_width=True,
+                            )
+                        st.caption(
+                            f'{t["visual_score"]}: {visual_result["visual_score"]:.3f}'
+                        )
+                        source_record = visual_catalog.get(visual_result["media_id"])
+                        if source_record:
+                            st.caption(f'{t["media_source"]}: {source_record["source_name"]}')
+                        st.caption(
+                            f'{t["time"]}: {visual_result["timestamp_seconds"]:.1f}s'
+                        )
+            elif st.session_state.get("visual_search_results") is not None:
+                st.info(t["no_visual_results"])
 
 # 4. Saved clips
 # --------------------------------------------------
