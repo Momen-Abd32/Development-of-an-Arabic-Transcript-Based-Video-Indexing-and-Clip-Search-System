@@ -47,6 +47,7 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - **Independent background worker:** Run the persistent processing queue as a separate CLI process with polling, worker heartbeats, and expired-lease recovery.
 - **Archive dashboard:** Summarize media counts, stored file size, transcript totals, processing and queue states, missing source files, database integrity, and runtime dependency availability.
 - **Archive backup and restore:** Create checksummed snapshots of data and exports, use SQLite's online backup API for live databases, verify every file before restore, and restore only into a new directory without overwriting existing data.
+- **Optional account authentication and RBAC:** Administrator, editor, and search-only roles; salted PBKDF2 password hashes; account activation and role management; failed-login throttling; and user-attributed note/audit actions.
 - **Media catalog:** Persist each media file's type, original filename, stored path, and processing status.
 - **Archive collections and tags:** Organize media with optional collection names and deduplicated tags; filter the archive by collection and selected tags.
 - **Archive-wide search:** Search transcript segments across all imported media or limit the search to the currently selected file.
@@ -344,6 +345,8 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   │   ├── visual_embedding_provider.py
 │   │   └── visual_evaluation.py
 │   │
+│   ├── security/
+│   │   └── auth_manager.py
 │   └── transcription/
 │       ├── faster_whisper_engine.py
 │       ├── transcript_exporter.py
@@ -353,6 +356,7 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 ├── tests/
 │   ├── test_archive_metrics.py
 │   ├── test_archive_qa.py
+│   ├── test_auth_manager.py
 │   ├── test_archive_backup.py
 │   ├── test_archive_backup_cli.py
 │   ├── test_archive_notes.py
@@ -610,6 +614,30 @@ The worker claims jobs transactionally, reports per-file progress, retries faile
 The application stores an append-only audit trail in `data/database/processing_queue.db`. It records media registration and metadata/status changes, timestamped note creation/updates/deletions, plus processing-job enqueue, start, retry scheduling, failure, cancellation, manual retry, and completion events. Each event includes a UTC timestamp, actor (defaults to `system` until authentication is introduced), entity identity, and JSON before/after details where applicable.
 
 Use the `AuditLog` service to query recent events or filter by entity type, entity ID, and actor. The audit history is local to this application instance; it is not yet a tamper-proof compliance log or a substitute for authenticated user identity.
+
+## Authentication and Role-Based Access
+
+Authentication is optional and disabled by default to preserve the single-user local workflow. To enable it, configure an initial administrator before starting Streamlit. In Windows PowerShell:
+
+```powershell
+$env:ARCHIVE_AUTH_ENABLED = "true"
+$env:ARCHIVE_ADMIN_USERNAME = "archive-admin"
+$env:ARCHIVE_ADMIN_PASSWORD = "use-a-unique-password-of-at-least-12-characters"
+$env:ARCHIVE_ADMIN_DISPLAY_NAME = "Archive Administrator"
+python -m streamlit run app.py
+```
+
+On first startup, the app creates the initial administrator only if the user table is empty. There is no built-in default account or password. Keep these environment variables out of source control and rotate/remove the bootstrap password after the account is created.
+
+| Role | Access |
+|---|---|
+| Administrator | All archive features and user/role administration |
+| Editor | Upload, transcription, search, notes, clips, archive management, processing queue, dashboard, and audit history |
+| Search only | Transcript/visual/cross-modal search, evidence-based archive Q&A, and dashboard |
+
+Passwords are stored as PBKDF2-HMAC-SHA256 hashes with per-user random salts (600,000 iterations by default). Passwords must be at least 12 characters. Five failed attempts within the configured 15-minute window trigger temporary account lockout. User creation, role changes, activation/deactivation, and password resets are written to the append-only audit log. Notes use the authenticated account as author/editor when authentication is enabled.
+
+This is application-level local RBAC, not a full identity provider: there is no SSO or MFA, and login throttling is account-based rather than IP-based. For shared or network-accessible deployments, use HTTPS, restrict network access, protect environment secrets, and add an appropriate reverse proxy/security boundary. Do not expose the development Streamlit server directly to the public internet.
 
 ## Archive Backup and Restore
 
