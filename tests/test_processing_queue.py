@@ -65,7 +65,10 @@ def test_failed_job_retries_until_attempt_limit_then_can_be_manually_retried(tmp
 def test_queued_jobs_cancel_immediately_and_running_jobs_receive_request(tmp_path):
     queue = ProcessingQueue(tmp_path / "queue.db")
     queued = queue.enqueue("batch_import", {"input_directory": "archive"})
-    assert queue.cancel(queued["job_id"])["status"] == "cancelled"
+    cancelled_queued = queue.cancel(queued["job_id"])
+    assert cancelled_queued["status"] == "cancelled"
+    assert cancelled_queued["stage"] == "cancelled"
+    assert cancelled_queued["stage_progress"] == 0
 
     running = queue.enqueue("batch_import", {"input_directory": "other"})
     queue.claim_next()
