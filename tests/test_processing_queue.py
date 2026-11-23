@@ -90,7 +90,7 @@ def test_restart_recovery_requeues_interrupted_jobs(tmp_path):
     recovered = restarted.get(job["job_id"])
     assert recovered["status"] == "queued"
     assert recovered["locked_at"] is None
-    assert "application restart" in recovered["error"]
+    assert "worker lease expired" in recovered["error"]
     restarted.close()
 
 
