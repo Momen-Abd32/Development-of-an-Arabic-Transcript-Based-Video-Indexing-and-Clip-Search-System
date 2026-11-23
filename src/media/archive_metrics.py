@@ -41,8 +41,7 @@ class ArchiveMetrics:
             else:
                 missing_files += 1
 
-        jobs = self.queue.list_jobs(limit=100000)
-        job_counts = Counter(item["status"] for item in jobs)
+        job_counts = self.queue.count_by_status()
         transcript_count = (
             len(list(self.transcript_dir.glob("*.json")))
             if self.transcript_dir.exists()
