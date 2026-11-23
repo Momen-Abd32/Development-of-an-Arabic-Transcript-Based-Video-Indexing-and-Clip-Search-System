@@ -2152,6 +2152,11 @@ with tab_qa:
                 t["filter_source"],
                 key="archive_qa_source_filter",
             )
+            qa_date_range = st.date_input(
+                t["filter_date"],
+                value=(),
+                key="archive_qa_date_range",
+            )
             qa_collections = qa_catalog_manager.get_collections()
             qa_collection_label = st.selectbox(
                 t["archive_qa_collection"],
@@ -2170,9 +2175,21 @@ with tab_qa:
             t["filter_video"]: "video",
             t["filter_audio"]: "audio",
         }[qa_media_type_label]
+        qa_date_values = (
+            qa_date_range
+            if isinstance(qa_date_range, (tuple, list)) else ()
+        )
+        qa_start_date = (
+            qa_date_values[0].isoformat() if len(qa_date_values) >= 1 else None
+        )
+        qa_end_date = (
+            qa_date_values[1].isoformat() if len(qa_date_values) >= 2 else None
+        )
         qa_filtered_records = qa_catalog_manager.filter_media(
             media_type=qa_type_value,
             source_contains=qa_source_filter.strip() or None,
+            start_date=qa_start_date,
+            end_date=qa_end_date,
             collection=(
                 qa_collection_label
                 if qa_collection_label != t["filter_all"] else None
