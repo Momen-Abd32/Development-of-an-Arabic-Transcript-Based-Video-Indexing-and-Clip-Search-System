@@ -1129,40 +1129,30 @@ with tab_search:
                 key=f"search_speaker_{scope_key}",
             )
 
-        filtered_catalog = catalog_records
-        if media_type_choice != t["filter_all"]:
-            expected_type = "video" if media_type_choice == t["filter_video"] else "audio"
-            filtered_catalog = [
-                item for item in filtered_catalog
-                if item["media_type"] == expected_type
-            ]
-        if source_contains.strip():
-            needle = source_contains.strip().casefold()
-            filtered_catalog = [
-                item for item in filtered_catalog
-                if needle in item["source_name"].casefold()
-            ]
-        if collection_choice != t["all_collections"]:
-            filtered_catalog = [
-                item for item in filtered_catalog
-                if item.get("collection", "").casefold() == collection_choice.casefold()
-            ]
-        if tag_choices:
-            filtered_catalog = [
-                item for item in filtered_catalog
-                if all(
-                    tag.casefold() in {
-                        value.casefold() for value in item.get("tags", [])
-                    }
-                    for tag in tag_choices
-                )
-            ]
-        if date_range and len(date_range) == 2:
-            start_date, end_date = date_range
-            filtered_catalog = [
-                item for item in filtered_catalog
-                if start_date.isoformat() <= item.get("created_at", "")[:10] <= end_date.isoformat()
-            ]
+        selected_media_type = (
+            None if media_type_choice == t["filter_all"]
+            else "video" if media_type_choice == t["filter_video"]
+            else "audio"
+        )
+        selected_start_date = (
+            date_range[0].isoformat()
+            if date_range and len(date_range) == 2 else None
+        )
+        selected_end_date = (
+            date_range[1].isoformat()
+            if date_range and len(date_range) == 2 else None
+        )
+        filtered_catalog = catalog.filter_media(
+            collection=(
+                None if collection_choice == t["all_collections"]
+                else collection_choice
+            ),
+            tags=tag_choices,
+            media_type=selected_media_type,
+            source_contains=source_contains.strip() or None,
+            start_date=selected_start_date,
+            end_date=selected_end_date,
+        )
         has_metadata_filters = (
             media_type_choice != t["filter_all"]
             or bool(source_contains.strip())
