@@ -41,7 +41,7 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - **Standalone audio upload and playback:** Upload audio recordings without requiring a video container.
 - **Audio preparation:** Use FFmpeg to normalize audio from video or standalone audio files to mono 16 kHz WAV for transcription.
 - **Batch media import:** Recursively scan a local folder and process supported audio and video files one by one.
-- **Durable processing queue:** Persist folder-import jobs in a separate SQLite database, track per-file progress, retry failures, cancel queued jobs immediately, request cooperative cancellation of active jobs between files, and recover interrupted jobs after restart.
+- **Durable processing queue:** Persist folder-import jobs in a separate SQLite database, track overall and per-stage progress for each current file, retry failures, cancel queued jobs immediately, request cooperative cancellation of active jobs between files, and recover interrupted jobs after restart.
 - **Independent background worker:** Run the persistent processing queue as a separate CLI process with polling, worker heartbeats, and expired-lease recovery.
 - **Archive dashboard:** Summarize media counts, stored file size, transcript totals, processing and queue states, missing source files, database integrity, and runtime dependency availability.
 - **Media catalog:** Persist each media file's type, original filename, stored path, and processing status.
