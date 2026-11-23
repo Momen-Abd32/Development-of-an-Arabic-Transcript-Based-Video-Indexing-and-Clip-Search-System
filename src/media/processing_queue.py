@@ -53,9 +53,18 @@ class ProcessingQueue:
                 started_at TEXT,
                 finished_at TEXT,
                 locked_at TEXT,
-                error TEXT
+                error TEXT,
+                cancel_requested INTEGER NOT NULL DEFAULT 0 CHECK (cancel_requested IN (0, 1))
             )
         """)
+        columns = {
+            row["name"]
+            for row in self.connection.execute("PRAGMA table_info(processing_jobs)")
+        }
+        if "cancel_requested" not in columns:
+            self.connection.execute(
+                "ALTER TABLE processing_jobs ADD COLUMN cancel_requested INTEGER NOT NULL DEFAULT 0"
+            )
         self.connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_processing_jobs_status_created
             ON processing_jobs(status, created_at)
@@ -337,6 +346,8 @@ class ProcessingQueue:
         return job
 
     def cancel(self, job_id: str) -> dict:
+        """Cancel a queued job immediately or request cooperative cancellation."""
+        now = _timestamp()
         cursor = self.connection.execute(
             """
             UPDATE processing_jobs
@@ -344,10 +355,46 @@ class ProcessingQueue:
                 finished_at = ?, updated_at = ?
             WHERE job_id = ? AND status = 'queued'
             """,
+            (now, now, job_id),
+        )
+        if cursor.rowcount == 1:
+            job = self.get(job_id)
+            self._record_event("job_cancelled", job)
+            return job
+
+        cursor = self.connection.execute(
+            """
+            UPDATE processing_jobs
+            SET cancel_requested = 1, updated_at = ?
+            WHERE job_id = ? AND status = 'running' AND cancel_requested = 0
+            """,
+            (now, job_id),
+        )
+        if cursor.rowcount != 1:
+            raise ValueError("Only queued or running jobs can be cancelled.")
+        job = self.get(job_id)
+        self._record_event("job_cancellation_requested", job)
+        return job
+
+    def is_cancel_requested(self, job_id: str) -> bool:
+        row = self.connection.execute(
+            "SELECT cancel_requested FROM processing_jobs WHERE job_id = ?",
+            (job_id,),
+        ).fetchone()
+        return bool(row["cancel_requested"]) if row else False
+
+    def cancel_running(self, job_id: str) -> dict:
+        cursor = self.connection.execute(
+            """
+            UPDATE processing_jobs
+            SET status = 'cancelled', locked_at = NULL,
+                finished_at = ?, updated_at = ?
+            WHERE job_id = ? AND status = 'running' AND cancel_requested = 1
+            """,
             (_timestamp(), _timestamp(), job_id),
         )
         if cursor.rowcount != 1:
-            raise ValueError("Only queued jobs can be cancelled.")
+            raise ValueError("Only running jobs with a cancellation request can be cancelled.")
         job = self.get(job_id)
         self._record_event("job_cancelled", job)
         return job
@@ -358,7 +405,7 @@ class ProcessingQueue:
             UPDATE processing_jobs
             SET status = 'queued', attempts = 0, progress = 0,
                 started_at = NULL, finished_at = NULL, locked_at = NULL,
-                error = NULL, updated_at = ?
+                error = NULL, cancel_requested = 0, updated_at = ?
             WHERE job_id = ? AND status = 'failed'
             """,
             (_timestamp(), job_id),
