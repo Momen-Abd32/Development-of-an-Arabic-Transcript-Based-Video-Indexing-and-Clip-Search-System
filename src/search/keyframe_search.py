@@ -17,6 +17,7 @@ class KeyframeSearchIndex:
         self.connection = sqlite3.connect(self.database_path, timeout=10)
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA busy_timeout = 10000")
+        self.connection.execute("PRAGMA foreign_keys = ON")
         self.connection.execute(
             """
             CREATE TABLE IF NOT EXISTS keyframes (
