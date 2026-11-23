@@ -331,13 +331,6 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   │   ├── semantic_search.py
 │   │   ├── visual_embedding_provider.py
 │   │   └── visual_evaluation.py
-│   │   ├── cross_modal_evaluation.py
-│   │   ├── cross_modal_search.py
-│   │   ├── evaluation.py
-│   │   ├── keyframe_search.py
-│   │   ├── search_engine.py
-│   │   ├── visual_embedding_provider.py
-│   │   └── visual_evaluation.py
 │   │
 │   └── transcription/
 │       ├── faster_whisper_engine.py
