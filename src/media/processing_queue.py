@@ -7,6 +7,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from src.media.audit_log import AuditLog
+
 
 STATUSES = {"queued", "running", "completed", "failed", "cancelled"}
 
@@ -58,9 +60,26 @@ class ProcessingQueue:
             CREATE INDEX IF NOT EXISTS idx_processing_jobs_status_created
             ON processing_jobs(status, created_at)
         """)
+        self.audit_log = AuditLog(self.database_path)
 
     def close(self) -> None:
+        self.audit_log.close()
         self.connection.close()
+
+    def _record_event(self, action: str, job: dict, actor: str = "system") -> None:
+        self.audit_log.record(
+            action=action,
+            entity_type="processing_job",
+            entity_id=job["job_id"],
+            actor=actor,
+            details={
+                "job_type": job["job_type"],
+                "status": job["status"],
+                "attempts": job["attempts"],
+                "progress": job["progress"],
+                "error": job.get("error"),
+            },
+        )
 
     def enqueue(
         self,
@@ -95,7 +114,9 @@ class ProcessingQueue:
             """,
             (job_id, job_type.strip(), serialized, max_attempts, now, now),
         )
-        return self.get(job_id)
+        job = self.get(job_id)
+        self._record_event("job_enqueued", job)
+        return job
 
     def get(self, job_id: str) -> dict | None:
         row = self.connection.execute(
@@ -231,6 +252,7 @@ class ProcessingQueue:
                 return None
             claimed = self.get(row["job_id"])
             self.connection.execute("COMMIT")
+            self._record_event("job_started", claimed)
             return claimed
         except Exception:
             self.connection.execute("ROLLBACK")
@@ -280,7 +302,9 @@ class ProcessingQueue:
         )
         if cursor.rowcount != 1:
             raise ValueError("Only running jobs can be completed.")
-        return self.get(job_id)
+        job = self.get(job_id)
+        self._record_event("job_completed", job)
+        return job
 
     def fail(self, job_id: str, error: str, retry: bool = True) -> dict:
         if not isinstance(error, str) or not error.strip():
@@ -308,7 +332,9 @@ class ProcessingQueue:
                 job_id,
             ),
         )
-        return self.get(job_id)
+        job = self.get(job_id)
+        self._record_event("job_failed" if status == "failed" else "job_retry_scheduled", job)
+        return job
 
     def cancel(self, job_id: str) -> dict:
         cursor = self.connection.execute(
@@ -322,7 +348,9 @@ class ProcessingQueue:
         )
         if cursor.rowcount != 1:
             raise ValueError("Only queued jobs can be cancelled.")
-        return self.get(job_id)
+        job = self.get(job_id)
+        self._record_event("job_cancelled", job)
+        return job
 
     def retry(self, job_id: str) -> dict:
         cursor = self.connection.execute(
@@ -337,4 +365,6 @@ class ProcessingQueue:
         )
         if cursor.rowcount != 1:
             raise ValueError("Only failed jobs can be retried manually.")
-        return self.get(job_id)
+        job = self.get(job_id)
+        self._record_event("job_manually_retried", job)
+        return job
