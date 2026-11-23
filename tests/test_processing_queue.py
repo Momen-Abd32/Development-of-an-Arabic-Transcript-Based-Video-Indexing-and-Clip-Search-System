@@ -62,15 +62,19 @@ def test_failed_job_retries_until_attempt_limit_then_can_be_manually_retried(tmp
     queue.close()
 
 
-def test_cancel_only_queued_jobs(tmp_path):
+def test_queued_jobs_cancel_immediately_and_running_jobs_receive_request(tmp_path):
     queue = ProcessingQueue(tmp_path / "queue.db")
     queued = queue.enqueue("batch_import", {"input_directory": "archive"})
     assert queue.cancel(queued["job_id"])["status"] == "cancelled"
 
     running = queue.enqueue("batch_import", {"input_directory": "other"})
     queue.claim_next()
-    with pytest.raises(ValueError, match="queued"):
-        queue.cancel(running["job_id"])
+    requested = queue.cancel(running["job_id"])
+    assert requested["status"] == "running"
+    assert requested["cancel_requested"] == 1
+    assert queue.is_cancel_requested(running["job_id"]) is True
+    assert queue.cancel_running(running["job_id"])["status"] == "cancelled"
+    assert queue.is_cancel_requested(running["job_id"]) is True
     queue.close()
 
 
@@ -223,3 +227,15 @@ def test_queue_lifecycle_is_written_to_audit_log(tmp_path):
     }
     assert all(event["actor"] == "system" for event in events)
     queue.close()
+
+def test_cancel_request_is_persisted_after_reopening_queue(tmp_path):
+    path = tmp_path / "queue.db"
+    queue = ProcessingQueue(path)
+    job = queue.enqueue("batch_import", {})
+    queue.claim_next()
+    queue.cancel(job["job_id"])
+    queue.close()
+
+    reopened = ProcessingQueue(path)
+    assert reopened.is_cancel_requested(job["job_id"]) is True
+    reopened.close()
