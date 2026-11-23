@@ -202,7 +202,14 @@ class ExplicitFileProcessor:
         self,
         files,
         progress_callback=None,
+        stage_callback=None,
+        recursive=True,
     ):
+        if stage_callback:
+            stage_callback("verifying_source", files[0], 0)
+            stage_callback("verifying_source", files[0], 100)
+        if progress_callback:
+            progress_callback(1, len(files))
         return [
             {"source": path, "status": "processed", "segments": 2}
             for path in files
