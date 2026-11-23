@@ -20,6 +20,7 @@ from src.transcription.transcript_exporter import TranscriptExporter
 from src.indexing.indexer import TranscriptIndexer
 from src.search.search_engine import SearchEngine
 from src.search.cross_modal_search import CrossModalSearch
+from src.search.archive_qa import ArchiveQA
 from src.search.keyframe_search import KeyframeSearchIndex
 from src.search.visual_embedding_provider import SentenceTransformerVisualProvider
 from src.search.embedding_provider import SentenceTransformerProvider
@@ -173,6 +174,20 @@ TEXT = {
         "extracting_keyframes": "جاري استخراج الصور المصغّرة...",
         "keyframes_failed": "تعذر استخراج الصور المصغّرة",
         "keyframes_title": "الصور المصغّرة / اللقطات الرئيسية",
+        "archive_qa_tab": "اسأل الأرشيف",
+        "archive_qa_title": "اسأل الأرشيف واستعرض الأدلة",
+        "archive_qa_desc": "اكتب سؤالاً للبحث في التفريغات النصية. الإجابة المعروضة اقتباس حرفي من أفضل مقطع، مع رابط إلى مصدره وتوقيته؛ لن يخمّن النظام عند غياب الأدلة.",
+        "archive_qa_question": "ما الذي تريد معرفته من الأرشيف؟",
+        "archive_qa_button": "اسأل الأرشيف",
+        "archive_qa_semantic": "استخدم البحث الدلالي الاختياري",
+        "archive_qa_answer": "إجابة مقتبسة حرفياً من التفريغ",
+        "archive_qa_evidence": "الأدلة المسترجعة",
+        "archive_qa_abstain": "لم نعثر على أدلة نصية كافية للإجابة ضمن النطاق المحدد.",
+        "archive_qa_scope_note": "الاقتباس ليس إجابة مولّدة أو تلخيصاً؛ راجع السياق الأصلي قبل اعتماد الاستنتاج.",
+        "archive_qa_retrieved_by": "مصدر الاسترجاع",
+        "archive_qa_segment": "معرّف المقطع",
+        "archive_qa_play": "تشغيل المصدر من هذا التوقيت",
+        "archive_qa_semantic_unavailable": "تعذر تشغيل الاسترجاع الدلالي؛ سيستمر البحث النصي.",
         "cross_modal_tab": "البحث الموحّد",
         "cross_modal_title": "بحث موحّد في النصوص واللقطات",
         "cross_modal_desc": "اجمع نتائج التفريغ النصي واللقطات البصرية في قائمة مرتبة واحدة. تُدمج الرتب ولا تُقارن درجات التشابه الخام بين النماذج.",
@@ -276,6 +291,20 @@ TEXT = {
         "upload_tab": "Add Media",
         "transcript_tab": "Transcript",
         "search_tab": "Video Search",
+        "archive_qa_tab": "Ask the Archive",
+        "archive_qa_title": "Ask the Archive and Inspect Evidence",
+        "archive_qa_desc": "Ask a question about indexed transcripts. The displayed answer is a verbatim quote from the best matching segment with its source and timestamp; the system abstains when evidence is missing.",
+        "archive_qa_question": "What would you like to know from the archive?",
+        "archive_qa_button": "Ask the Archive",
+        "archive_qa_semantic": "Include optional semantic retrieval",
+        "archive_qa_answer": "Verbatim transcript quote",
+        "archive_qa_evidence": "Retrieved evidence",
+        "archive_qa_abstain": "No sufficient transcript evidence was found in the selected scope.",
+        "archive_qa_scope_note": "This quote is not a generated answer or summary; review the original context before drawing a conclusion.",
+        "archive_qa_retrieved_by": "Retrieved by",
+        "archive_qa_segment": "Segment ID",
+        "archive_qa_play": "Play source from this timestamp",
+        "archive_qa_semantic_unavailable": "Semantic retrieval could not run; transcript search will continue.",
         "clips_tab": "Saved Clips",
         "archive_tab": "Archive Management",
         "dashboard_tab": "Dashboard",
@@ -713,11 +742,11 @@ with metric_col3:
 # Main sections
 # --------------------------------------------------
 
-tab_upload, tab_transcript, tab_search, tab_visual, tab_cross_modal, tab_clips, tab_archive, tab_queue, tab_dashboard, tab_audit = st.tabs(
+tab_upload, tab_transcript, tab_search, tab_visual, tab_cross_modal, tab_qa, tab_clips, tab_archive, tab_queue, tab_dashboard, tab_audit = st.tabs(
     [
         t["upload_tab"], t["transcript_tab"], t["search_tab"],
-        t["visual_search_tab"], t["cross_modal_tab"], t["clips_tab"], t["archive_tab"],
-        t["queue_tab"], t["dashboard_tab"], t["audit_tab"],
+        t["visual_search_tab"], t["cross_modal_tab"], t["archive_qa_tab"],
+        t["clips_tab"], t["archive_tab"], t["queue_tab"], t["dashboard_tab"], t["audit_tab"],
     ]
 )
 
@@ -1770,6 +1799,141 @@ with tab_cross_modal:
                             st.audio(str(source_path), start_time=int(result["start"]))
     elif cross_results == []:
         st.info(t["cross_modal_no_results"])
+
+
+# 6. Evidence-first archive Q&A
+# --------------------------------------------------
+
+with tab_qa:
+    st.subheader("💬 " + t["archive_qa_title"])
+    st.caption(t["archive_qa_desc"])
+
+    qa_scope = st.radio(
+        t["search_scope"],
+        [t["current_media"], t["entire_archive"]],
+        horizontal=True,
+        key="archive_qa_scope",
+    )
+    qa_records = MediaCatalog().get_all()
+    qa_current_media_id = st.session_state.get("video_id")
+    if qa_scope == t["current_media"]:
+        qa_media_ids = (
+            [qa_current_media_id] if qa_current_media_id else []
+        )
+    else:
+        qa_media_ids = [item["media_id"] for item in qa_records]
+
+    qa_question = st.text_area(
+        t["archive_qa_question"],
+        key="archive_qa_question_input",
+        height=100,
+    )
+    qa_use_semantic = st.checkbox(
+        t["archive_qa_semantic"],
+        value=False,
+        key="archive_qa_use_semantic",
+    )
+    qa_context = (
+        qa_scope, tuple(qa_media_ids), qa_question.strip(), qa_use_semantic
+    )
+    if st.session_state.get("archive_qa_context") != qa_context:
+        st.session_state.archive_qa_result = None
+        st.session_state.archive_qa_context = qa_context
+
+    if st.button(
+        t["archive_qa_button"],
+        type="primary",
+        key="run_archive_qa",
+    ):
+        if not qa_question.strip():
+            st.warning(t["empty_query"])
+        else:
+            qa_engine = None
+            try:
+                qa_engine = SearchEngine()
+                qa_semantic_provider = None
+                if qa_use_semantic:
+                    try:
+                        qa_semantic_provider = SentenceTransformerProvider()
+                    except Exception as provider_error:
+                        st.warning(
+                            f'{t["archive_qa_semantic_unavailable"]} ({provider_error})'
+                        )
+                qa_result = ArchiveQA(qa_engine).ask(
+                    qa_question,
+                    media_ids=qa_media_ids,
+                    semantic_provider=qa_semantic_provider,
+                )
+                st.session_state.archive_qa_result = qa_result
+            except Exception as error:
+                st.error(f'{t["search_failed"]}: {error}')
+            finally:
+                if qa_engine is not None:
+                    qa_engine.close()
+
+    qa_result = st.session_state.get("archive_qa_result")
+    if qa_result:
+        for warning in qa_result.get("warnings", []):
+            st.warning(warning)
+
+        if qa_result["status"] == "evidence_found":
+            st.markdown(f'### {t["archive_qa_answer"]}')
+            st.success(qa_result["answer"])
+            st.caption(t["archive_qa_scope_note"])
+
+            qa_catalog = {item["media_id"]: item for item in qa_records}
+            st.markdown(f'#### {t["archive_qa_evidence"]}')
+            for evidence in qa_result["evidence"]:
+                media_id = evidence["media_id"]
+                source_record = qa_catalog.get(media_id)
+                source_name = (
+                    source_record["source_name"]
+                    if source_record else media_id[:12]
+                )
+                source_path = (
+                    Path(source_record["stored_path"])
+                    if source_record else None
+                )
+                with st.container(border=True):
+                    st.markdown(
+                        f'**{evidence["rank"]}. {source_name}**'
+                    )
+                    st.caption(
+                        f'{t["archive_qa_segment"]}: {evidence["segment_id"]} · '
+                        f'{t["start"]}: {evidence["start"]:.2f}s · '
+                        f'{t["end"]}: {evidence["end"]:.2f}s'
+                    )
+                    if evidence.get("speaker"):
+                        st.caption(f'{t["speaker"]}: {evidence["speaker"]}')
+                    source_labels = {
+                        "exact": t["exact"],
+                        "fuzzy": t["fuzzy"],
+                        "semantic": t["hybrid"],
+                    }
+                    st.caption(
+                        f'{t["archive_qa_retrieved_by"]}: '
+                        + ", ".join(
+                            source_labels.get(source, source)
+                            for source in evidence["retrieved_by"]
+                        )
+                    )
+                    st.write(evidence["text"])
+                    if source_path and source_path.is_file() and st.button(
+                        t["archive_qa_play"],
+                        key=f'archive_qa_play_{media_id}_{evidence["segment_id"]}',
+                    ):
+                        if source_record["media_type"] == "video":
+                            st.video(
+                                str(source_path),
+                                start_time=int(evidence["start"]),
+                            )
+                        else:
+                            st.audio(
+                                str(source_path),
+                                start_time=int(evidence["start"]),
+                            )
+        else:
+            st.info(t["archive_qa_abstain"])
 
 
 # 6. Saved clips
