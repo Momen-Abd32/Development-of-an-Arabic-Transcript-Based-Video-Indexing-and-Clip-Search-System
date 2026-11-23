@@ -55,6 +55,7 @@ The current feature branch contains initial foundations for multilingual semanti
 - Video keyframe extraction now produces sampled JPEGs and previews them in the transcript workspace; timestamp-aware visual search and keyframe indexing are still outstanding.
 - Media catalog records now support optional collection names and normalized tags, with backward-compatible JSON loading, archive management UI, and collection/tag filtering of the archive list.
 - A separate SQLite processing queue now persists folder-import jobs, attempts, status, per-file progress, failures, cancellation of queued jobs, manual retry, and expired-worker-lease recovery. The Streamlit UI runs jobs synchronously on request; a continuously running background worker and cooperative cancellation of active work remain future work.
+- The archive dashboard now reports media-type and processing-state counts, stored media size, transcript file count, missing source files, SQLite integrity, and availability of FFmpeg and optional model packages. Runtime metrics are read-only and do not imply that a model is downloaded or loaded.
 - Speaker diarization requires optional pyannote dependencies, model access, and validation against representative Arabic recordings.
 - All newly added tests still require execution in a configured environment before these slices can be marked verified.
 
