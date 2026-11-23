@@ -56,7 +56,7 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - **Optional speaker diarization:** Attach speaker labels to transcript segments using pyannote.audio when model access is configured.
 - **Extractive transcript insights:** Select representative original transcript sentences and rank frequent Arabic/Latin keywords; results are stored separately from the verbatim transcript and never rewrite dialect.
 - **Video keyframes:** Extract sampled JPEG thumbnails with FFmpeg, preserve the actual frame presentation timestamps, safely replace prior generated frames, and preview them in the transcript workspace.
-- **Visual keyframe search:** Index extracted frames in SQLite and search across them using Arabic text descriptions or a reference image with an optional multilingual CLIP model; results include the source media and frame timestamp.
+- **Visual keyframe search:** Index extracted frames in SQLite and search across them using Arabic text descriptions or a reference image with an optional multilingual CLIP model; results include the source media and frame timestamp, with an option to preview the original video at the matched time.
 - **Arabic text normalization:** Normalize common Arabic character variations, remove diacritics and tatweel, and standardize whitespace to improve search consistency.
 - **Exact full-text search:** Find transcript segments using SQLite FTS5.
 - **Fuzzy search:** Find approximate matches using RapidFuzz.
