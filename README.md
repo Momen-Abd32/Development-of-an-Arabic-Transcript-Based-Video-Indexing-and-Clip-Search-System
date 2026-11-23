@@ -525,6 +525,24 @@ python -m pytest tests -v
 
 The complete test suite should be run after pulling the current development branch. Automated tests help verify individual components and expected behavior; they do not by themselves establish real-world transcription accuracy or replace end-to-end testing with varied video and audio inputs.
 
+## Search Retrieval Evaluation
+
+The project includes macro-averaged Precision@k, Recall@k, and Mean Reciprocal Rank (MRR) for comparing exact, fuzzy, and hybrid transcript retrieval against human relevance judgments.
+
+1. Copy `data/evaluation/search_queries.example.json` to `data/evaluation/search_queries.json`.
+2. Replace the example media ID and timestamps with the actual `media_id`, segment start, and segment end for each judged relevant result in your archive. Add multiple Arabic queries, including MSA wording, spelling variants, diacritics, and mixed Arabic/English phrases.
+3. Run one retrieval mode:
+
+```bash
+python scripts/evaluate_search.py --mode exact --dataset data/evaluation/search_queries.json --top-k 5
+python scripts/evaluate_search.py --mode fuzzy --dataset data/evaluation/search_queries.json --top-k 5
+python scripts/evaluate_search.py --mode hybrid --dataset data/evaluation/search_queries.json --top-k 5
+```
+
+Hybrid evaluation requires the optional semantic dependencies and an existing semantic index. Add `--build-semantic-index` to build/refresh embeddings before evaluation. Use `--output reports/hybrid-evaluation.json` to save a machine-readable report.
+
+The checked-in file is a template, not a measured benchmark. Do not report its results as real archive performance until the relevance judgments have been reviewed and populated using representative Dukkan Media content.
+
 ## Evaluation Metrics
 
 The `src/evaluation/metrics.py` module provides two metrics for comparing a generated transcript with a reference transcript. Both inputs are normalized using the project's Arabic text processor before calculation.
