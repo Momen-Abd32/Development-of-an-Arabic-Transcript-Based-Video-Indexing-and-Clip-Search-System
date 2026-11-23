@@ -1680,7 +1680,7 @@ with tab_cross_modal:
                     if include_visual:
                         try:
                             cross_provider = SentenceTransformerVisualProvider()
-                        except RuntimeError as provider_error:
+                        except Exception as provider_error:
                             st.warning(
                                 f'{t["cross_modal_visual_note"]} ({provider_error})'
                             )
