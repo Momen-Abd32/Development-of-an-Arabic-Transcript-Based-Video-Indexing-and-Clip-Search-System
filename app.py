@@ -23,6 +23,7 @@ from src.indexing.indexer import TranscriptIndexer
 from src.search.search_engine import SearchEngine
 from src.search.cross_modal_search import CrossModalSearch
 from src.search.archive_qa import ArchiveQA
+from src.search.local_answer_provider import OllamaAnswerProvider
 from src.search.keyframe_search import KeyframeSearchIndex
 from src.search.visual_embedding_provider import SentenceTransformerVisualProvider
 from src.search.embedding_provider import SentenceTransformerProvider
@@ -274,6 +275,10 @@ TEXT = {
         "archive_qa_matching_media": "عدد الملفات المطابقة للفلاتر",
         "archive_qa_collection": "المجموعة",
         "archive_qa_tags": "الوسوم",
+        "archive_qa_local_llm": "إنشاء إجابة متعددة المقاطع باستخدام Ollama المحلي (اختياري)",
+        "archive_qa_model": "اسم نموذج Ollama المحلي",
+        "archive_qa_generated_note": "إجابة مولّدة محلياً؛ كل ادعاء مرتبط بمقطع مسترجع. تحقق من السياق لأن وجود الاستشهاد لا يثبت صحة الاستنتاج منطقياً.",
+        "archive_qa_citations": "استشهادات الإجابة",
         "cross_modal_tab": "البحث الموحّد",
         "cross_modal_title": "بحث موحّد في النصوص واللقطات",
         "cross_modal_desc": "اجمع نتائج التفريغ النصي واللقطات البصرية في قائمة مرتبة واحدة. تُدمج الرتب ولا تُقارن درجات التشابه الخام بين النماذج.",
@@ -446,6 +451,10 @@ TEXT = {
         "archive_qa_matching_media": "Media items matching filters",
         "archive_qa_collection": "Collection",
         "archive_qa_tags": "Tags",
+        "archive_qa_local_llm": "Generate a multi-passage answer with local Ollama (optional)",
+        "archive_qa_model": "Local Ollama model name",
+        "archive_qa_generated_note": "Locally generated answer; each claim references a retrieved segment. Review the context because citation membership does not prove logical entailment.",
+        "archive_qa_citations": "Answer citations",
         "clips_tab": "Saved Clips",
         "archive_tab": "Archive Management",
         "dashboard_tab": "Dashboard",
@@ -2218,8 +2227,22 @@ with tab_qa:
             value=False,
             key="archive_qa_use_semantic",
         )
+        qa_use_local_llm = st.checkbox(
+            t["archive_qa_local_llm"],
+            value=False,
+            key="archive_qa_use_local_llm",
+        )
+        qa_local_model = (
+            st.text_input(
+                t["archive_qa_model"],
+                value="qwen2.5:3b",
+                key="archive_qa_local_model",
+            )
+            if qa_use_local_llm else "qwen2.5:3b"
+        )
         qa_context = (
-            qa_scope, tuple(qa_media_ids), qa_question.strip(), qa_use_semantic
+            qa_scope, tuple(qa_media_ids), qa_question.strip(),
+            qa_use_semantic, qa_use_local_llm, qa_local_model.strip()
         )
         if st.session_state.get("archive_qa_context") != qa_context:
             st.session_state.archive_qa_result = None
@@ -2244,10 +2267,19 @@ with tab_qa:
                             st.warning(
                                 f'{t["archive_qa_semantic_unavailable"]} ({provider_error})'
                             )
+                    qa_answer_provider = None
+                    if qa_use_local_llm:
+                        try:
+                            qa_answer_provider = OllamaAnswerProvider(
+                                model=qa_local_model.strip()
+                            )
+                        except Exception as provider_error:
+                            st.warning(str(provider_error))
                     qa_result = ArchiveQA(qa_engine).ask(
                         qa_question,
                         media_ids=qa_media_ids,
                         semantic_provider=qa_semantic_provider,
+                        answer_provider=qa_answer_provider,
                     )
                     st.session_state.archive_qa_result = qa_result
                 except Exception as error:
@@ -2263,8 +2295,20 @@ with tab_qa:
 
             if qa_result["status"] == "evidence_found":
                 st.markdown(f'### {t["archive_qa_answer"]}')
+                if qa_result["answer_type"] == "cited_generated_claims":
+                    st.caption(t["archive_qa_generated_note"])
                 st.success(qa_result["answer"])
                 st.caption(t["archive_qa_scope_note"])
+                answer_citations = qa_result.get("answer_citations", [])
+                if answer_citations:
+                    st.caption(
+                        f'{t["archive_qa_citations"]}: '
+                        + ", ".join(
+                            f'{item["media_id"]} · #{item["segment_id"]} '
+                            f'({item["start"]:.2f}s–{item["end"]:.2f}s)'
+                            for item in answer_citations
+                        )
+                    )
 
                 qa_catalog = {item["media_id"]: item for item in qa_records}
                 st.markdown(f'#### {t["archive_qa_evidence"]}')
