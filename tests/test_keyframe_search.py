@@ -217,3 +217,14 @@ def test_migrates_legacy_keyframe_table_with_image_hash_column(tmp_path):
         assert "image_sha256" in columns
     finally:
         index.close()
+
+
+def test_visual_search_omits_deleted_keyframe_images(visual_index, tmp_path):
+    frame = tmp_path / "frame.jpg"
+    frame.write_bytes(b"frame")
+    provider = FakeVisualProvider()
+    visual_index.replace_media_keyframes("media-a", [frame])
+    visual_index.index_media("media-a", provider)
+    frame.unlink()
+
+    assert visual_index.search_text("سيارة", provider) == []
