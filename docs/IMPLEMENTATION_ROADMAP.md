@@ -57,7 +57,7 @@ The current feature branch contains initial foundations for multilingual semanti
 - A separate SQLite processing queue now persists folder-import jobs, attempts, status, per-file progress, failures, cancellation of queued jobs, manual retry, and expired-worker-lease recovery. An independent CLI worker now supports continuous polling and heartbeat leases. Stage-level progress and cooperative cancellation of active work remain future work; the Streamlit UI also retains a synchronous run-one-job option.
 - The archive dashboard now reports media-type and processing-state counts, stored media size, transcript file count, missing source files, SQLite integrity, and availability of FFmpeg and optional model packages. Runtime metrics are read-only and do not imply that a model is downloaded or loaded.
 - Speaker diarization requires optional pyannote dependencies, model access, and validation against representative Arabic recordings.
-- CI passed 229 tests on commit `d64baf09b144cd983f840370b85b11ad3c2167df`, including application/source compilation, the archive dashboard, and background-worker lifecycle tests. The subsequent expired-job retry-limit test and final documentation changes are awaiting the latest CI run before the branch's newest state is marked verified.
+- CI passed 230 tests on commit `0d4a27740ac157cc51c993e46f14e0b9bde93b7c`, including application/source compilation, the archive dashboard, background-worker lifecycle, heartbeat handling, and expired-job retry-limit coverage. Subsequent README/roadmap structure updates are documentation-only; the final code state is covered by this passing run.
 
 ## Delivery order
 
