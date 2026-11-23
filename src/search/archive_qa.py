@@ -170,7 +170,7 @@ class ArchiveQA:
                 validated = self._validate_generated_claims(generated, evidence)
                 if validated is not None:
                     claims, answer_citations = validated
-                    answer = "\\n".join(claim["text"] for claim in claims)
+                    answer = "\n".join(claim["text"] for claim in claims)
                     answer_type = "cited_generated_claims"
                     answer_citation = (
                         answer_citations[0] if len(answer_citations) == 1 else None
