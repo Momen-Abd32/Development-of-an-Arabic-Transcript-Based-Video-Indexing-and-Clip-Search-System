@@ -52,6 +52,7 @@ The current feature branch contains initial foundations for multilingual semanti
 - Semantic ranking currently scans stored embeddings in application code; a scalable vector index and retrieval evaluation remain future work.
 - Search filters for media metadata, collections, tags, date, and speaker remain outstanding.
 - Transcript insights currently select original transcript sentences and rank term frequencies. They are not abstractive AI summaries or a full topic-modeling system.
+- Video keyframe extraction now produces sampled JPEGs and previews them in the transcript workspace; timestamp-aware visual search and keyframe indexing are still outstanding.
 - Speaker diarization requires optional pyannote dependencies, model access, and validation against representative Arabic recordings.
 - All newly added tests still require execution in a configured environment before these slices can be marked verified.
 
