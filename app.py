@@ -987,6 +987,7 @@ with tab_transcript:
                             )
                         finally:
                             keyframe_index.close()
+                    st.session_state.visual_search_results = None
                     st.success(t["keyframes_done"])
                 except Exception as error:
                     st.error(f'{t["keyframes_failed"]}: {error}')
@@ -1479,6 +1480,7 @@ with tab_visual:
                     record["media_id"], visual_provider
                 )
                 progress.progress(position / max(len(visual_media_records), 1))
+            st.session_state.visual_search_results = None
             st.success(
                 f'{t["visual_index_done"]}: {total_indexed} · '
                 f'{t["visual_skipped"]}: {skipped}'
