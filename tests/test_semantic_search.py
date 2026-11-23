@@ -28,20 +28,21 @@ def semantic_index(tmp_path):
             start REAL NOT NULL,
             end REAL NOT NULL,
             original_text TEXT NOT NULL,
-            normalized_text TEXT NOT NULL
+            normalized_text TEXT NOT NULL,
+            speaker TEXT
         )
         """
     )
     index.connection.executemany(
         """
         INSERT INTO segments
-            (id, video_id, start, end, original_text, normalized_text)
-        VALUES (?, ?, ?, ?, ?, ?)
+            (id, video_id, start, end, original_text, normalized_text, speaker)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         [
-            (1, "media-a", 0, 2, "شرح البرمجة", "شرح البرمجة"),
-            (2, "media-b", 4, 6, "أخبار اليوم", "اخبار اليوم"),
-            (3, "media-a", 7, 9, "تعلم البرمجة", "تعلم البرمجة"),
+            (1, "media-a", 0, 2, "شرح البرمجة", "شرح البرمجة", "SPEAKER_00"),
+            (2, "media-b", 4, 6, "أخبار اليوم", "اخبار اليوم", None),
+            (3, "media-a", 7, 9, "تعلم البرمجة", "تعلم البرمجة", "SPEAKER_01"),
         ],
     )
     index.connection.commit()
@@ -119,3 +120,27 @@ def test_rejects_inconsistent_dimensions_and_preserves_previous_index(semantic_i
         ("media-a",),
     ).fetchone()[0]
     assert count == 2
+
+
+def test_semantic_search_filters_by_media_ids_and_speaker(semantic_index):
+    provider = FakeEmbeddingProvider()
+    semantic_index.index_media("media-a", provider)
+    results = semantic_index.search(
+        "برمجة",
+        provider,
+        media_ids=["media-a"],
+        speaker="SPEAKER_01",
+    )
+    assert [item["id"] for item in results] == [3]
+    assert results[0]["speaker"] == "SPEAKER_01"
+
+
+def test_semantic_search_filters_unassigned_speakers(semantic_index):
+    provider = FakeEmbeddingProvider()
+    semantic_index.index_media("media-b", provider)
+    results = semantic_index.search(
+        "أخبار",
+        provider,
+        speaker="__UNSPECIFIED_SPEAKER__",
+    )
+    assert [item["id"] for item in results] == [2]
