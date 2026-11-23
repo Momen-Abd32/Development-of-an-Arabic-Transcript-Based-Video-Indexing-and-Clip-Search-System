@@ -43,14 +43,14 @@ Evolve the existing Arabic media archiving, transcription, indexing, and clip-se
 1. Visual search across extracted keyframes, with optional image-reference search.
 2. Question answering over the archive with citations to media IDs and timestamps; answer only from retrieved evidence and say when evidence is insufficient.
 3. Timestamped notes/comments and review collaboration.
-4. Advanced media discovery and cross-modal search, introduced behind optional dependencies and feature flags.
+4. Advanced media discovery beyond the initial cross-modal retrieval slice, introduced behind optional dependencies and feature flags.
 
 ## Implementation status (not a completion claim)
 
 The current feature branch contains initial foundations for multilingual semantic embeddings, hybrid lexical/fuzzy/semantic ranking, optional speaker diarization, transcript timestamp playback, and extractive transcript summaries with keyword frequencies. These are partial vertical slices, not completion of their roadmap phases.
 
 - Semantic ranking currently scans stored embeddings in application code; a scalable vector index and retrieval evaluation remain future work.
-- Exact, fuzzy, and hybrid transcript search now accept filters for media type, source filename, added-date range, collection, tags, selected media, and speaker (including unassigned speakers). Speaker labels are stored in the segments table with an additive SQLite migration and are rebuilt into the search index after diarization.
+- Unified cross-modal search now combines exact/fuzzy transcript ranks and CLIP keyframe ranks with Reciprocal Rank Fusion (RRF); reference-image queries return similar timestamped frames. This is an initial retrieval slice, not archive question answering.\n- Exact, fuzzy, and hybrid transcript search now accept filters for media type, source filename, added-date range, collection, tags, selected media, and speaker (including unassigned speakers). Speaker labels are stored in the segments table with an additive SQLite migration and are rebuilt into the search index after diarization.
 - Search retrieval evaluation now includes macro Precision@k, Recall@k, and MRR, a CLI for exact/fuzzy/hybrid modes, and a human-judgment dataset template. The template still needs real Dukkan Media relevance labels before measured quality claims can be made; scalable vector retrieval remains outstanding.
 - Transcript insights currently select original transcript sentences and rank term frequencies. They are not abstractive AI summaries or a full topic-modeling system.
 - Video keyframe extraction now records FFmpeg presentation timestamps. Keyframes are persisted in a separate SQLite index and can be searched using Arabic text descriptions or reference images through an optional multilingual CLIP provider. The Streamlit search UI can build/refresh the index and display matched frames with source media and timestamps. Matched frames can open a preview of the original video at the recorded timestamp. Visual retrieval evaluation now includes macro Precision@k, Recall@k, and MRR, a CLI supporting Arabic text and reference-image queries, and a human-judgment template. The template still needs real archive relevance labels before measured quality claims can be made; scalable vector retrieval remains outstanding.
