@@ -259,20 +259,25 @@ class AuthManager:
             return None
         normalized = username.strip().lower()
         username_valid = bool(self.USERNAME_PATTERN.fullmatch(normalized))
-        attempt_key = normalized if username_valid else "<invalid>"
+        # Rate-limit syntactically valid account names independently. Malformed
+        # identifiers are still checked with the dummy PBKDF2 hash below, but
+        # must not share one global lockout bucket that unrelated bad inputs
+        # could exhaust for every other malformed login attempt.
+        attempt_key = normalized if username_valid else None
         now = datetime.now(timezone.utc)
-        cutoff = (now - timedelta(minutes=self.lockout_minutes)).isoformat()
-        attempts = self.connection.execute(
-            """
-            SELECT COUNT(*) FROM auth_login_attempts
-            WHERE username = ? AND succeeded = 0 AND attempted_at >= ?
-            """,
-            (attempt_key, cutoff),
-        ).fetchone()[0]
-        if attempts >= self.max_failed_attempts:
-            raise AuthRateLimitError(
-                f"Too many failed login attempts. Try again in {self.lockout_minutes} minutes."
-            )
+        if attempt_key is not None:
+            cutoff = (now - timedelta(minutes=self.lockout_minutes)).isoformat()
+            attempts = self.connection.execute(
+                """
+                SELECT COUNT(*) FROM auth_login_attempts
+                WHERE username = ? AND succeeded = 0 AND attempted_at >= ?
+                """,
+                (attempt_key, cutoff),
+            ).fetchone()[0]
+            if attempts >= self.max_failed_attempts:
+                raise AuthRateLimitError(
+                    f"Too many failed login attempts. Try again in {self.lockout_minutes} minutes."
+                )
 
         row = None
         if username_valid:
@@ -296,24 +301,26 @@ class AuthManager:
             and row["is_active"]
             and hmac.compare_digest(candidate, row["password_hash"])
         )
-        self.connection.execute(
-            """
-            INSERT INTO auth_login_attempts (username, attempted_at, succeeded)
-            VALUES (?, ?, ?)
-            """,
-            (attempt_key, now.isoformat(), int(valid)),
-        )
-        self.connection.execute(
-            "DELETE FROM auth_login_attempts WHERE attempted_at < ?",
-            ((now - timedelta(days=1)).isoformat(),),
-        )
+        if attempt_key is not None:
+            self.connection.execute(
+                """
+                INSERT INTO auth_login_attempts (username, attempted_at, succeeded)
+                VALUES (?, ?, ?)
+                """,
+                (attempt_key, now.isoformat(), int(valid)),
+            )
+            self.connection.execute(
+                "DELETE FROM auth_login_attempts WHERE attempted_at < ?",
+                ((now - timedelta(days=1)).isoformat(),),
+            )
         if not valid:
             return None
 
-        self.connection.execute(
-            "DELETE FROM auth_login_attempts WHERE username = ?",
-            (attempt_key,),
-        )
+        if attempt_key is not None:
+            self.connection.execute(
+                "DELETE FROM auth_login_attempts WHERE username = ?",
+                (attempt_key,),
+            )
         return self._public_user(row)
 
     def update_user_role(
