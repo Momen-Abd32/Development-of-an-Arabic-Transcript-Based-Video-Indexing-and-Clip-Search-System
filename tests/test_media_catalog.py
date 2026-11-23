@@ -329,3 +329,40 @@ def test_archive_metadata_changes_are_audited(tmp_path):
     assert metadata_event["details"]["after"]["collection"] == "News"
     assert metadata_event["details"]["after"]["tags"] == ["Arabic", "Politics"]
     audit.close()
+
+
+def test_filter_media_supports_type_source_and_added_date_range(tmp_path):
+    catalog = MediaCatalog(
+        tmp_path / "catalog.json",
+        audit_database_path=tmp_path / "audit.db",
+    )
+    video_id = "d" * 64
+    audio_id = "e" * 64
+    catalog.register_media(video_id, "video", "Daily_News.mp4", "/archive/news.mp4")
+    catalog.register_media(audio_id, "audio", "Interview.wav", "/archive/interview.wav")
+    records = catalog.get_all()
+    records[0]["created_at"] = "2026-11-20T10:00:00+00:00"
+    records[1]["created_at"] = "2026-11-22T10:00:00+00:00"
+    catalog._save(records)
+
+    result = catalog.filter_media(
+        media_type="video",
+        source_contains="daily",
+        start_date="2026-11-19",
+        end_date="2026-11-21",
+    )
+    assert [item["media_id"] for item in result] == [video_id]
+
+
+def test_filter_media_rejects_invalid_type_and_date_range(tmp_path):
+    catalog = MediaCatalog(
+        tmp_path / "catalog.json",
+        audit_database_path=tmp_path / "audit.db",
+    )
+    with pytest.raises(ValueError, match="Media type"):
+        catalog.filter_media(media_type="image")
+    with pytest.raises(ValueError, match="after end"):
+        catalog.filter_media(
+            start_date="2026-11-22",
+            end_date="2026-11-20",
+        )
