@@ -74,11 +74,26 @@ class SemanticSearchIndex:
         ).fetchall()
 
         indexed = 0
+        expected_dimension = None
         try:
             self.connection.execute(
                 "DELETE FROM segment_embeddings WHERE video_id = ? AND model_name = ?",
                 (media_id, provider.model_name),
             )
+            existing = self.connection.execute(
+                """
+                SELECT embedding_json
+                FROM segment_embeddings
+                WHERE model_name = ?
+                LIMIT 1
+                """,
+                (provider.model_name,),
+            ).fetchone()
+            if existing is not None:
+                expected_dimension = len(
+                    self._validate_vector(json.loads(existing["embedding_json"]))
+                )
+
             for offset in range(0, len(rows), batch_size):
                 batch = rows[offset:offset + batch_size]
                 texts = [row["original_text"] for row in batch]
@@ -89,6 +104,12 @@ class SemanticSearchIndex:
                 records = []
                 for row, vector in zip(batch, vectors):
                     values = self._validate_vector(vector)
+                    if expected_dimension is None:
+                        expected_dimension = len(values)
+                    elif len(values) != expected_dimension:
+                        raise ValueError(
+                            "Embedding provider returned inconsistent vector dimensions."
+                        )
                     records.append((
                         row["id"],
                         media_id,
