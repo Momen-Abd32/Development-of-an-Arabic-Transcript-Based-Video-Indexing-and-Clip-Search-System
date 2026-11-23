@@ -181,24 +181,34 @@ class ProcessingQueue:
 
     def _recover_expired_jobs(self, cutoff: str) -> int:
         now = _timestamp()
+        expired = self.connection.execute(
+            """
+            SELECT job_id FROM processing_jobs
+            WHERE status = 'running' AND locked_at < ?
+            """,
+            (cutoff,),
+        ).fetchall()
         cursor = self.connection.execute(
             """
             UPDATE processing_jobs
             SET status = CASE
+                    WHEN cancel_requested = 1 THEN 'cancelled'
                     WHEN attempts >= max_attempts THEN 'failed'
                     ELSE 'queued'
                 END,
                 progress = CASE
-                    WHEN attempts >= max_attempts THEN progress
+                    WHEN cancel_requested = 1 OR attempts >= max_attempts THEN progress
                     ELSE 0
                 END,
                 locked_at = NULL,
                 finished_at = CASE
-                    WHEN attempts >= max_attempts THEN ?
+                    WHEN cancel_requested = 1 OR attempts >= max_attempts THEN ?
                     ELSE NULL
                 END,
                 updated_at = ?,
                 error = CASE
+                    WHEN cancel_requested = 1
+                    THEN 'Cancellation completed after worker lease expired.'
                     WHEN attempts >= max_attempts
                     THEN 'Worker lease expired; retry limit reached.'
                     ELSE 'Recovered after worker lease expired.'
@@ -207,6 +217,10 @@ class ProcessingQueue:
             """,
             (now, now, cutoff),
         )
+        for item in expired:
+            job = self.get(item["job_id"])
+            action = "job_cancelled" if job["status"] == "cancelled" else "job_recovered"
+            self._record_event(action, job)
         return cursor.rowcount
 
     def recover_stale_jobs(self, lease_seconds: int = 900) -> int:
