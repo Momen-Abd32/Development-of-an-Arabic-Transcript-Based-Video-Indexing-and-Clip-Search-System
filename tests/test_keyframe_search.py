@@ -143,3 +143,17 @@ def test_rejects_non_monotonic_explicit_timestamps(visual_index, tmp_path):
             "media-ts",
             [(first, 5.0), (second, 4.0)],
         )
+
+
+def test_unchanged_keyframe_metadata_keeps_existing_embeddings(visual_index, tmp_path):
+    frame = tmp_path / "frame.jpg"
+    frame.write_bytes(b"frame")
+    provider = FakeVisualProvider()
+    visual_index.replace_media_keyframes("media-a", [frame], interval_seconds=15)
+    visual_index.index_media("media-a", provider)
+
+    assert visual_index.replace_media_keyframes(
+        "media-a", [frame], interval_seconds=15
+    ) == 1
+    results = visual_index.search_text("سيارة", provider)
+    assert len(results) == 1
