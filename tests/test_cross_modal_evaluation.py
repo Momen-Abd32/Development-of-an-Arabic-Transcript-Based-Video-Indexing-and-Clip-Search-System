@@ -84,6 +84,7 @@ def test_cross_modal_metrics_reject_invalid_k(k):
         {"result_type": "keyframe", "media_id": "", "frame_index": 1},
         {"result_type": "transcript", "media_id": "a", "start": float("nan"), "end": 2},
         {"result_type": "transcript", "media_id": "a", "start": True, "end": 2},
+        {"result_type": "transcript", "media_id": "a", "start": 10**400, "end": 10**401},
     ],
 )
 def test_cross_modal_metrics_reject_invalid_relevance_identity(invalid):
