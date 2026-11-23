@@ -1335,9 +1335,17 @@ with tab_queue:
                 queue.update_progress(job["job_id"], 5)
                 payload = job["payload"]
                 processor = MediaBatchProcessor()
+                progress_bar = st.progress(0.05)
                 results = processor.process_directory(
                     payload["input_directory"],
                     recursive=payload.get("recursive", True),
+                    progress_callback=lambda done, total: (
+                        queue.update_progress(
+                            job["job_id"],
+                            5 + (90 * done / max(total, 1)),
+                        ),
+                        progress_bar.progress(done / max(total, 1)),
+                    ),
                 )
                 failures = [item for item in results if item["status"] == "failed"]
                 if failures:
