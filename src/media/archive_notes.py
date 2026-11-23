@@ -66,7 +66,10 @@ class ArchiveNotes:
             timestamp_seconds, (int, float)
         ):
             raise TypeError("Timestamp must be a number.")
-        value = float(timestamp_seconds)
+        try:
+            value = float(timestamp_seconds)
+        except (OverflowError, ValueError) as error:
+            raise ValueError("Timestamp must be finite and non-negative.") from error
         if not math.isfinite(value) or value < 0:
             raise ValueError("Timestamp must be finite and non-negative.")
         return value
