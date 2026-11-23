@@ -43,6 +43,7 @@ class ArchiveQA:
         if media_ids == []:
             return self._abstention()
 
+        warnings = []
         retrievals = [
             (
                 "exact",
@@ -62,18 +63,20 @@ class ArchiveQA:
             ),
         ]
         if semantic_provider is not None:
-            retrievals.append(
-                (
-                    "semantic",
-                    self.search_engine.semantic_search(
-                        question,
-                        semantic_provider,
-                        limit=limit * 4,
-                        media_ids=media_ids,
-                        speaker=speaker,
-                    ),
+            try:
+                semantic_results = self.search_engine.semantic_search(
+                    question,
+                    semantic_provider,
+                    limit=limit * 4,
+                    media_ids=media_ids,
+                    speaker=speaker,
                 )
-            )
+                retrievals.append(("semantic", semantic_results))
+            except Exception as error:
+                warnings.append(
+                    "Semantic retrieval was unavailable; lexical evidence was still searched: "
+                    + str(error)
+                )
 
         fused: dict[tuple[str, int], dict] = {}
         for source, results in retrievals:
@@ -118,7 +121,7 @@ class ArchiveQA:
             )
 
         if not evidence:
-            return self._abstention()
+            return self._abstention(warnings)
 
         return {
             "status": "evidence_found",
@@ -131,6 +134,7 @@ class ArchiveQA:
                 "end": evidence[0]["end"],
             },
             "evidence": evidence,
+            "warnings": warnings,
             "message": (
                 "The answer is quoted verbatim from the highest-ranked transcript "
                 "segment. Review the cited context before treating it as a complete answer."
@@ -138,13 +142,14 @@ class ArchiveQA:
         }
 
     @staticmethod
-    def _abstention() -> dict:
+    def _abstention(warnings: list[str] | None = None) -> dict:
         return {
             "status": "insufficient_evidence",
             "answer_type": "abstention",
             "answer": None,
             "answer_citation": None,
             "evidence": [],
+            "warnings": warnings or [],
             "message": (
                 "No relevant transcript evidence was found in the selected archive scope. "
                 "The system will not guess an answer."
