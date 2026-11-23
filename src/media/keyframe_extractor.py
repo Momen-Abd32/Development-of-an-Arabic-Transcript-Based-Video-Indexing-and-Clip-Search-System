@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -20,7 +21,8 @@ class KeyframeExtractor:
         interval_seconds: float = 30,
         max_frames: int = 100,
         width: int = 640,
-    ) -> list[Path]:
+        return_timestamps: bool = False,
+    ) -> list[Path] | list[tuple[Path, float]]:
         source = Path(video_path)
         output = Path(output_dir)
 
@@ -36,6 +38,8 @@ class KeyframeExtractor:
             raise ValueError("Maximum frame count must be a positive integer.")
         if isinstance(width, bool) or not isinstance(width, int) or width <= 0:
             raise ValueError("Frame width must be a positive integer.")
+        if not isinstance(return_timestamps, bool):
+            raise TypeError("return_timestamps must be a boolean.")
         if output.exists() and not output.is_dir():
             raise ValueError("Keyframe output path must be a directory.")
 
@@ -59,7 +63,7 @@ class KeyframeExtractor:
                 "-loglevel", "error",
                 "-y",
                 "-i", str(source),
-                "-vf", f"fps=1/{interval_seconds},scale='min({width},iw)':-2",
+                "-vf", f"fps=1/{interval_seconds},scale='min({width},iw)':-2" + (",showinfo" if return_timestamps else ""),
                 "-frames:v", str(max_frames),
                 "-q:v", "2",
                 str(pattern),
@@ -74,6 +78,27 @@ class KeyframeExtractor:
             if not staged_frames:
                 raise RuntimeError("FFmpeg completed without producing keyframes.")
 
+            timestamps = []
+            if return_timestamps:
+                timestamps = [
+                    float(match.group(1))
+                    for match in re.finditer(
+                        r"pts_time:([+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+))",
+                        result.stderr or "",
+                    )
+                ]
+                if len(timestamps) != len(staged_frames):
+                    raise RuntimeError(
+                        "FFmpeg did not return a timestamp for every extracted keyframe."
+                    )
+                if any(
+                    not math.isfinite(value) or value < 0
+                    for value in timestamps
+                ) or any(
+                    right <= left for left, right in zip(timestamps, timestamps[1:])
+                ):
+                    raise RuntimeError("FFmpeg returned invalid keyframe timestamps.")
+
             had_previous_output = output.exists()
             if had_previous_output:
                 os.replace(output, backup_dir)
@@ -87,7 +112,10 @@ class KeyframeExtractor:
             if backup_dir.exists():
                 shutil.rmtree(backup_dir)
 
-            return sorted(output.glob("keyframe_*.jpg"))
+            final_frames = sorted(output.glob("keyframe_*.jpg"))
+            if return_timestamps:
+                return list(zip(final_frames, timestamps))
+            return final_frames
         finally:
             if temporary_dir.exists():
                 shutil.rmtree(temporary_dir)
