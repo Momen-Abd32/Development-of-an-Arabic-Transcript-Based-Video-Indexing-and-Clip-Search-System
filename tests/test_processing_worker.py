@@ -231,6 +231,7 @@ def test_worker_dispatches_explicit_file_import_jobs(tmp_path):
 
     result = worker.run_once()
 
+    assert "error" not in result, result.get("error")
     assert result["job"]["job_id"] == job["job_id"]
     assert result["job"]["status"] == "completed"
     assert len(result["results"]) == 2
