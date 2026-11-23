@@ -182,3 +182,114 @@ def test_catalog_rejects_duplicate_media_ids(tmp_path):
 
     with pytest.raises(ValueError, match="duplicate ID"):
         catalog.get_all()
+
+def test_archive_metadata_is_additive_and_legacy_records_remain_readable(tmp_path):
+    path = tmp_path / "media_catalog.json"
+    path.write_text(
+        json.dumps([{
+            "media_id": MEDIA_ID,
+            "media_type": "video",
+            "source_name": "legacy.mp4",
+            "stored_path": "data/videos/legacy.mp4",
+            "status": "transcribed",
+            "created_at": "2026-11-21T10:00:00+00:00",
+        }]),
+        encoding="utf-8",
+    )
+    catalog = MediaCatalog(str(path))
+
+    updated = catalog.update_archive_metadata(
+        MEDIA_ID,
+        collection="News Archive",
+        tags=["Politics", "Interview"],
+    )
+
+    assert updated["collection"] == "News Archive"
+    assert updated["tags"] == ["Politics", "Interview"]
+    assert catalog.get_by_id(MEDIA_ID)["status"] == "transcribed"
+    assert catalog.get_collections() == ["News Archive"]
+    assert catalog.get_all_tags() == ["Interview", "Politics"]
+
+
+def test_archive_metadata_normalizes_duplicate_tags_and_supports_removal(tmp_path):
+    catalog = MediaCatalog(str(tmp_path / "media_catalog.json"))
+    catalog.register_media(
+        MEDIA_ID, "audio", "recording.mp3", "data/audio/recording.mp3"
+    )
+
+    updated = catalog.update_archive_metadata(
+        MEDIA_ID,
+        collection="  Interviews  ",
+        tags=["News", " news ", "Arabic"],
+    )
+    assert updated["tags"] == ["News", "Arabic"]
+
+    cleared = catalog.update_archive_metadata(MEDIA_ID)
+    assert "collection" not in cleared
+    assert "tags" not in cleared
+    assert catalog.get_collections() == []
+    assert catalog.get_all_tags() == []
+
+
+def test_filter_media_matches_collection_case_insensitively_and_all_tags(tmp_path):
+    catalog = MediaCatalog(str(tmp_path / "media_catalog.json"))
+    catalog.register_media(
+        MEDIA_ID, "video", "one.mp4", "data/videos/one.mp4"
+    )
+    second_id = "b" * 64
+    catalog.register_media(
+        second_id, "audio", "two.mp3", "data/audio/two.mp3"
+    )
+    catalog.update_archive_metadata(
+        MEDIA_ID, collection="News", tags=["Arabic", "Interview"]
+    )
+    catalog.update_archive_metadata(
+        second_id, collection="Sports", tags=["Arabic"]
+    )
+
+    result = catalog.filter_media(
+        collection="news",
+        tags=["arabic", "INTERVIEW"],
+    )
+
+    assert [item["media_id"] for item in result] == [MEDIA_ID]
+    assert [item["media_id"] for item in catalog.filter_media(tags=["Arabic"])] == [
+        MEDIA_ID, second_id
+    ]
+
+
+def test_archive_metadata_rejects_invalid_values_without_mutating_catalog(tmp_path):
+    catalog = MediaCatalog(str(tmp_path / "media_catalog.json"))
+    catalog.register_media(
+        MEDIA_ID, "audio", "recording.mp3", "data/audio/recording.mp3"
+    )
+    original = catalog.get_by_id(MEDIA_ID)
+
+    with pytest.raises(ValueError):
+        catalog.update_archive_metadata(MEDIA_ID, tags=["valid", " "])
+    with pytest.raises(TypeError):
+        catalog.update_archive_metadata(MEDIA_ID, tags="not-a-list")
+    with pytest.raises(KeyError):
+        catalog.update_archive_metadata("c" * 64, collection="Missing")
+
+    assert catalog.get_by_id(MEDIA_ID) == original
+
+
+def test_catalog_rejects_invalid_persisted_collection_and_tags(tmp_path):
+    path = tmp_path / "media_catalog.json"
+    record = {
+        "media_id": MEDIA_ID,
+        "media_type": "audio",
+        "source_name": "recording.mp3",
+        "stored_path": "data/audio/recording.mp3",
+        "status": "uploaded",
+        "created_at": "2026-11-21T10:00:00+00:00",
+        "collection": " ",
+        "tags": ["valid", ""],
+    }
+    path.write_text(json.dumps([record]), encoding="utf-8")
+    catalog = MediaCatalog(str(path))
+
+    with pytest.raises(ValueError, match="collection"):
+        catalog.get_all()
+    assert path.read_text(encoding="utf-8") == json.dumps([record])
