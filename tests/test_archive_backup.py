@@ -33,11 +33,13 @@ def test_backup_verify_and_restore_round_trip_including_sqlite_snapshot(tmp_path
     connection.execute("CREATE TABLE sample (value TEXT)")
     connection.execute("INSERT INTO sample VALUES ('committed in WAL')")
     connection.commit()
-    connection.close()
 
     backup_path = base / "exports" / "backups" / "snapshot.zip"
     manager = ArchiveBackup(base)
-    created = manager.create_backup(backup_path)
+    try:
+        created = manager.create_backup(backup_path)
+    finally:
+        connection.close()
 
     assert created["file_count"] == 4
     manifest = manager.verify_backup(backup_path)
