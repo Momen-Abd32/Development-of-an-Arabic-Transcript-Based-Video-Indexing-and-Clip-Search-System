@@ -129,7 +129,7 @@ class MediaBatchProcessor:
                     stage_progress,
                 )
 
-        report_stage("scanning", input_path, 0)
+        report_stage("scanning", None, 0)
         if not input_path.exists():
             raise FileNotFoundError(f"Input directory not found: {input_path}")
 
