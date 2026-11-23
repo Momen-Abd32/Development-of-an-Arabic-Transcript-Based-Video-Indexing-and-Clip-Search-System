@@ -19,7 +19,7 @@ class KeyframeExtractor:
         video_path: str | Path,
         output_dir: str | Path,
         interval_seconds: float = 30,
-        max_frames: int = 100,
+        max_frames: int = 300,
         width: int = 640,
         return_timestamps: bool = False,
     ) -> list[Path] | list[tuple[Path, float]]:
