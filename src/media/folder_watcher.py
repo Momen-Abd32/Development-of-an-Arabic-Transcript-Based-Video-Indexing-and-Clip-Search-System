@@ -1,6 +1,7 @@
 """Polling-based watched-folder ingestion that queues only stable new files."""
 from __future__ import annotations
 
+import math
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -97,6 +98,8 @@ class FolderWatcher:
                     stat = path.stat()
                 except OSError:
                     continue
+                if stat.st_size <= 0:
+                    continue
                 file_path = str(path)
                 signature = self._signature(stat.st_size, stat.st_mtime_ns)
                 row = self.queue.connection.execute(
@@ -167,16 +170,22 @@ class FolderWatcher:
         return job
 
     def run_forever(self, poll_seconds: float = 5) -> None:
-        if (
-            isinstance(poll_seconds, bool)
-            or not isinstance(poll_seconds, (int, float))
-            or poll_seconds <= 0
+        if isinstance(poll_seconds, bool) or not isinstance(
+            poll_seconds, (int, float)
         ):
-            raise ValueError("Polling interval must be a positive number.")
+            raise ValueError("Polling interval must be a finite positive number.")
+        try:
+            interval = float(poll_seconds)
+        except (OverflowError, ValueError) as error:
+            raise ValueError(
+                "Polling interval must be a finite positive number."
+            ) from error
+        if not math.isfinite(interval) or interval <= 0:
+            raise ValueError("Polling interval must be a finite positive number.")
         self._stop_event.clear()
         while not self._stop_event.is_set():
             self.scan_once()
-            self._stop_event.wait(poll_seconds)
+            self._stop_event.wait(interval)
 
     def stop(self) -> None:
         self._stop_event.set()
