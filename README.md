@@ -319,6 +319,7 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   │   ├── audio_extractor.py
 │   │   ├── archive_metrics.py
 │   │   ├── batch_processor.py
+│   │   ├── folder_watcher.py
 │   │   ├── keyframe_extractor.py
 │   │   ├── media_catalog.py
 │   │   ├── processing_queue.py
