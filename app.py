@@ -263,7 +263,7 @@ TEXT = {
         "archive_qa_tab": "اسأل الأرشيف",
         "evaluation_tab": "تقييم البحث",
         "evaluation_title": "بناء مجموعة تقييم يدوية لنتائج البحث",
-        "evaluation_desc": "ابحث عن مقاطع ثم علّم النتائج ذات الصلة يدوياً. تُحفظ الأحكام في ملف مستقل لاستخدامها في حساب Precision وRecall وMRR.",
+        "evaluation_desc": "ابحث عن مقاطع نصية أو لقطات فيديو ثم علّم النتائج ذات الصلة يدوياً. تُحفظ الأحكام في ملفات مستقلة لاستخدامها في حساب Precision وRecall وMRR.",
         "evaluation_query": "استعلام التقييم",
         "evaluation_mode": "طريقة الاسترجاع",
         "evaluation_cross_modal": "بحث موحّد (نص + لقطات)",
@@ -275,6 +275,7 @@ TEXT = {
         "evaluation_notes": "ملاحظات المراجع (اختياري)",
         "evaluation_save": "حفظ الأحكام اليدوية",
         "evaluation_saved": "تم حفظ الأحكام في data/evaluation/search_queries.json",
+        "evaluation_cross_modal_saved": "تم حفظ أحكام النص واللقطات في data/evaluation/cross_modal_queries.json",
         "evaluation_select_relevant": "حدد نتيجة واحدة ذات صلة على الأقل قبل الحفظ.",
         "evaluation_dataset_count": "عدد الاستعلامات المحكّمة المحفوظة",
         "archive_qa_title": "اسأل الأرشيف واستعرض الأدلة",
@@ -439,7 +440,7 @@ TEXT = {
         "archive_qa_tab": "Ask the Archive",
         "evaluation_tab": "Search Evaluation",
         "evaluation_title": "Build a Human-Judged Search Evaluation Set",
-        "evaluation_desc": "Search for transcript segments and manually mark relevant results. Judgments are saved separately for Precision, Recall, and MRR evaluation.",
+        "evaluation_desc": "Search transcript segments or video keyframes and manually mark relevant results. Judgments are saved separately for Precision, Recall, and MRR evaluation.",
         "evaluation_query": "Evaluation query",
         "evaluation_mode": "Retrieval mode",
         "evaluation_cross_modal": "Unified cross-modal (text + frames)",
@@ -451,6 +452,7 @@ TEXT = {
         "evaluation_notes": "Reviewer notes (optional)",
         "evaluation_save": "Save human judgments",
         "evaluation_saved": "Judgments saved to data/evaluation/search_queries.json",
+        "evaluation_cross_modal_saved": "Transcript and keyframe judgments saved to data/evaluation/cross_modal_queries.json",
         "evaluation_select_relevant": "Select at least one relevant result before saving.",
         "evaluation_dataset_count": "Saved judged queries",
         "archive_notes_tab": "Review Notes",
@@ -2677,7 +2679,7 @@ with tab_evaluation:
                             marked_results,
                             notes=evaluation_notes,
                         )
-                        st.success(t["evaluation_saved"])
+                        st.success(t["evaluation_cross_modal_saved"])
                     else:
                         evaluation_store.add_judgment(
                             st.session_state.get("evaluation_result_query", ""),
