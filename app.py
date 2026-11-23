@@ -10,6 +10,7 @@ from src.media.media_catalog import MediaCatalog
 from src.transcription.faster_whisper_engine import FasterWhisperEngine
 from src.transcription.transcript_manager import TranscriptManager
 from src.transcription.speaker_diarizer import PyannoteSpeakerDiarizer
+from src.transcription.transcript_insights import TranscriptInsights
 from src.transcription.transcript_exporter import TranscriptExporter
 from src.indexing.indexer import TranscriptIndexer
 from src.search.search_engine import SearchEngine
@@ -90,6 +91,11 @@ TEXT = {
         "diarize_speakers": "تمييز المتحدثين",
         "speaker_diarization_help": "تتطلب هذه الميزة تثبيت requirements-diarization.txt وإعداد HF_TOKEN مع صلاحية الوصول إلى نموذج pyannote.",
         "speaker": "المتحدث",
+        "generate_insights": "إنشاء ملخص واستخراج الكلمات المفتاحية",
+        "insights_saved": "تم إنشاء وحفظ الملخص والكلمات المفتاحية.",
+        "insights_title": "ملخص استخراجي",
+        "keywords_title": "الكلمات المفتاحية",
+        "extractive_note": "هذا ملخص استخراجي مكوّن من جمل أصلية من التفريغ؛ لا يعيد صياغة الكلام أو يحوّل اللهجة إلى الفصحى.",
         "start": "البداية",
         "end": "النهاية",
         "save_changes": "حفظ تعديلات النص",
@@ -181,6 +187,11 @@ TEXT = {
         "diarize_speakers": "Identify Speakers",
         "speaker_diarization_help": "Requires requirements-diarization.txt, HF_TOKEN, and access to the pyannote model.",
         "speaker": "Speaker",
+        "generate_insights": "Generate Summary and Keywords",
+        "insights_saved": "Summary and keywords generated and saved.",
+        "insights_title": "Extractive Summary",
+        "keywords_title": "Keywords",
+        "extractive_note": "This summary selects original transcript sentences. It does not rewrite speech or convert dialect into Modern Standard Arabic.",
         "start": "Start",
         "end": "End",
         "save_changes": "Save Transcript Changes",
@@ -718,6 +729,34 @@ with tab_transcript:
                     st.rerun()
             except Exception as error:
                 st.error(f'{t["transcription_failed"]}: {error}')
+
+        if st.button(t["generate_insights"]):
+            try:
+                insights = TranscriptInsights.generate(st.session_state.segments)
+                TranscriptInsights.save(
+                    insights,
+                    Path("data/insights") / f"{video_id}.json",
+                )
+                st.session_state.transcript_insights = insights
+                st.success(t["insights_saved"])
+            except Exception as error:
+                st.error(f'{t["transcription_failed"]}: {error}')
+
+        insights_path = Path("data/insights") / f"{video_id}.json"
+        if st.session_state.get("transcript_insights") is None and insights_path.is_file():
+            try:
+                st.session_state.transcript_insights = TranscriptInsights.load(insights_path)
+            except Exception:
+                st.session_state.transcript_insights = None
+
+        current_insights = st.session_state.get("transcript_insights")
+        if current_insights:
+            st.markdown(f'#### {t["insights_title"]}')
+            st.caption(t["extractive_note"])
+            st.write(current_insights["summary"] or t["no_results"])
+            if current_insights["keywords"]:
+                st.markdown(f'**{t["keywords_title"]}**')
+                st.write(", ".join(item["term"] for item in current_insights["keywords"]))
 
         for index, segment in enumerate(st.session_state.segments):
             with st.container(border=True):
