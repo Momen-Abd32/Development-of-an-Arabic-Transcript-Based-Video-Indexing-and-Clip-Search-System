@@ -1379,6 +1379,7 @@ with tab_search:
 with tab_visual:
     st.subheader("🖼️ " + t["visual_search_title"])
     st.caption(t["visual_search_hint"])
+    st.caption(t["visual_time_note"])
     visual_scope = st.radio(
         t["search_scope"],
         [t["current_media"], t["entire_archive"]],
