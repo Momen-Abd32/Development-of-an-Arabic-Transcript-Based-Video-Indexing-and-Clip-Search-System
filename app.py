@@ -582,6 +582,7 @@ with tab_upload:
                 st.session_state.search_results = []
                 st.session_state.transcript_export_path = None
                 st.session_state.clips_export_path = None
+                st.session_state.transcript_insights = None
 
                 existing_transcript = Path(
                     f"data/transcripts/{media_id}.json"
@@ -810,6 +811,10 @@ with tab_transcript:
                 st.session_state.segments = edited_segments
                 st.session_state.search_results = []
                 st.session_state.transcript_export_path = None
+                st.session_state.transcript_insights = None
+                insights_path = Path("data/insights") / f"{video_id}.json"
+                if insights_path.is_file():
+                    insights_path.unlink()
                 st.success(t["changes_saved"])
                 st.rerun()
             except Exception as error:
