@@ -172,7 +172,8 @@ TEXT = {
         "keyframes_failed": "تعذر استخراج الصور المصغّرة",
         "keyframes_title": "الصور المصغّرة / اللقطات الرئيسية",
         "visual_search_title": "البحث البصري داخل الفيديو",
-        "visual_search_hint": "ابحث بوصف نصي عربي أو بصورة مرجعية. يتطلب بناء فهرس اللقطات أولاً وتثبيت المتطلبات الاختيارية؛ النموذج يستخدم CLIP لمقارنة النصوص بالصور.",
+        "visual_search_hint": "ابحث بوصف نصي عربي أو بصورة مرجعية. يتطلب بناء فهرس اللقطات أولاً وتثبيت المتطلبات الاختيارية؛ يستخدم النموذج متعدد اللغات CLIP لمقارنة النصوص بالصور، وتُحفظ توقيتات الإطارات من FFmpeg.",
+        "visual_time_note": "التوقيت مأخوذ من طوابع الإطارات التي يعيدها FFmpeg.",
         "visual_search_query": "صف المشهد الذي تبحث عنه",
         "visual_reference_image": "أو ارفع صورة مرجعية",
         "build_visual_index": "بناء / تحديث فهرس اللقطات البصري",
@@ -358,7 +359,8 @@ TEXT = {
         "keyframes_failed": "Keyframe extraction failed",
         "keyframes_title": "Thumbnails / Keyframes",
         "visual_search_title": "Visual Video Search",
-        "visual_search_hint": "Search with an Arabic text description or a reference image. Build the keyframe index first and install the optional dependencies; CLIP compares text and images in a shared embedding space.",
+        "visual_search_hint": "Search with an Arabic text description or a reference image. Build the keyframe index first and install the optional dependencies; multilingual CLIP compares text and images in a shared embedding space.",
+        "visual_time_note": "Timestamps come from FFmpeg frame presentation timestamps.",
         "visual_search_query": "Describe the scene you are looking for",
         "visual_reference_image": "Or upload a reference image",
         "build_visual_index": "Build / Refresh Visual Keyframe Index",
@@ -968,6 +970,7 @@ with tab_transcript:
                         extracted_frames = KeyframeExtractor.extract(
                             st.session_state.media_path,
                             keyframe_dir,
+                            return_timestamps=True,
                         )
                         keyframe_index = KeyframeSearchIndex()
                         try:
@@ -984,13 +987,27 @@ with tab_transcript:
 
             keyframe_paths = sorted(keyframe_dir.glob("keyframe_*.jpg"))
             if keyframe_paths:
+                keyframe_index = KeyframeSearchIndex()
+                try:
+                    keyframe_metadata = keyframe_index.get_media_keyframes(video_id)
+                finally:
+                    keyframe_index.close()
+                timestamp_by_path = {
+                    item["image_path"]: item["timestamp_seconds"]
+                    for item in keyframe_metadata
+                }
                 st.markdown(f'#### {t["keyframes_title"]}')
                 image_columns = st.columns(3)
                 for frame_index, frame_path in enumerate(keyframe_paths):
+                    timestamp = timestamp_by_path.get(str(frame_path.resolve()))
+                    caption = (
+                        f"{timestamp:.1f}s" if timestamp is not None
+                        else f"Frame {frame_index + 1}"
+                    )
                     with image_columns[frame_index % len(image_columns)]:
                         st.image(
                             str(frame_path),
-                            caption=f"{frame_index + 1}",
+                            caption=caption,
                             use_container_width=True,
                         )
 
@@ -1385,9 +1402,27 @@ with tab_search:
                         frame_dir = Path("data/keyframes") / record["media_id"]
                         frames = sorted(frame_dir.glob("keyframe_*.jpg"))
                         if frames:
-                            visual_index.replace_media_keyframes(
-                                record["media_id"], frames, interval_seconds=30
+                            existing_frames = visual_index.get_media_keyframes(
+                                record["media_id"]
                             )
+                            existing_paths = [
+                                item["image_path"] for item in existing_frames
+                            ]
+                            current_paths = [str(path.resolve()) for path in frames]
+                            if existing_paths != current_paths:
+                                source_path = Path(record["stored_path"])
+                                if not source_path.is_file():
+                                    raise FileNotFoundError(
+                                        f'Original video is missing: {source_path}'
+                                    )
+                                timestamped_frames = KeyframeExtractor.extract(
+                                    source_path,
+                                    frame_dir,
+                                    return_timestamps=True,
+                                )
+                                visual_index.replace_media_keyframes(
+                                    record["media_id"], timestamped_frames
+                                )
                             total_indexed += visual_index.index_media(
                                 record["media_id"], visual_provider
                             )
