@@ -552,7 +552,7 @@ A USB drive or network share can be used by passing its mounted folder path. Con
 To monitor one or more incoming folders continuously, start the watcher in a separate terminal:
 
 ```bash
-python scripts/watch_media_folders.py --folder "D:\\DukkanMedia\\Incoming"
+python scripts/watch_media_folders.py --folder "D:\DukkanMedia\Incoming"
 ```
 
 Multiple folders can be supplied by repeating `--folder`. Useful options include `--poll-seconds 10`, `--stable-scans 3`, and `--non-recursive`. A file is queued only after its size and modification timestamp remain unchanged for the configured number of consecutive scans. The watcher persists file signatures in the processing queue database and creates explicit file-import jobs, so new files do not require rescanning and re-indexing the entire folder.
