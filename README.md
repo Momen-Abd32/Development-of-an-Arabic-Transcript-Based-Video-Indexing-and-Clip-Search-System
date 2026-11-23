@@ -323,6 +323,7 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   ├── test_metrics.py
 │   ├── test_search_engine.py
 │   ├── test_text_processor.py
+│   ├── test_transcript_insights.py
 │   ├── test_transcript_exporter.py
 │   └── test_transcript_manager.py
 │
