@@ -438,7 +438,7 @@ Visual search requires extracted video keyframes and two aligned optional CLIP e
 pip install -r requirements-visual.txt
 ```
 
-Open the Search tab, expand **Visual Video Search**, and choose **Build / Refresh Visual Keyframe Index**. The first run downloads both CLIP checkpoints and indexes existing keyframes. You can then search with an Arabic scene description or upload a reference image. Results show the matched frame, source video, and its FFmpeg presentation timestamp. Videos without extracted keyframes are skipped; extract keyframes from the Transcript tab first.
+Open the **Visual Search** tab and choose **Build / Refresh Visual Keyframe Index**. The first run downloads both CLIP checkpoints, automatically extracts keyframes from videos that do not yet have them, and indexes the frames. You can then search with an Arabic scene description or upload a reference image. Results show the matched frame, source video, and its FFmpeg presentation timestamp; use the preview action to open the original video at that time. A video whose original file is missing can still be indexed if its keyframe images are already present.
 
 Visual embeddings are stored separately in SQLite. Exact transcript search and other archive workflows do not require the visual dependencies. The checked-in tests use a deterministic fake provider and do not download or validate the real model against Dukkan Media content.
 
