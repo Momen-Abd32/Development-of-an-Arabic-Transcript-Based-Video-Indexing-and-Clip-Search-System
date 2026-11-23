@@ -154,3 +154,33 @@ def test_watcher_rejects_invalid_poll_interval(tmp_path):
             watcher.run_forever(0)
     finally:
         watcher.close()
+
+
+
+def test_watcher_does_not_queue_empty_files(tmp_path):
+    folder = tmp_path / "incoming"
+    folder.mkdir()
+    (folder / "empty.mp4").write_bytes(b"")
+
+    watcher = FolderWatcher([folder], database_path=tmp_path / "queue.db")
+    try:
+        assert watcher.scan_once() is None
+        assert watcher.scan_once() is None
+        assert watcher.queue.list_jobs() == []
+    finally:
+        watcher.close()
+
+
+@pytest.mark.parametrize("poll_seconds", [float("nan"), float("inf"), True, -1])
+def test_watcher_rejects_non_finite_or_invalid_poll_intervals(
+    tmp_path,
+    poll_seconds,
+):
+    root = tmp_path / "root"
+    root.mkdir()
+    watcher = FolderWatcher([root], database_path=tmp_path / "queue.db")
+    try:
+        with pytest.raises(ValueError):
+            watcher.run_forever(poll_seconds)
+    finally:
+        watcher.close()
