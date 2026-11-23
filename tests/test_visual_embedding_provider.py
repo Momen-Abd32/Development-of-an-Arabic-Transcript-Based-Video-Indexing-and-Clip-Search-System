@@ -40,6 +40,7 @@ def test_visual_provider_uses_multilingual_text_encoder_and_original_clip_image_
     image_api = types.SimpleNamespace(open=lambda path: FakeImage())
     pil_module = types.ModuleType("PIL")
     pil_module.Image = image_api
+    pil_module.ImageOps = types.SimpleNamespace(exif_transpose=lambda image: image)
     monkeypatch.setitem(sys.modules, "PIL", pil_module)
 
     provider = SentenceTransformerVisualProvider()
