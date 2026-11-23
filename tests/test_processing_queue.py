@@ -171,3 +171,12 @@ def test_two_queue_workers_cannot_claim_the_same_job(tmp_path):
     assert competing_claim is None
     first_worker.close()
     second_worker.close()
+
+def test_queue_counts_all_jobs_by_status(tmp_path):
+    queue = ProcessingQueue(tmp_path / "queue.db")
+    queue.enqueue("batch_import", {"n": 1})
+    cancelled = queue.enqueue("batch_import", {"n": 2})
+    queue.cancel(cancelled["job_id"])
+
+    assert queue.count_by_status() == {"cancelled": 1, "queued": 1}
+    queue.close()
