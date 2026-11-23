@@ -172,6 +172,7 @@ TEXT = {
         "keyframes_failed": "تعذر استخراج الصور المصغّرة",
         "keyframes_title": "الصور المصغّرة / اللقطات الرئيسية",
         "visual_search_tab": "البحث البصري",
+        "visual_play_at_time": "معاينة الفيديو عند هذا التوقيت",
         "visual_search_title": "البحث البصري داخل الفيديو",
         "visual_skipped": "تم تجاوز فيديوهات بلا لقطات",
         "visual_search_hint": "ابحث بوصف نصي عربي أو بصورة مرجعية. يتطلب بناء فهرس اللقطات أولاً وتثبيت المتطلبات الاختيارية؛ يستخدم النموذج متعدد اللغات CLIP لمقارنة النصوص بالصور، وتُحفظ توقيتات الإطارات من FFmpeg.",
@@ -361,6 +362,7 @@ TEXT = {
         "keyframes_failed": "Keyframe extraction failed",
         "keyframes_title": "Thumbnails / Keyframes",
         "visual_search_tab": "Visual Search",
+        "visual_play_at_time": "Preview video at this timestamp",
         "visual_search_title": "Visual Video Search",
         "visual_skipped": "Videos skipped (no keyframes)",
         "visual_search_hint": "Search with an Arabic text description or a reference image. Build the keyframe index first and install the optional dependencies; multilingual CLIP compares text and images in a shared embedding space.",
@@ -1401,6 +1403,11 @@ with tab_visual:
             )
         ]
     visual_media_ids = [record["media_id"] for record in visual_media_records]
+    visual_media_filter = (
+        [current_video_id]
+        if visual_scope == t["current_media"] and current_video_id
+        else None
+    )
     visual_query = st.text_input(
         t["visual_search_query"],
         key="visual_search_query_standalone",
@@ -1481,13 +1488,13 @@ with tab_visual:
                     visual_results = visual_index.search_image(
                         temporary_reference,
                         visual_provider,
-                        media_ids=visual_media_ids,
+                        media_ids=visual_media_filter,
                     )
                 else:
                     visual_results = visual_index.search_text(
                         visual_query,
                         visual_provider,
-                        media_ids=visual_media_ids,
+                        media_ids=visual_media_filter,
                     )
                 st.session_state.visual_search_results = visual_results
                 st.session_state.visual_search_scope = visual_scope
@@ -1529,6 +1536,18 @@ with tab_visual:
                 st.caption(
                     f'{t["time"]}: {visual_result["timestamp_seconds"]:.2f}s'
                 )
+                source_path = (
+                    Path(source_record["stored_path"])
+                    if source_record else None
+                )
+                if source_path and source_path.is_file() and st.button(
+                    t["visual_play_at_time"],
+                    key=f'visual_play_{visual_result["keyframe_id"]}',
+                ):
+                    st.video(
+                        str(source_path),
+                        start_time=int(visual_result["timestamp_seconds"]),
+                    )
     elif visual_results == []:
         st.info(t["no_visual_results"])
 
