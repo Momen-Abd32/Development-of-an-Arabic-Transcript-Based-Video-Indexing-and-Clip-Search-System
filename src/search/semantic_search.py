@@ -148,8 +148,10 @@ class SemanticSearchIndex:
         provider: EmbeddingProvider,
         limit: int = 20,
         media_id: str | None = None,
+        media_ids: list[str] | None = None,
+        speaker: str | None = None,
     ) -> list[dict]:
-        if not isinstance(query, str) or not query.strip():
+        if not isinstance(query, str) or not query.strip() or media_ids == []:
             return []
         if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
             raise ValueError("Limit must be a positive integer.")
@@ -157,7 +159,7 @@ class SemanticSearchIndex:
         query_vector = self._validate_vector(provider.embed_query(query))
         sql = """
             SELECT s.id, s.video_id, s.start, s.end, s.original_text,
-                   e.embedding_json
+                   s.speaker, e.embedding_json
             FROM segment_embeddings e
             JOIN segments s ON s.id = e.segment_id
             WHERE e.model_name = ?
@@ -166,6 +168,12 @@ class SemanticSearchIndex:
         if media_id is not None:
             sql += " AND e.video_id = ?"
             params.append(media_id)
+        if media_ids is not None:
+            sql += " AND e.video_id IN (" + ",".join("?" for _ in media_ids) + ")"
+            params.extend(media_ids)
+        if speaker is not None:
+            sql += " AND s.speaker = ?"
+            params.append(speaker)
 
         ranked = []
         for row in self.connection.execute(sql, params):
@@ -173,7 +181,7 @@ class SemanticSearchIndex:
             score = self._cosine_similarity(query_vector, stored)
             result = {
                 key: row[key]
-                for key in ("id", "video_id", "start", "end", "original_text")
+                for key in ("id", "video_id", "start", "end", "original_text", "speaker")
             }
             result["semantic_score"] = round(score, 6)
             ranked.append((score, -row["id"], result))
