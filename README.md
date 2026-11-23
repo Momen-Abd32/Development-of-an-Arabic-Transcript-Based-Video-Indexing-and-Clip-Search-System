@@ -498,7 +498,7 @@ python scripts/evaluate_visual_search.py --dataset data/evaluation/visual_querie
 
 The report includes macro Precision@k, Recall@k, and MRR. The checked-in dataset is only a template; it is not a benchmark and must not be used to claim real archive accuracy.
 
-To evaluate the **combined transcript + visual ranking**, copy `data/evaluation/cross_modal_queries.example.json` to `data/evaluation/cross_modal_queries.json`, then replace the placeholder media IDs, transcript timestamps, and frame indices with human-reviewed relevance judgments:
+To evaluate the **combined transcript + visual ranking**, use the Search Evaluation workspace's unified cross-modal mode to create `data/evaluation/cross_modal_queries.json`, or copy `data/evaluation/cross_modal_queries.example.json` and replace the placeholder media IDs, transcript timestamps, and frame indices with human-reviewed relevance judgments. The workspace currently labels text-to-transcript/keyframe results; reference-image-to-image judgments remain available through the visual template:
 
 ```bash
 python scripts/evaluate_cross_modal_search.py --dataset data/evaluation/cross_modal_queries.json --top-k 5
