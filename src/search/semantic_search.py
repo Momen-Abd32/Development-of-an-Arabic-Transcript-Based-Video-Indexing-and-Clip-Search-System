@@ -10,6 +10,9 @@ from typing import Sequence
 from src.search.embedding_provider import EmbeddingProvider
 
 
+UNSPECIFIED_SPEAKER = "__UNSPECIFIED_SPEAKER__"
+
+
 class SemanticSearchIndex:
     """Stores optional embeddings separately from the existing FTS5 index."""
 
@@ -171,7 +174,9 @@ class SemanticSearchIndex:
         if media_ids is not None:
             sql += " AND e.video_id IN (" + ",".join("?" for _ in media_ids) + ")"
             params.extend(media_ids)
-        if speaker is not None:
+        if speaker == UNSPECIFIED_SPEAKER:
+            sql += " AND (s.speaker IS NULL OR TRIM(s.speaker) = '')"
+        elif speaker is not None:
             sql += " AND s.speaker = ?"
             params.append(speaker)
 
