@@ -71,5 +71,9 @@ class ArchiveMetrics:
             "ffmpeg_available": shutil.which("ffmpeg") is not None,
             "faster_whisper_available": importlib.util.find_spec("faster_whisper") is not None,
             "semantic_search_available": importlib.util.find_spec("sentence_transformers") is not None,
+            "visual_search_available": all(
+                importlib.util.find_spec(package) is not None
+                for package in ("sentence_transformers", "PIL", "torchvision")
+            ),
             "diarization_available": importlib.util.find_spec("pyannote") is not None,
         }
