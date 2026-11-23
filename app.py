@@ -1,5 +1,6 @@
 import hashlib
 import os
+from datetime import date, timedelta
 import tempfile
 from pathlib import Path
 
@@ -273,6 +274,7 @@ TEXT = {
         "archive_qa_play": "تشغيل المصدر من هذا التوقيت",
         "archive_qa_semantic_unavailable": "تعذر تشغيل الاسترجاع الدلالي؛ سيستمر البحث النصي.",
         "archive_qa_matching_media": "عدد الملفات المطابقة للفلاتر",
+        "archive_qa_filter_date_enabled": "تفعيل التصفية حسب تاريخ الإضافة",
         "archive_qa_collection": "المجموعة",
         "archive_qa_tags": "الوسوم",
         "archive_qa_local_llm": "إنشاء إجابة متعددة المقاطع باستخدام Ollama المحلي (اختياري)",
@@ -449,6 +451,7 @@ TEXT = {
         "archive_qa_play": "Play source from this timestamp",
         "archive_qa_semantic_unavailable": "Semantic retrieval could not run; transcript search will continue.",
         "archive_qa_matching_media": "Media items matching filters",
+        "archive_qa_filter_date_enabled": "Filter by added date",
         "archive_qa_collection": "Collection",
         "archive_qa_tags": "Tags",
         "archive_qa_local_llm": "Generate a multi-passage answer with local Ollama (optional)",
@@ -2161,10 +2164,18 @@ with tab_qa:
                 t["filter_source"],
                 key="archive_qa_source_filter",
             )
-            qa_date_range = st.date_input(
-                t["filter_date"],
-                value=(),
-                key="archive_qa_date_range",
+            qa_filter_date_enabled = st.checkbox(
+                t["archive_qa_filter_date_enabled"],
+                value=False,
+                key="archive_qa_filter_date_enabled",
+            )
+            qa_date_range = (
+                st.date_input(
+                    t["filter_date"],
+                    value=(date.today() - timedelta(days=30), date.today()),
+                    key="archive_qa_date_range",
+                )
+                if qa_filter_date_enabled else ()
             )
             qa_collections = qa_catalog_manager.get_collections()
             qa_collection_label = st.selectbox(
