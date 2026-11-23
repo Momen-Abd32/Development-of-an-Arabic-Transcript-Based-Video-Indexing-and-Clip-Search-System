@@ -1,4 +1,5 @@
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -171,3 +172,48 @@ def test_keyframe_embedding_rows_cascade_when_frame_is_deleted(visual_index, tmp
     assert visual_index.connection.execute(
         "SELECT COUNT(*) FROM keyframe_embeddings"
     ).fetchone()[0] == 0
+
+
+def test_changed_image_bytes_invalidate_old_visual_embeddings(visual_index, tmp_path):
+    frame = tmp_path / "frame.jpg"
+    frame.write_bytes(b"original-frame")
+    provider = FakeVisualProvider()
+    visual_index.replace_media_keyframes("media-a", [frame])
+    visual_index.index_media("media-a", provider)
+
+    frame.write_bytes(b"changed-frame")
+    visual_index.replace_media_keyframes("media-a", [frame])
+
+    assert visual_index.connection.execute(
+        "SELECT COUNT(*) FROM keyframe_embeddings"
+    ).fetchone()[0] == 0
+    assert visual_index.search_text("سيارة", provider) == []
+
+
+def test_migrates_legacy_keyframe_table_with_image_hash_column(tmp_path):
+    database = tmp_path / "legacy.db"
+    connection = sqlite3.connect(database)
+    connection.execute(
+        """
+        CREATE TABLE keyframes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            media_id TEXT NOT NULL,
+            frame_index INTEGER NOT NULL,
+            timestamp_seconds REAL NOT NULL,
+            image_path TEXT NOT NULL,
+            UNIQUE(media_id, frame_index)
+        )
+        """
+    )
+    connection.commit()
+    connection.close()
+
+    index = KeyframeSearchIndex(database)
+    try:
+        columns = {
+            row["name"]
+            for row in index.connection.execute("PRAGMA table_info(keyframes)")
+        }
+        assert "image_sha256" in columns
+    finally:
+        index.close()
