@@ -60,7 +60,7 @@ class KeyframeExtractor:
                 ffmpeg_path,
                 "-nostdin",
                 "-hide_banner",
-                "-loglevel", "error",
+                "-loglevel", "info" if return_timestamps else "error",
                 "-y",
                 "-i", str(source),
                 "-vf", f"setpts=PTS-STARTPTS,fps=1/{interval_seconds},scale='min({width},iw)':-2" + (",showinfo" if return_timestamps else ""),
