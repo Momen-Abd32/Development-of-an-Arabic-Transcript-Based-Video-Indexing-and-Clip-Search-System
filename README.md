@@ -73,6 +73,7 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - **Clip extraction:** Extract a selected time range from the source video as an MP4 clip.
 - **Saved clip management:** Store clip metadata and view saved clips associated with a video.
 - **CSV export:** Export transcript segments and saved clip metadata.
+- **Human search-evaluation workspace:** Search exact/fuzzy transcript results, mark relevant segments, and save reviewed media IDs/timestamps into a local evaluation dataset used by the metrics CLI.
 - **Transcription evaluation utilities:** Calculate Word Error Rate (WER) and Character Error Rate (CER) against a reference transcript.
 
 ### Supported video formats
@@ -340,6 +341,7 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   │   ├── cross_modal_evaluation.py
 │   │   ├── cross_modal_search.py
 │   │   ├── evaluation.py
+│   │   ├── evaluation_dataset.py
 │   │   ├── keyframe_search.py
 │   │   ├── search_engine.py
 │   │   ├── semantic_search.py
@@ -357,6 +359,7 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 ├── tests/
 │   ├── test_archive_metrics.py
 │   ├── test_archive_qa.py
+│   ├── test_evaluation_dataset.py
 │   ├── test_local_answer_provider.py
 │   ├── test_auth_manager.py
 │   ├── test_archive_backup.py
@@ -705,9 +708,9 @@ Enable **Generate a multi-passage answer with local Ollama** in the Q&A workspac
 
 The project includes macro-averaged Precision@k, Recall@k, and Mean Reciprocal Rank (MRR) for comparing exact, fuzzy, and hybrid transcript retrieval against human relevance judgments.
 
-1. Copy `data/evaluation/search_queries.example.json` to `data/evaluation/search_queries.json`.
-2. Replace the example media ID and timestamps with the actual `media_id`, segment start, and segment end for each judged relevant result in your archive. Add multiple Arabic queries, including MSA wording, spelling variants, diacritics, and mixed Arabic/English phrases.
-3. Run one retrieval mode:
+Use the **Search Evaluation** workspace in the Streamlit app to enter a query, inspect exact/fuzzy results, mark the relevant segments, and save judgments. The workspace writes `data/evaluation/search_queries.json` atomically and merges additional judgments for the same query. This file is ignored by Git because it contains references to the local archive. Alternatively, create the file manually from the checked-in template and replace its example media IDs/timestamps with human-reviewed segments. Include varied Arabic queries: MSA wording, spelling variants, diacritics, and mixed Arabic/English phrases.
+
+Run one retrieval mode:
 
 ```bash
 python scripts/evaluate_search.py --mode exact --dataset data/evaluation/search_queries.json --top-k 5
