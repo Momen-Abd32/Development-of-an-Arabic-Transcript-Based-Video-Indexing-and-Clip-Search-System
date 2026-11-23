@@ -2136,7 +2136,7 @@ with tab_notes:
                             note_manager.close()
 
 
-# 6. Saved clips
+# 8. Saved clips
 # --------------------------------------------------
 
 with tab_clips:
