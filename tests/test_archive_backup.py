@@ -69,7 +69,10 @@ def test_backup_skips_symlinks_and_external_files(tmp_path):
     data.mkdir(parents=True)
     outside = tmp_path / "secret.txt"
     outside.write_text("not part of archive", encoding="utf-8")
-    (data / "external-link.txt").symlink_to(outside)
+    try:
+        (data / "external-link.txt").symlink_to(outside)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlink creation is not available on this platform.")
 
     backup = ArchiveBackup(base).create_backup(
         base / "exports" / "backups" / "safe.zip"
