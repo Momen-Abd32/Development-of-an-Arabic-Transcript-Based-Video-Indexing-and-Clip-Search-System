@@ -47,6 +47,8 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - **Transcript reuse:** Reuse existing transcript JSON files and rebuild their search index instead of transcribing the same media again.
 - **Arabic speech recognition:** Generate timestamped transcript segments with Faster-Whisper.
 - **Transcript review and editing:** Review generated segments, correct their text, and save the updated transcript.
+- **Timestamp-based transcript playback:** Start video or audio preview from a selected transcript segment.
+- **Optional speaker diarization:** Attach speaker labels to transcript segments using pyannote.audio when model access is configured.
 - **Arabic text normalization:** Normalize common Arabic character variations, remove diacritics and tatweel, and standardize whitespace to improve search consistency.
 - **Exact full-text search:** Find transcript segments using SQLite FTS5.
 - **Fuzzy search:** Find approximate matches using RapidFuzz.
@@ -393,7 +395,17 @@ pip install -r requirements-semantic.txt
 
 In the Search tab, choose **Hybrid Semantic Search**, then select **Build / Refresh Semantic Index**. The first use downloads the configured multilingual embedding model. Model download and embedding generation require additional disk space, memory, and processing time.
 
-### 5. Install and verify FFmpeg
+### Optional: enable speaker diarization
+
+Speaker diarization requires the optional dependencies, a Hugging Face access token, and acceptance/access to the selected pyannote model:
+
+```bash
+pip install -r requirements-diarization.txt
+```
+
+Set `HF_TOKEN` in your environment, then use **Identify Speakers** in the Transcript tab. Speaker labels are metadata attached to transcript segments; the original recognized words are not rewritten.
+
+### 6. Install and verify FFmpeg
 
 Install FFmpeg using the instructions for your operating system, then ensure that the FFmpeg executable is available through the system `PATH`.
 
@@ -505,6 +517,7 @@ Uploaded videos, original audio files, normalized audio, transcript JSON files, 
 - The default `tiny` model favors lower resource usage; it may not provide the highest transcription accuracy.
 - Fuzzy search compares transcript segments and can require more processing as the indexed transcript collection grows.
 - Semantic and hybrid search are optional and require installing `requirements-semantic.txt` and explicitly building the semantic index. Embeddings are stored in a separate SQLite table; existing FTS5 and RapidFuzz indexes remain available.
+- Speaker diarization is optional, requires a Hugging Face token and access to the gated pyannote model, and has not yet been evaluated on Dukkan Media recordings.
 - The initial semantic-search implementation ranks stored embeddings in application code. Very large archives will need a dedicated vector index and retrieval-performance evaluation.
 - The application currently uses local file storage and a local SQLite database; it is not designed as a multi-user hosted service.
 - Batch import currently reads local or mounted folders. Direct cloud-provider APIs, remote URL ingestion, and continuous folder monitoring are not implemented yet.
