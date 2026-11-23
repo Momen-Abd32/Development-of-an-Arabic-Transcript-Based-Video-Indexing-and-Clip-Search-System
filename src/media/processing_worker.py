@@ -1,6 +1,7 @@
 """Background worker for durable media-processing jobs."""
 from __future__ import annotations
 
+import inspect
 import threading
 import time
 from pathlib import Path
@@ -76,10 +77,39 @@ class ProcessingWorker:
                 if self.queue.is_cancel_requested(job["job_id"]):
                     raise ProcessingCancelled("Cancellation requested by user.")
 
+            def report_stage(
+                stage: str,
+                current_file: str | None,
+                stage_progress: float,
+            ) -> None:
+                self.queue.update_stage(
+                    job["job_id"],
+                    stage,
+                    current_file=current_file,
+                    stage_progress=stage_progress,
+                )
+
+            process_kwargs = {
+                "recursive": payload.get("recursive", True),
+                "progress_callback": report_progress,
+            }
+            try:
+                parameters = inspect.signature(
+                    processor.process_directory
+                ).parameters.values()
+                supports_stage_callback = any(
+                    parameter.name == "stage_callback"
+                    or parameter.kind == inspect.Parameter.VAR_KEYWORD
+                    for parameter in parameters
+                )
+            except (TypeError, ValueError):
+                supports_stage_callback = False
+            if supports_stage_callback:
+                process_kwargs["stage_callback"] = report_stage
+
             results = processor.process_directory(
                 payload["input_directory"],
-                recursive=payload.get("recursive", True),
-                progress_callback=report_progress,
+                **process_kwargs,
             )
             if self.queue.is_cancel_requested(job["job_id"]):
                 final_job = self.queue.cancel_running(job["job_id"])
