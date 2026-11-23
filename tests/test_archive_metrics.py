@@ -61,6 +61,7 @@ def test_archive_metrics_summarize_catalog_storage_queue_and_health(
     assert result["ffmpeg_available"] is True
     assert "faster_whisper_available" in result
     assert "semantic_search_available" in result
+    assert "visual_search_available" in result
     assert "diarization_available" in result
     metrics.close()
 
