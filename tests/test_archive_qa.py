@@ -306,3 +306,33 @@ def test_archive_qa_does_not_call_answer_provider_without_evidence():
 
     assert result["status"] == "insufficient_evidence"
     assert provider.calls == []
+
+
+def test_archive_qa_supports_multiple_cited_claims_from_distinct_segments():
+    engine = FakeSearchEngine(exact=[
+        segment(21, "وصلت الشحنة إلى عمّان.", start=30),
+        segment(22, "تم تسليمها إلى المستودع الرئيسي.", start=42),
+    ])
+    provider = FakeAnswerProvider({
+        "abstain": False,
+        "claims": [
+            {
+                "text": "وصلت الشحنة إلى عمّان.",
+                "citations": [{"media_id": "media-a", "segment_id": 21}],
+            },
+            {
+                "text": "ثم سُلّمت إلى المستودع الرئيسي.",
+                "citations": [{"media_id": "media-a", "segment_id": 22}],
+            },
+        ],
+    })
+
+    result = ArchiveQA(engine).ask("ما الذي حدث للشحنة؟", answer_provider=provider)
+
+    assert result["answer_type"] == "cited_generated_claims"
+    assert result["answer"] == (
+        "وصلت الشحنة إلى عمّان.\nثم سُلّمت إلى المستودع الرئيسي."
+    )
+    assert result["answer_citation"] is None
+    assert [item["segment_id"] for item in result["answer_citations"]] == [21, 22]
+    assert result["claims"][1]["citations"][0]["start"] == 42.0
