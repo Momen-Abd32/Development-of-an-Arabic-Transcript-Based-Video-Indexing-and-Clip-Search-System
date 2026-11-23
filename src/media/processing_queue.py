@@ -450,7 +450,7 @@ class ProcessingQueue:
             """
             UPDATE processing_jobs
             SET status = 'cancelled', stage = 'cancelled',
-                stage_progress = 100, current_file = NULL, locked_at = NULL,
+                stage_progress = 0, current_file = NULL, locked_at = NULL,
                 finished_at = ?, updated_at = ?
             WHERE job_id = ? AND status = 'queued'
             """,
