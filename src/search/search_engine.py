@@ -257,5 +257,24 @@ class SearchEngine:
         )
         return ranked[:limit]
 
+    def list_speakers(self, media_ids: list[str] | None = None) -> list[str]:
+        """Return distinct assigned speaker labels within an optional media scope."""
+        if media_ids == []:
+            return []
+        sql = """
+            SELECT DISTINCT speaker
+            FROM segments
+            WHERE speaker IS NOT NULL AND TRIM(speaker) <> ''
+        """
+        params = []
+        if media_ids is not None:
+            sql += " AND video_id IN (" + ",".join("?" for _ in media_ids) + ")"
+            params.extend(media_ids)
+        sql += " ORDER BY speaker COLLATE NOCASE"
+        return [
+            row["speaker"]
+            for row in self.db.connection.execute(sql, params).fetchall()
+        ]
+
     def close(self):
         self.db.close()
