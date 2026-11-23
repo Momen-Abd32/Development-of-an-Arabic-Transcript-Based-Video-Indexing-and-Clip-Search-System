@@ -45,6 +45,16 @@ Evolve the existing Arabic media archiving, transcription, indexing, and clip-se
 3. Timestamped notes/comments and review collaboration.
 4. Advanced media discovery and cross-modal search, introduced behind optional dependencies and feature flags.
 
+## Implementation status (not a completion claim)
+
+The current feature branch contains initial foundations for multilingual semantic embeddings, hybrid lexical/fuzzy/semantic ranking, optional speaker diarization, transcript timestamp playback, and extractive transcript summaries with keyword frequencies. These are partial vertical slices, not completion of their roadmap phases.
+
+- Semantic ranking currently scans stored embeddings in application code; a scalable vector index and retrieval evaluation remain future work.
+- Search filters for media metadata, collections, tags, date, and speaker remain outstanding.
+- Transcript insights currently select original transcript sentences and rank term frequencies. They are not abstractive AI summaries or a full topic-modeling system.
+- Speaker diarization requires optional pyannote dependencies, model access, and validation against representative Arabic recordings.
+- All newly added tests still require execution in a configured environment before these slices can be marked verified.
+
 ## Delivery order
 
 Implement in small vertical slices. Start with a codebase audit and baseline regression tests, then deliver Phase 1 before Phase 2, and so on. For each slice:
