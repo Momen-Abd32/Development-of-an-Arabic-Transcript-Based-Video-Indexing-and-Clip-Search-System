@@ -73,7 +73,7 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - **Clip extraction:** Extract a selected time range from the source video as an MP4 clip.
 - **Saved clip management:** Store clip metadata and view saved clips associated with a video.
 - **CSV export:** Export transcript segments and saved clip metadata.
-- **Human search-evaluation workspace:** Search exact/fuzzy transcript results, mark relevant segments, and save reviewed media IDs/timestamps into a local evaluation dataset used by the metrics CLI.
+- **Human search-evaluation workspace:** Search exact/fuzzy transcript results, inspect source playback at each timestamp, mark relevant segments, and save reviewed media IDs/timestamps into a local evaluation dataset used by the metrics CLI.
 - **Transcription evaluation utilities:** Calculate Word Error Rate (WER) and Character Error Rate (CER) against a reference transcript.
 
 ### Supported video formats
