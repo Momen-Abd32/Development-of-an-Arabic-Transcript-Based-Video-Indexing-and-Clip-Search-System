@@ -185,6 +185,7 @@ TEXT = {
         "archive_qa_abstain": "لم نعثر على أدلة نصية كافية للإجابة ضمن النطاق المحدد.",
         "archive_qa_scope_note": "الاقتباس ليس إجابة مولّدة أو تلخيصاً؛ راجع السياق الأصلي قبل اعتماد الاستنتاج.",
         "archive_qa_retrieved_by": "مصدر الاسترجاع",
+        "semantic": "بحث دلالي",
         "archive_qa_segment": "معرّف المقطع",
         "archive_qa_play": "تشغيل المصدر من هذا التوقيت",
         "archive_qa_semantic_unavailable": "تعذر تشغيل الاسترجاع الدلالي؛ سيستمر البحث النصي.",
@@ -302,6 +303,7 @@ TEXT = {
         "archive_qa_abstain": "No sufficient transcript evidence was found in the selected scope.",
         "archive_qa_scope_note": "This quote is not a generated answer or summary; review the original context before drawing a conclusion.",
         "archive_qa_retrieved_by": "Retrieved by",
+        "semantic": "Semantic",
         "archive_qa_segment": "Segment ID",
         "archive_qa_play": "Play source from this timestamp",
         "archive_qa_semantic_unavailable": "Semantic retrieval could not run; transcript search will continue.",
@@ -1908,7 +1910,7 @@ with tab_qa:
                     source_labels = {
                         "exact": t["exact"],
                         "fuzzy": t["fuzzy"],
-                        "semantic": t["hybrid"],
+                        "semantic": t["semantic"],
                     }
                     st.caption(
                         f'{t["archive_qa_retrieved_by"]}: '
