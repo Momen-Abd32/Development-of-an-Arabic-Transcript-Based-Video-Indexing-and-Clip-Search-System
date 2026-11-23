@@ -73,7 +73,7 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - **Clip extraction:** Extract a selected time range from the source video as an MP4 clip.
 - **Saved clip management:** Store clip metadata and view saved clips associated with a video.
 - **CSV export:** Export transcript segments and saved clip metadata.
-- **Human search-evaluation workspace:** Search exact/fuzzy transcript results, inspect source playback at each timestamp, mark relevant segments, and save reviewed media IDs/timestamps into a local evaluation dataset used by the metrics CLI.
+- **Human search-evaluation workspace:** Search exact, fuzzy, or hybrid transcript results, optionally build the semantic index, inspect source playback at each timestamp, mark relevant segments, and save reviewed media IDs/timestamps into a local evaluation dataset used by the metrics CLI.
 - **Transcription evaluation utilities:** Calculate Word Error Rate (WER) and Character Error Rate (CER) against a reference transcript.
 
 ### Supported video formats
@@ -708,7 +708,7 @@ Enable **Generate a multi-passage answer with local Ollama** in the Q&A workspac
 
 The project includes macro-averaged Precision@k, Recall@k, and Mean Reciprocal Rank (MRR) for comparing exact, fuzzy, and hybrid transcript retrieval against human relevance judgments.
 
-Use the **Search Evaluation** workspace in the Streamlit app to enter a query, inspect exact/fuzzy results, mark the relevant segments, and save judgments. The workspace writes `data/evaluation/search_queries.json` atomically and merges additional judgments for the same query. This file is ignored by Git because it contains references to the local archive. Alternatively, create the file manually from the checked-in template and replace its example media IDs/timestamps with human-reviewed segments. Include varied Arabic queries: MSA wording, spelling variants, diacritics, and mixed Arabic/English phrases.
+Use the **Search Evaluation** workspace in the Streamlit app to enter a query, inspect exact/fuzzy/hybrid results, optionally build the semantic index for hybrid retrieval, mark relevant segments, and save judgments. The workspace writes `data/evaluation/search_queries.json` atomically and merges additional judgments for the same query. This file is ignored by Git because it contains references to the local archive. Alternatively, create the file manually from the checked-in template and replace its example media IDs/timestamps with human-reviewed segments. Include varied Arabic queries: MSA wording, spelling variants, diacritics, and mixed Arabic/English phrases.
 
 Run one retrieval mode:
 
