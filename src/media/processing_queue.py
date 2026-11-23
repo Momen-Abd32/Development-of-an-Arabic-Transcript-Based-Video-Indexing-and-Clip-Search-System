@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -54,7 +55,12 @@ class ProcessingQueue:
                 finished_at TEXT,
                 locked_at TEXT,
                 error TEXT,
-                cancel_requested INTEGER NOT NULL DEFAULT 0 CHECK (cancel_requested IN (0, 1))
+                cancel_requested INTEGER NOT NULL DEFAULT 0 CHECK (cancel_requested IN (0, 1)),
+                stage TEXT NOT NULL DEFAULT 'queued',
+                current_file TEXT,
+                stage_progress REAL NOT NULL DEFAULT 0 CHECK (
+                    stage_progress >= 0 AND stage_progress <= 100
+                )
             )
         """)
         columns = {
@@ -64,6 +70,18 @@ class ProcessingQueue:
         if "cancel_requested" not in columns:
             self.connection.execute(
                 "ALTER TABLE processing_jobs ADD COLUMN cancel_requested INTEGER NOT NULL DEFAULT 0"
+            )
+        if "stage" not in columns:
+            self.connection.execute(
+                "ALTER TABLE processing_jobs ADD COLUMN stage TEXT NOT NULL DEFAULT 'queued'"
+            )
+        if "current_file" not in columns:
+            self.connection.execute(
+                "ALTER TABLE processing_jobs ADD COLUMN current_file TEXT"
+            )
+        if "stage_progress" not in columns:
+            self.connection.execute(
+                "ALTER TABLE processing_jobs ADD COLUMN stage_progress REAL NOT NULL DEFAULT 0"
             )
         self.connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_processing_jobs_status_created
@@ -86,6 +104,9 @@ class ProcessingQueue:
                 "status": job["status"],
                 "attempts": job["attempts"],
                 "progress": job["progress"],
+                "stage": job.get("stage", "queued"),
+                "current_file": job.get("current_file"),
+                "stage_progress": job.get("stage_progress", 0),
                 "error": job.get("error"),
             },
         )
@@ -200,6 +221,19 @@ class ProcessingQueue:
                     WHEN cancel_requested = 1 OR attempts >= max_attempts THEN progress
                     ELSE 0
                 END,
+                stage = CASE
+                    WHEN cancel_requested = 1 THEN 'cancelled'
+                    WHEN attempts >= max_attempts THEN 'failed'
+                    ELSE 'queued'
+                END,
+                stage_progress = CASE
+                    WHEN cancel_requested = 1 OR attempts >= max_attempts THEN stage_progress
+                    ELSE 0
+                END,
+                current_file = CASE
+                    WHEN cancel_requested = 1 OR attempts >= max_attempts THEN current_file
+                    ELSE NULL
+                END,
                 locked_at = NULL,
                 finished_at = CASE
                     WHEN cancel_requested = 1 OR attempts >= max_attempts THEN ?
@@ -264,6 +298,7 @@ class ProcessingQueue:
                 """
                 UPDATE processing_jobs
                 SET status = 'running', attempts = attempts + 1,
+                    stage = 'starting', stage_progress = 0, current_file = NULL,
                     started_at = COALESCE(started_at, ?),
                     locked_at = ?, updated_at = ?, error = NULL
                 WHERE job_id = ? AND status = 'queued'
@@ -301,6 +336,47 @@ class ProcessingQueue:
             raise ValueError("Only running jobs can update progress.")
         return self.get(job_id)
 
+    def update_stage(
+        self,
+        job_id: str,
+        stage: str,
+        current_file: str | None = None,
+        stage_progress: float = 0,
+    ) -> dict:
+        if not isinstance(stage, str) or not stage.strip():
+            raise ValueError("Processing stage must be a non-empty string.")
+        if current_file is not None and (
+            not isinstance(current_file, str) or not current_file.strip()
+        ):
+            raise ValueError("Current file must be a non-empty string or None.")
+        if (
+            isinstance(stage_progress, bool)
+            or not isinstance(stage_progress, (int, float))
+            or not math.isfinite(stage_progress)
+            or not 0 <= stage_progress <= 100
+        ):
+            raise ValueError("Stage progress must be between 0 and 100.")
+        now = _timestamp()
+        cursor = self.connection.execute(
+            """
+            UPDATE processing_jobs
+            SET stage = ?, current_file = ?, stage_progress = ?,
+                locked_at = ?, updated_at = ?
+            WHERE job_id = ? AND status = 'running'
+            """,
+            (
+                stage.strip(),
+                current_file.strip() if current_file is not None else None,
+                float(stage_progress),
+                now,
+                now,
+                job_id,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise ValueError("Only running jobs can update their stage.")
+        return self.get(job_id)
+
     def heartbeat(self, job_id: str) -> bool:
         now = _timestamp()
         cursor = self.connection.execute(
@@ -318,6 +394,7 @@ class ProcessingQueue:
             """
             UPDATE processing_jobs
             SET status = 'completed', progress = 100,
+                stage = 'completed', stage_progress = 100, current_file = NULL,
                 finished_at = ?, locked_at = NULL, updated_at = ?, error = NULL
             WHERE job_id = ? AND status = 'running'
             """,
@@ -342,11 +419,15 @@ class ProcessingQueue:
             """
             UPDATE processing_jobs
             SET status = ?, progress = CASE WHEN ? = 'queued' THEN 0 ELSE progress END,
+                stage = CASE WHEN ? = 'queued' THEN 'retry_wait' ELSE 'failed' END,
+                stage_progress = CASE WHEN ? = 'queued' THEN 0 ELSE stage_progress END,
                 error = ?, locked_at = NULL,
                 finished_at = ?, updated_at = ?
             WHERE job_id = ? AND status = 'running'
             """,
             (
+                status,
+                status,
                 status,
                 status,
                 error.strip()[:4000],
@@ -365,7 +446,8 @@ class ProcessingQueue:
         cursor = self.connection.execute(
             """
             UPDATE processing_jobs
-            SET status = 'cancelled', locked_at = NULL,
+            SET status = 'cancelled', stage = 'cancelled',
+                stage_progress = 100, current_file = NULL, locked_at = NULL,
                 finished_at = ?, updated_at = ?
             WHERE job_id = ? AND status = 'queued'
             """,
@@ -401,7 +483,8 @@ class ProcessingQueue:
         cursor = self.connection.execute(
             """
             UPDATE processing_jobs
-            SET status = 'cancelled', locked_at = NULL,
+            SET status = 'cancelled', stage = 'cancelled',
+                stage_progress = 100, locked_at = NULL,
                 finished_at = ?, updated_at = ?
             WHERE job_id = ? AND status = 'running' AND cancel_requested = 1
             """,
@@ -418,6 +501,7 @@ class ProcessingQueue:
             """
             UPDATE processing_jobs
             SET status = 'queued', attempts = 0, progress = 0,
+                stage = 'queued', stage_progress = 0, current_file = NULL,
                 started_at = NULL, finished_at = NULL, locked_at = NULL,
                 error = NULL, cancel_requested = 0, updated_at = ?
             WHERE job_id = ? AND status = 'failed'
