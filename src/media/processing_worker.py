@@ -89,14 +89,30 @@ class ProcessingWorker:
                     stage_progress=stage_progress,
                 )
 
-            process_kwargs = {
-                "recursive": payload.get("recursive", True),
-                "progress_callback": report_progress,
-            }
+            if job["job_type"] == "batch_import":
+                process_method = processor.process_directory
+                process_args = (payload["input_directory"],)
+                process_kwargs = {
+                    "recursive": payload.get("recursive", True),
+                    "progress_callback": report_progress,
+                }
+            elif job["job_type"] == "file_import":
+                process_method = getattr(processor, "process_files", None)
+                if not callable(process_method):
+                    raise TypeError(
+                        "The configured processor does not support file imports."
+                    )
+                process_args = (payload["files"],)
+                process_kwargs = {
+                    "progress_callback": report_progress,
+                }
+            else:
+                raise ValueError(
+                    f'Unsupported processing job type: {job["job_type"]}'
+                )
+
             try:
-                parameters = inspect.signature(
-                    processor.process_directory
-                ).parameters.values()
+                parameters = inspect.signature(process_method).parameters.values()
                 supports_stage_callback = any(
                     parameter.name == "stage_callback"
                     or parameter.kind == inspect.Parameter.VAR_KEYWORD
@@ -107,30 +123,7 @@ class ProcessingWorker:
             if supports_stage_callback:
                 process_kwargs["stage_callback"] = report_stage
 
-            if job["job_type"] == "batch_import":
-                results = processor.process_directory(
-                    payload["input_directory"],
-                    **process_kwargs,
-                )
-            elif job["job_type"] == "file_import":
-                process_files = getattr(processor, "process_files", None)
-                if not callable(process_files):
-                    raise TypeError(
-                        "The configured processor does not support file imports."
-                    )
-                file_process_kwargs = {
-                    key: value
-                    for key, value in process_kwargs.items()
-                    if key != "recursive"
-                }
-                results = process_files(
-                    payload["files"],
-                    **file_process_kwargs,
-                )
-            else:
-                raise ValueError(
-                    f'Unsupported processing job type: {job["job_type"]}'
-                )
+            results = process_method(*process_args, **process_kwargs)
             if self.queue.is_cancel_requested(job["job_id"]):
                 final_job = self.queue.cancel_running(job["job_id"])
                 return {"job": final_job, "results": results}
