@@ -39,6 +39,7 @@ class ArchiveQA:
         fuzzy_threshold: int = 65,
         rrf_k: int = 60,
         semantic_provider=None,
+        answer_provider=None,
     ) -> dict:
         """Return an extractive quote and ranked, citable transcript evidence."""
         self._validate(question, limit, fuzzy_threshold, rrf_k)
@@ -148,23 +149,122 @@ class ArchiveQA:
         if not evidence:
             return self._abstention(warnings)
 
+        answer_citation = {
+            "media_id": evidence[0]["media_id"],
+            "segment_id": evidence[0]["segment_id"],
+            "start": evidence[0]["start"],
+            "end": evidence[0]["end"],
+        }
+        answer_citations = [answer_citation]
+        answer_type = "extractive_quote"
+        answer = evidence[0]["text"]
+        claims = []
+        message = (
+            "The answer is quoted verbatim from the highest-ranked transcript "
+            "segment. Review the cited context before treating it as a complete answer."
+        )
+
+        if answer_provider is not None:
+            try:
+                generated = answer_provider.generate_answer(question, evidence)
+                validated = self._validate_generated_claims(generated, evidence)
+                if validated is not None:
+                    claims, answer_citations = validated
+                    answer = "\\n".join(claim["text"] for claim in claims)
+                    answer_type = "cited_generated_claims"
+                    answer_citation = (
+                        answer_citations[0] if len(answer_citations) == 1 else None
+                    )
+                    message = (
+                        "Generated claims cite retrieved transcript segments. "
+                        "Check the cited source context; citation validation confirms "
+                        "source membership, not logical entailment."
+                    )
+                else:
+                    warnings.append(
+                        "The local answer model abstained or returned no valid cited claims; "
+                        "the top transcript passage is shown instead."
+                    )
+            except Exception as error:
+                warnings.append(
+                    "Local answer generation was unavailable; the top transcript passage "
+                    "is shown instead: " + str(error)
+                )
+
         return {
             "status": "evidence_found",
-            "answer_type": "extractive_quote",
-            "answer": evidence[0]["text"],
-            "answer_citation": {
-                "media_id": evidence[0]["media_id"],
-                "segment_id": evidence[0]["segment_id"],
-                "start": evidence[0]["start"],
-                "end": evidence[0]["end"],
-            },
+            "answer_type": answer_type,
+            "answer": answer,
+            "answer_citation": answer_citation,
+            "answer_citations": answer_citations,
+            "claims": claims,
             "evidence": evidence,
             "warnings": warnings,
-            "message": (
-                "The answer is quoted verbatim from the highest-ranked transcript "
-                "segment. Review the cited context before treating it as a complete answer."
-            ),
+            "message": message,
         }
+
+    @staticmethod
+    def _validate_generated_claims(
+        generated: dict,
+        evidence: list[dict],
+    ) -> tuple[list[dict], list[dict]] | None:
+        """Accept only non-empty claims citing exact retrieved media/segment pairs."""
+        if not isinstance(generated, dict) or generated.get("abstain") is True:
+            return None
+        raw_claims = generated.get("claims")
+        if not isinstance(raw_claims, list) or not raw_claims or len(raw_claims) > 8:
+            return None
+
+        available = {
+            (item["media_id"], item["segment_id"]): item
+            for item in evidence
+        }
+        claims = []
+        all_citations = {}
+        for raw_claim in raw_claims:
+            if not isinstance(raw_claim, dict):
+                return None
+            text = raw_claim.get("text")
+            raw_citations = raw_claim.get("citations")
+            if (
+                not isinstance(text, str)
+                or not text.strip()
+                or len(text) > 2000
+                or not isinstance(raw_citations, list)
+                or not raw_citations
+                or len(raw_citations) > len(available)
+            ):
+                return None
+
+            citations = []
+            seen = set()
+            for raw_citation in raw_citations:
+                if not isinstance(raw_citation, dict):
+                    return None
+                media_id = raw_citation.get("media_id")
+                segment_id = raw_citation.get("segment_id")
+                if (
+                    not isinstance(media_id, str)
+                    or isinstance(segment_id, bool)
+                    or not isinstance(segment_id, int)
+                ):
+                    return None
+                key = (media_id, segment_id)
+                source = available.get(key)
+                if source is None or key in seen:
+                    return None
+                seen.add(key)
+                citation = {
+                    "media_id": media_id,
+                    "segment_id": segment_id,
+                    "start": source["start"],
+                    "end": source["end"],
+                }
+                citations.append(citation)
+                all_citations[key] = citation
+            claims.append({"text": text.strip(), "citations": citations})
+
+        return claims, list(all_citations.values())
 
     @staticmethod
     def _abstention(warnings: list[str] | None = None) -> dict:
