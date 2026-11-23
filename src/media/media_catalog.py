@@ -64,6 +64,29 @@ class MediaCatalog:
                     f"Media catalog item {index} has an invalid error message."
                 )
 
+            if "collection" in item and (
+                item["collection"] is not None
+                and (
+                    not isinstance(item["collection"], str)
+                    or not item["collection"].strip()
+                )
+            ):
+                raise ValueError(
+                    f"Media catalog item {index} has an invalid collection."
+                )
+
+            if "tags" in item and (
+                not isinstance(item["tags"], list)
+                or any(
+                    not isinstance(tag, str) or not tag.strip()
+                    for tag in item["tags"]
+                )
+                or len({tag.casefold() for tag in item["tags"]}) != len(item["tags"])
+            ):
+                raise ValueError(
+                    f"Media catalog item {index} has invalid tags."
+                )
+
             if item["media_id"] in seen_ids:
                 raise ValueError(
                     f"Media catalog contains duplicate ID: {item['media_id']}"
@@ -209,3 +232,93 @@ class MediaCatalog:
 
     def get_all(self) -> list[dict]:
         return [dict(item) for item in self._load()]
+
+    @staticmethod
+    def _normalize_tags(tags: list[str]) -> list[str]:
+        if not isinstance(tags, list):
+            raise TypeError("Tags must be provided as a list of strings.")
+
+        normalized = []
+        seen = set()
+        for tag in tags:
+            if not isinstance(tag, str) or not tag.strip():
+                raise ValueError("Tags must be non-empty strings.")
+            value = tag.strip()
+            key = value.casefold()
+            if key not in seen:
+                normalized.append(value)
+                seen.add(key)
+        return normalized
+
+    def update_archive_metadata(
+        self,
+        media_id: str,
+        collection: str | None = None,
+        tags: list[str] | None = None,
+    ) -> dict:
+        """Update optional collection and tags without changing legacy fields."""
+        if not isinstance(media_id, str) or not media_id.strip():
+            raise ValueError("Media ID cannot be empty.")
+        if collection is not None:
+            if not isinstance(collection, str):
+                raise TypeError("Collection must be a string or None.")
+            collection = collection.strip() or None
+        normalized_tags = None if tags is None else self._normalize_tags(tags)
+
+        items = self._load()
+        record = next(
+            (item for item in items if item["media_id"] == media_id),
+            None,
+        )
+        if record is None:
+            raise KeyError(f"Media not found in catalog: {media_id}")
+
+        if collection is None:
+            record.pop("collection", None)
+        else:
+            record["collection"] = collection
+        if normalized_tags is None:
+            record.pop("tags", None)
+        else:
+            record["tags"] = normalized_tags
+
+        self._save(items)
+        return dict(record)
+
+    def get_collections(self) -> list[str]:
+        return sorted({
+            item["collection"]
+            for item in self._load()
+            if item.get("collection")
+        }, key=str.casefold)
+
+    def get_all_tags(self) -> list[str]:
+        tags = {}
+        for item in self._load():
+            for tag in item.get("tags", []):
+                tags.setdefault(tag.casefold(), tag)
+        return sorted(tags.values(), key=str.casefold)
+
+    def filter_media(
+        self,
+        collection: str | None = None,
+        tags: list[str] | None = None,
+    ) -> list[dict]:
+        """Filter catalog records by collection and all requested tags."""
+        if collection is not None and (
+            not isinstance(collection, str) or not collection.strip()
+        ):
+            raise ValueError("Collection filter must be a non-empty string.")
+        required_tags = self._normalize_tags(tags or [])
+        records = self._load()
+        filtered = []
+        for item in records:
+            if collection is not None and (
+                item.get("collection", "").casefold() != collection.strip().casefold()
+            ):
+                continue
+            item_tags = {tag.casefold() for tag in item.get("tags", [])}
+            if not all(tag.casefold() in item_tags for tag in required_tags):
+                continue
+            filtered.append(dict(item))
+        return filtered
