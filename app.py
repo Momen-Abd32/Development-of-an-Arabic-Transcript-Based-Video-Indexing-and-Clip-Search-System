@@ -84,6 +84,7 @@ TEXT = {
         "login_failed": "اسم المستخدم أو كلمة المرور غير صحيحة.",
         "login_rate_limited": "محاولات دخول كثيرة. حاول لاحقًا.",
         "session_disabled": "تم تعطيل هذا الحساب. سجّل الدخول بحساب آخر.",
+        "session_changed": "تم تغيير صلاحيات الحساب أو كلمة مروره. سجّل الدخول مجددًا.",
         "password_changed": "تم تغيير كلمة المرور بنجاح.",
         "password_mismatch": "كلمتا المرور الجديدتان غير متطابقتين.",
         "access_denied": "ليس لديك صلاحية للوصول إلى هذا القسم.",
@@ -377,6 +378,7 @@ TEXT = {
         "login_failed": "Incorrect username or password.",
         "login_rate_limited": "Too many sign-in attempts. Try again later.",
         "session_disabled": "This account has been disabled. Sign in with another account.",
+        "session_changed": "This account's role or password changed. Please sign in again.",
         "password_changed": "Password changed successfully.",
         "password_mismatch": "The new passwords do not match.",
         "access_denied": "You do not have permission to access this section.",
@@ -739,15 +741,24 @@ if auth_enabled:
         st.stop()
 
     session_username = st.session_state.get("archive_auth_username")
+    session_version = st.session_state.get("archive_auth_session_version")
     current_user = (
         auth_manager.get_user(session_username)
         if session_username
         else None
     )
-    if current_user is None or not current_user["is_active"]:
+    session_invalidated = bool(
+        current_user
+        and session_version is not None
+        and current_user["session_version"] != session_version
+    )
+    if current_user is None or not current_user["is_active"] or session_invalidated:
         if session_username:
             st.session_state.pop("archive_auth_username", None)
-            st.sidebar.warning(t["session_disabled"])
+            st.session_state.pop("archive_auth_session_version", None)
+            st.sidebar.warning(
+                t["session_changed"] if session_invalidated else t["session_disabled"]
+            )
         with st.sidebar.form("archive_login_form"):
             st.markdown("### " + t["login"])
             login_username = st.text_input(t["username"], key="archive_login_username")
@@ -768,6 +779,8 @@ if auth_enabled:
             else:
                 if authenticated:
                     st.session_state.archive_auth_username = authenticated["username"]
+                    st.session_state.archive_auth_session_version = authenticated["session_version"]
+                    st.session_state.pop("archive_login_password", None)
                     st.rerun()
                 else:
                     st.sidebar.error(t["login_failed"])
@@ -781,6 +794,8 @@ if auth_enabled:
         )
         if st.button(t["logout"], key="archive_logout", use_container_width=True):
             st.session_state.pop("archive_auth_username", None)
+            st.session_state.pop("archive_auth_session_version", None)
+            st.session_state.pop("archive_login_password", None)
             st.rerun()
         with st.expander(t["change_password"]):
             with st.form("archive_change_password_form"):
@@ -805,11 +820,15 @@ if auth_enabled:
                     st.error(t["password_mismatch"])
                 else:
                     try:
-                        auth_manager.change_password(
+                        updated_user = auth_manager.change_password(
                             current_user["username"],
                             old_password,
                             new_password,
                         )
+                        st.session_state.archive_auth_session_version = updated_user["session_version"]
+                        st.session_state.pop("archive_current_password", None)
+                        st.session_state.pop("archive_new_password", None)
+                        st.session_state.pop("archive_confirm_password", None)
                         st.success(t["password_changed"])
                     except (TypeError, ValueError, KeyError) as error:
                         st.error(str(error))
