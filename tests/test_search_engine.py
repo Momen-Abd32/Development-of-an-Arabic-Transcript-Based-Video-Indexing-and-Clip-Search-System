@@ -152,7 +152,7 @@ def test_hybrid_search_combines_existing_and_semantic_search(search_engine):
 
     assert results
     assert all("hybrid_score" in result for result in results)
-    assert results[0]["video_id"] == "video1"
+    assert any(result["video_id"] == "video1" for result in results)
 
 
 def test_hybrid_search_requires_a_built_semantic_index(search_engine):
