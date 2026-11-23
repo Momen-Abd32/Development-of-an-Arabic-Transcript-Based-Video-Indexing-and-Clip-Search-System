@@ -442,6 +442,15 @@ Open the **Visual Search** tab and choose **Build / Refresh Visual Keyframe Inde
 
 Visual embeddings are stored separately in SQLite. Exact transcript search and other archive workflows do not require the visual dependencies. The checked-in tests use a deterministic fake provider and do not download or validate the real model against Dukkan Media content.
 
+To evaluate visual retrieval, copy `data/evaluation/visual_queries.example.json` to `data/evaluation/visual_queries.json`, replace the placeholder media IDs/frame indices with human-reviewed judgments, and ensure the visual index is built. The dataset supports both Arabic text-to-image queries and reference-image-to-image queries:
+
+```bash
+python scripts/evaluate_visual_search.py --dataset data/evaluation/visual_queries.json --top-k 5
+```
+
+The report includes macro Precision@k, Recall@k, and MRR. The checked-in dataset is only a template; it is not a benchmark and must not be used to claim real archive accuracy.
+
+
 ### Optional: enable speaker diarization
 
 Speaker diarization requires the optional dependencies, a Hugging Face access token, and acceptance/access to the selected pyannote model:
