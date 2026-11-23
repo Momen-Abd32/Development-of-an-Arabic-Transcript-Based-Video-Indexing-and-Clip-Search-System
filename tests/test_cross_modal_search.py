@@ -52,8 +52,10 @@ def test_text_search_fuses_transcript_and_keyframe_results(cross_modal):
     results = search.search_text("سيارة حمراء", visual_provider=provider)
 
     assert {item["result_type"] for item in results} == {"transcript", "keyframe"}
-    assert any(item["matched_by"] == ["exact"] or "exact" in item["matched_by"] for item in results)
+    transcript = next(item for item in results if item["result_type"] == "transcript")
+    assert {"exact", "fuzzy"}.issubset(set(transcript["matched_by"]))
     keyframe = next(item for item in results if item["result_type"] == "keyframe")
+    assert transcript["cross_modal_score"] > keyframe["cross_modal_score"]
     assert keyframe["timestamp_seconds"] == 12.0
     assert keyframe["media_id"] == "video-a"
     assert keyframe["cross_modal_score"] > 0
