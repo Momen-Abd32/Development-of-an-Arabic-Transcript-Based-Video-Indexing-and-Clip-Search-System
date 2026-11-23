@@ -77,10 +77,14 @@ def test_restart_recovery_requeues_interrupted_jobs(tmp_path):
     queue = ProcessingQueue(path)
     job = queue.enqueue("batch_import", {"input_directory": "archive"})
     queue.claim_next()
+    queue.connection.execute(
+        "UPDATE processing_jobs SET locked_at = '2000-01-01T00:00:00+00:00' WHERE job_id = ?",
+        (job["job_id"],),
+    )
     queue.close()
 
     restarted = ProcessingQueue(path)
-    assert restarted.recover_interrupted_jobs() == 1
+    assert restarted.recover_interrupted_jobs(60) == 1
     recovered = restarted.get(job["job_id"])
     assert recovered["status"] == "queued"
     assert recovered["locked_at"] is None
@@ -151,3 +155,17 @@ def test_queue_lists_jobs_by_status(tmp_path):
     assert [item["job_id"] for item in results] == [queued["job_id"]]
     assert queue.list_jobs(statuses=[]) == []
     queue.close()
+
+def test_two_queue_workers_cannot_claim_the_same_job(tmp_path):
+    path = tmp_path / "queue.db"
+    first_worker = ProcessingQueue(path)
+    second_worker = ProcessingQueue(path)
+    job = first_worker.enqueue("batch_import", {"input_directory": "archive"})
+
+    claimed = first_worker.claim_next()
+    competing_claim = second_worker.claim_next()
+
+    assert claimed["job_id"] == job["job_id"]
+    assert competing_claim is None
+    first_worker.close()
+    second_worker.close()
