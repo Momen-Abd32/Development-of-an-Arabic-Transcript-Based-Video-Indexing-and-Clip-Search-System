@@ -46,7 +46,8 @@ class OllamaAnswerProvider:
             )
 
         self.model = model.strip()
-        self.base_url = f"http://{parsed.hostname}:11434"
+        host = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
+        self.base_url = f"http://{host}:11434"
         self.timeout = float(timeout)
 
     def generate_answer(self, question: str, evidence: list[dict]) -> dict:
