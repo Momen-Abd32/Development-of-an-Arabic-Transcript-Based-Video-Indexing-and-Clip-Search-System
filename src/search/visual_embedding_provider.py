@@ -7,7 +7,7 @@ from pathlib import Path
 class SentenceTransformerVisualProvider:
     """Use a shared CLIP text/image space through sentence-transformers."""
 
-    def __init__(self, model_name: str = "clip-ViT-B-32"):
+    def __init__(self, model_name: str = "clip-ViT-B-32-multilingual-v1"):
         try:
             from sentence_transformers import SentenceTransformer
         except ImportError as error:
