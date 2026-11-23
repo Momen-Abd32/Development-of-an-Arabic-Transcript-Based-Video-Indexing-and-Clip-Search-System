@@ -1,4 +1,5 @@
 import hashlib
+from pathlib import Path
 from email.message import Message
 from io import BytesIO
 from urllib.error import HTTPError
@@ -13,12 +14,21 @@ ALLOWED = ["media.example.com"]
 
 
 class FakeResponse:
-    def __init__(self, body=b"media bytes", *, content_type="video/mp4", status=200, headers=None):
+    def __init__(
+        self,
+        body=b"media bytes",
+        *,
+        content_type="video/mp4",
+        status=200,
+        headers=None,
+        include_length=True,
+    ):
         self.body = BytesIO(body)
         self.status = status
         self.headers = Message()
         self.headers["Content-Type"] = content_type
-        self.headers["Content-Length"] = str(len(body))
+        if include_length:
+            self.headers["Content-Length"] = str(len(body))
         for key, value in (headers or {}).items():
             self.headers[key] = value
         self.closed = False
@@ -64,7 +74,7 @@ def test_downloads_allowlisted_https_media_and_returns_checksum(tmp_path):
 
     result = adapter.download("https://media.example.com/archive/interview.mp4?token=secret")
 
-    path = __import__("pathlib").Path(result["path"])
+    path = Path(result["path"])
     assert path.is_file()
     assert path.read_bytes() == body
     assert result["source_host"] == "media.example.com"
@@ -203,7 +213,7 @@ def test_rejects_content_length_over_limit_before_writing(tmp_path):
 
 
 def test_enforces_streamed_size_limit_and_removes_partial_file(tmp_path):
-    response = FakeResponse(b"x" * 40)
+    response = FakeResponse(b"x" * 40, include_length=False)
     adapter = make_adapter(
         tmp_path,
         FakeOpener([response]),
