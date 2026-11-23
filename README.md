@@ -691,7 +691,7 @@ Each create/update/delete action appends an audit event. When optional authentic
 
 The Streamlit application includes an **Ask the Archive** workspace. It searches indexed transcript segments using SQLite FTS5 exact retrieval and RapidFuzz fuzzy retrieval, then fuses the ranked lists with Reciprocal Rank Fusion (RRF). Optional multilingual semantic retrieval can be enabled when the semantic package is installed and the selected archive has a built semantic index.
 
-The initial answer is deliberately **extractive**, not generative: it quotes the highest-ranked original transcript segment verbatim and attaches a citation containing the media ID, segment ID, and start/end timestamps. Additional ranked passages are shown as evidence, with source playback links when the original media file is available. If no transcript evidence is retrieved, the system abstains instead of inventing an answer.
+In the default mode, the answer is deliberately **extractive**: it quotes the highest-ranked original transcript segment verbatim and attaches a citation containing the media ID, segment ID, and start/end timestamps. Additional ranked passages are shown as evidence, with source playback links when the original media file is available. Questions can be scoped to the current media or entire archive and filtered by media type, source name, added-date range, collection, and tags. If no transcript evidence is retrieved, the system abstains instead of inventing an answer.
 
 The default mode is extractive and requires no local language model. For optional multi-passage answer generation, install and start [Ollama](https://ollama.com), then pull a local model such as:
 
