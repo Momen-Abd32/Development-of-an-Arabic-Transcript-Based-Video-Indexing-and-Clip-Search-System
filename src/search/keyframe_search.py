@@ -291,6 +291,8 @@ class KeyframeSearchIndex:
 
         ranked = []
         for row in self.connection.execute(sql, params):
+            if not Path(row["image_path"]).is_file():
+                continue
             stored = self._validate_vector(json.loads(row["embedding_json"]))
             score = self._cosine_similarity(vector, stored)
             ranked.append((score, -row["id"], {
