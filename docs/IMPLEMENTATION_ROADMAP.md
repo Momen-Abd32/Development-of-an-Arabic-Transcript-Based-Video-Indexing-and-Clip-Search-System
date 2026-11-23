@@ -54,10 +54,10 @@ The current feature branch contains initial foundations for multilingual semanti
 - Transcript insights currently select original transcript sentences and rank term frequencies. They are not abstractive AI summaries or a full topic-modeling system.
 - Video keyframe extraction now produces sampled JPEGs and previews them in the transcript workspace; timestamp-aware visual search and keyframe indexing are still outstanding.
 - Media catalog records now support optional collection names and normalized tags, with backward-compatible JSON loading, archive management UI, and collection/tag filtering of the archive list.
-- A separate SQLite processing queue now persists folder-import jobs, attempts, status, per-file progress, failures, cancellation of queued jobs, manual retry, and expired-worker-lease recovery. Stage-level progress, a continuously running background worker, and cooperative cancellation of active work remain future work; the Streamlit UI runs jobs synchronously on request.
+- A separate SQLite processing queue now persists folder-import jobs, attempts, status, per-file progress, failures, cancellation of queued jobs, manual retry, and expired-worker-lease recovery. An independent CLI worker now supports continuous polling and heartbeat leases. Stage-level progress and cooperative cancellation of active work remain future work; the Streamlit UI also retains a synchronous run-one-job option.
 - The archive dashboard now reports media-type and processing-state counts, stored media size, transcript file count, missing source files, SQLite integrity, and availability of FFmpeg and optional model packages. Runtime metrics are read-only and do not imply that a model is downloaded or loaded.
 - Speaker diarization requires optional pyannote dependencies, model access, and validation against representative Arabic recordings.
-- CI passed 223 tests on commit `2d8233a7db4b776064cf0fa0c21fbdf70c2563dc`, including application compilation and the archive dashboard. The subsequent queue-count aggregation helper and its focused test are awaiting the latest CI run before the branch's newest state is marked verified.
+- CI passed 223 tests on commit `2d8233a7db4b776064cf0fa0c21fbdf70c2563dc`, including application compilation and the archive dashboard. Later queue aggregation and background-worker changes have additional tests and are awaiting the latest CI run before the branch's newest state is marked verified.
 
 ## Delivery order
 
