@@ -294,3 +294,31 @@ def test_backup_rejects_symlinked_data_root(tmp_path):
 
     with pytest.raises(ValueError, match="symbolic link"):
         ArchiveBackup(base).create_backup(base / "backup.zip")
+
+
+
+def test_verifier_rejects_case_insensitive_path_collisions(tmp_path):
+    backup = tmp_path / "case-collision.zip"
+    with zipfile.ZipFile(backup, "w") as archive:
+        archive.writestr("data/File.txt", b"a")
+        archive.writestr("data/file.txt", b"b")
+        manifest = {
+            "format_version": 1,
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "files": [
+                {
+                    "path": "data/File.txt",
+                    "size_bytes": 1,
+                    "sha256": hashlib.sha256(b"a").hexdigest(),
+                },
+                {
+                    "path": "data/file.txt",
+                    "size_bytes": 1,
+                    "sha256": hashlib.sha256(b"b").hexdigest(),
+                },
+            ],
+        }
+        archive.writestr("manifest.json", json.dumps(manifest))
+
+    with pytest.raises(ValueError, match="colliding"):
+        ArchiveBackup.verify_backup(backup)
