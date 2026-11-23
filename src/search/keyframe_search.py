@@ -288,7 +288,10 @@ class KeyframeSearchIndex:
         path = Path(image_path)
         if not path.is_file():
             raise FileNotFoundError(f"Reference image not found: {path}")
-        return self._search(provider.embed_images([path])[0], provider, limit, media_ids)
+        vectors = provider.embed_images([path])
+        if len(vectors) != 1:
+            raise ValueError("Visual provider must return exactly one reference-image vector.")
+        return self._search(vectors[0], provider, limit, media_ids)
 
     def close(self):
         self.connection.close()
