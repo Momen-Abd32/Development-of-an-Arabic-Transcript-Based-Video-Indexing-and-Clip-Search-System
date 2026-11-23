@@ -42,6 +42,7 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - **Audio preparation:** Use FFmpeg to normalize audio from video or standalone audio files to mono 16 kHz WAV for transcription.
 - **Batch media import:** Recursively scan a local folder and process supported audio and video files one by one.
 - **Durable processing queue:** Persist folder-import jobs in a separate SQLite database, track per-file progress, retry failures, cancel pending jobs, and recover interrupted jobs after restart.
+- **Independent background worker:** Run the persistent processing queue as a separate CLI process with polling, worker heartbeats, and expired-lease recovery.
 - **Archive dashboard:** Summarize media counts, stored file size, transcript totals, processing and queue states, missing source files, database integrity, and runtime dependency availability.
 - **Durable processing queue:** Persist folder-import jobs in a separate SQLite database, track per-file progress, retry failures, cancel pending jobs, and recover interrupted jobs after restart.
 - **Media catalog:** Persist each media file's type, original filename, stored path, and processing status.
@@ -475,6 +476,23 @@ The importer stores source videos in `data/videos/`, original audio files in `da
 Each file is processed independently. A failure for one file is reported without stopping the rest of the batch. Identical content is processed once per batch, and an existing valid transcript is reused and re-indexed. The first new file that requires transcription initializes the Whisper model, which is then reused for the remaining files in that run.
 
 A USB drive or network share can be used by passing its mounted folder path. Direct cloud-provider synchronization, remote URL downloading, and continuous folder watching are not included yet.
+
+## Background Processing Worker
+
+The Streamlit queue tab can enqueue folder-import jobs and run one job on demand. For continuous processing independent of the browser session, start the worker in a separate terminal:
+
+```bash
+python scripts/run_processing_worker.py
+```
+
+Useful options:
+
+```bash
+python scripts/run_processing_worker.py --once
+python scripts/run_processing_worker.py --poll-seconds 10 --lease-seconds 900
+```
+
+The worker claims jobs transactionally, reports per-file progress, retries failed batches according to each job's attempt limit, and renews its lease while working. Pending jobs can be cancelled from the UI. Active processing is not yet cooperatively cancellable; stop the worker with Ctrl+C to let the current file finish before shutdown.
 
 ## Running Tests
 
