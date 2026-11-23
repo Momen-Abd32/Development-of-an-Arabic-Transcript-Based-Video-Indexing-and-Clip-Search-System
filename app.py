@@ -894,6 +894,11 @@ with tab_transcript:
                         annotated_segments,
                         f"data/transcripts/{video_id}.json",
                     )
+                    indexer = TranscriptIndexer()
+                    try:
+                        indexer.index_segments(video_id, annotated_segments)
+                    finally:
+                        indexer.close()
                     st.session_state.segments = annotated_segments
                     st.success(t["diarize_speakers"])
                     st.rerun()
