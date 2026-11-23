@@ -1,0 +1,25 @@
+{
+  "description": "Human-judged visual keyframe relevance set. Replace the example media ID and frame index with real keyframes from the archive. Do not treat placeholder judgments as measured system performance.",
+  "queries": [
+    {
+      "query": "سيارة حمراء تسير في شارع مزدحم",
+      "notes": "Example Arabic text-to-image query; replace with a reviewed archive judgment.",
+      "relevant_frames": [
+        {
+          "media_id": "REPLACE_WITH_MEDIA_SHA256",
+          "frame_index": 1
+        }
+      ]
+    },
+    {
+      "reference_image": "reference_images/example.jpg",
+      "notes": "Optional image-to-image query; path is relative to this dataset file.",
+      "relevant_frames": [
+        {
+          "media_id": "REPLACE_WITH_MEDIA_SHA256",
+          "frame_index": 2
+        }
+      ]
+    }
+  ]
+}

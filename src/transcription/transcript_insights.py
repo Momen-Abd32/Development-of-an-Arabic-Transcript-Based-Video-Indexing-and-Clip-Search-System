@@ -1,0 +1,145 @@
+"""Extractive transcript summaries and keyword insights.
+
+This module deliberately reuses verbatim transcript sentences. It does not
+rewrite dialect, translate speech, or claim to generate abstractive summaries.
+"""
+from __future__ import annotations
+
+import json
+import math
+import os
+import re
+import tempfile
+from collections import Counter
+from pathlib import Path
+
+
+_TOKEN_PATTERN = re.compile(r"[\u0600-\u06FF]+|[A-Za-z][A-Za-z0-9]+")
+_STOPWORDS = {
+    "في", "من", "على", "الى", "إلى", "عن", "مع", "هذا", "هذه", "ذلك",
+    "تلك", "هو", "هي", "هم", "هن", "كان", "كانت", "يكون", "تكون",
+    "ما", "ماذا", "متى", "أين", "كيف", "لم", "لن", "لا", "نعم",
+    "و", "او", "أو", "ثم", "قد", "كل", "بعض", "بين", "بعد", "قبل",
+    "the", "and", "for", "with", "from", "that", "this", "are", "was",
+}
+
+
+class TranscriptInsights:
+    """Generate reproducible extractive summaries and frequency keywords."""
+
+    @staticmethod
+    def _tokens(text: str) -> list[str]:
+        return [
+            token.lower()
+            for token in _TOKEN_PATTERN.findall(text)
+            if len(token) > 1 and token.lower() not in _STOPWORDS
+        ]
+
+    @classmethod
+    def generate(
+        cls,
+        segments: list[dict],
+        keyword_limit: int = 10,
+        summary_limit: int = 3,
+    ) -> dict:
+        if not isinstance(segments, list):
+            raise TypeError("Segments must be a list.")
+        if isinstance(keyword_limit, bool) or not isinstance(keyword_limit, int) or keyword_limit < 1:
+            raise ValueError("Keyword limit must be a positive integer.")
+        if isinstance(summary_limit, bool) or not isinstance(summary_limit, int) or summary_limit < 1:
+            raise ValueError("Summary limit must be a positive integer.")
+
+        valid_segments = []
+        all_tokens = []
+        for index, segment in enumerate(segments):
+            if not isinstance(segment, dict) or not isinstance(segment.get("text"), str):
+                raise ValueError(f"Segment {index} must contain transcript text.")
+            start, end = segment.get("start"), segment.get("end")
+            if (
+                isinstance(start, bool) or not isinstance(start, (int, float))
+                or isinstance(end, bool) or not isinstance(end, (int, float))
+                or not math.isfinite(start) or not math.isfinite(end)
+                or start < 0 or end <= start
+            ):
+                raise ValueError(f"Segment {index} has invalid timestamps.")
+            tokens = cls._tokens(segment["text"])
+            valid_segments.append((index, segment, tokens))
+            all_tokens.extend(tokens)
+
+        counts = Counter(all_tokens)
+        keywords = [
+            {"term": term, "frequency": frequency}
+            for term, frequency in sorted(
+                counts.items(),
+                key=lambda item: (-item[1], item[0]),
+            )[:keyword_limit]
+        ]
+
+        if not counts:
+            selected = []
+        else:
+            scored = []
+            for index, segment, tokens in valid_segments:
+                if not tokens:
+                    continue
+                score = sum(counts[token] for token in tokens) / math.sqrt(len(tokens))
+                scored.append((score, index, segment))
+            selected = sorted(
+                sorted(scored, key=lambda item: (-item[0], item[1]))[:summary_limit],
+                key=lambda item: item[1],
+            )
+
+        return {
+            "method": "extractive",
+            "summary": " ".join(item[2]["text"].strip() for item in selected),
+            "keywords": keywords,
+            "source_segments": [
+                {
+                    "index": index,
+                    "start": float(segment["start"]),
+                    "end": float(segment["end"]),
+                    "text": segment["text"],
+                }
+                for _, index, segment in selected
+            ],
+        }
+
+    @staticmethod
+    def save(insights: dict, output_path: str | Path) -> Path:
+        if not isinstance(insights, dict) or insights.get("method") != "extractive":
+            raise ValueError("Only generated extractive insights can be saved.")
+        output = Path(output_path)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=output.parent,
+                prefix=f".{output.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as handle:
+                temporary_path = Path(handle.name)
+                json.dump(insights, handle, ensure_ascii=False, indent=2)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary_path, output)
+        finally:
+            if temporary_path is not None and temporary_path.exists():
+                temporary_path.unlink()
+        return output
+
+    @staticmethod
+    def load(input_path: str | Path) -> dict:
+        path = Path(input_path)
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if (
+            not isinstance(data, dict)
+            or data.get("method") != "extractive"
+            or not isinstance(data.get("summary"), str)
+            or not isinstance(data.get("keywords"), list)
+            or not isinstance(data.get("source_segments"), list)
+        ):
+            raise ValueError("Invalid transcript insights file.")
+        return data
