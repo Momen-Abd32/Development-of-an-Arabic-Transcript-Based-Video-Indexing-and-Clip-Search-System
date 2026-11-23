@@ -14,6 +14,12 @@ class TranscriptIndexer:
         try:
             cursor = self.db.connection.cursor()
 
+            # Transcript edits/re-indexing invalidate vectors for the old
+            # segment IDs. Remove them in the same transaction.
+            cursor.execute(
+                "DELETE FROM segment_embeddings WHERE video_id = ?",
+                (video_id,),
+            )
             cursor.execute(
                 "DELETE FROM segments WHERE video_id = ?",
                 (video_id,),
