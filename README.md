@@ -113,9 +113,8 @@ The Streamlit application upload limit is configured to **2 GB per file**. Actua
 5. The transcript is saved as JSON under `data/transcripts/`, and the media catalog records the source filename, type, path, and processing status.
 6. Arabic text is normalized and transcript segments are indexed in SQLite.
 7. The user can review or edit the transcript for the currently selected media file.
-8. The user searches either the selected file or the entire indexed archive using exact, fuzzy, or hybrid search, with optional media, source, date, collection, tag, and speaker filters.
+8. The user searches either the selected file or the entire indexed archive using exact, fuzzy, or hybrid search, with optional media, source, date, collection, tag, and speaker filters; the unified search workspace can fuse transcript and visual keyframe rankings or retrieve visually similar frames from a reference image.
 9. Search results show the source media, matching text, and timestamps, with a preview of the original file.
-9a. The unified search workspace can fuse transcript and visual keyframe rankings, or retrieve visually similar frames from a reference image.
 10. The user can extract a selected video segment as an MP4 clip.
 11. Transcript data and clip metadata can be exported as CSV files.
 12. The processing queue persists folder-import jobs and the dashboard summarizes archive and runtime health.
