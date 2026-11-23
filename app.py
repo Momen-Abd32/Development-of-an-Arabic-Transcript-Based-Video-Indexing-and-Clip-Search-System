@@ -1024,12 +1024,12 @@ with metric_col3:
 # Main sections
 # --------------------------------------------------
 
-tab_upload, tab_transcript, tab_search, tab_visual, tab_cross_modal, tab_qa, tab_notes, tab_clips, tab_archive, tab_queue, tab_dashboard, tab_audit = st.tabs(
+tab_upload, tab_transcript, tab_search, tab_visual, tab_cross_modal, tab_qa, tab_notes, tab_clips, tab_archive, tab_queue, tab_dashboard, tab_audit, tab_users = st.tabs(
     [
         t["upload_tab"], t["transcript_tab"], t["search_tab"],
         t["visual_search_tab"], t["cross_modal_tab"], t["archive_qa_tab"],
         t["archive_notes_tab"], t["clips_tab"], t["archive_tab"], t["queue_tab"],
-        t["dashboard_tab"], t["audit_tab"],
+        t["dashboard_tab"], t["audit_tab"], t["user_management_tab"],
     ]
 )
 
@@ -1038,679 +1038,688 @@ tab_upload, tab_transcript, tab_search, tab_visual, tab_cross_modal, tab_qa, tab
 # 1. Media upload and transcription
 
 with tab_upload:
-    st.subheader("📤 " + t["upload_title"])
-    st.caption(t["upload_help"])
+    if not has_permission("upload"):
+        st.info(t["access_denied"])
+    else:
+        st.subheader("📤 " + t["upload_title"])
+        st.caption(t["upload_help"])
 
-    uploaded_file = st.file_uploader(
-        t["choose_video"],
-        type=[extension.lstrip(".") for extension in sorted(ALLOWED_EXTENSIONS)],
-        max_upload_size=MAX_UPLOAD_SIZE_MB,
-        key="video_uploader",
-    )
-
-    if uploaded_file is not None:
-        file_extension = Path(uploaded_file.name).suffix.lower()
-        media_type = (
-            "video" if file_extension in VIDEO_EXTENSIONS else "audio"
+        uploaded_file = st.file_uploader(
+            t["choose_video"],
+            type=[extension.lstrip(".") for extension in sorted(ALLOWED_EXTENSIONS)],
+            max_upload_size=MAX_UPLOAD_SIZE_MB,
+            key="video_uploader",
         )
 
-        if file_extension not in ALLOWED_EXTENSIONS:
-            st.error(t["unsupported"])
-        elif uploaded_file.size > MAX_UPLOAD_SIZE_BYTES:
-            st.error(t["too_large"])
-        else:
-            file_buffer = uploaded_file.getbuffer()
-            try:
-                media_id = hashlib.sha256(file_buffer).hexdigest()
-                if media_type == "video":
-                    media_path = (
-                        Path("data/videos") / f"{media_id}{file_extension}"
-                    )
-                else:
-                    media_path = (
-                        Path("data/audio/originals")
-                        / f"{media_id}{file_extension}"
-                    )
+        if uploaded_file is not None:
+            file_extension = Path(uploaded_file.name).suffix.lower()
+            media_type = (
+                "video" if file_extension in VIDEO_EXTENSIONS else "audio"
+            )
 
-                media_path.parent.mkdir(parents=True, exist_ok=True)
-
-                stored_file_is_valid = (
-                    media_path.is_file()
-                    and calculate_file_sha256(media_path) == media_id
-                )
-
-                if not stored_file_is_valid:
-                    temporary_path = None
-                    try:
-                        file_descriptor, temporary_name = tempfile.mkstemp(
-                            prefix=f".{media_id}.",
-                            suffix=file_extension,
-                            dir=media_path.parent,
+            if file_extension not in ALLOWED_EXTENSIONS:
+                st.error(t["unsupported"])
+            elif uploaded_file.size > MAX_UPLOAD_SIZE_BYTES:
+                st.error(t["too_large"])
+            else:
+                file_buffer = uploaded_file.getbuffer()
+                try:
+                    media_id = hashlib.sha256(file_buffer).hexdigest()
+                    if media_type == "video":
+                        media_path = (
+                            Path("data/videos") / f"{media_id}{file_extension}"
                         )
-                        temporary_path = Path(temporary_name)
+                    else:
+                        media_path = (
+                            Path("data/audio/originals")
+                            / f"{media_id}{file_extension}"
+                        )
 
-                        with os.fdopen(file_descriptor, "wb") as output_file:
-                            output_file.write(file_buffer)
-                            output_file.flush()
-                            os.fsync(output_file.fileno())
+                    media_path.parent.mkdir(parents=True, exist_ok=True)
 
-                        if calculate_file_sha256(temporary_path) != media_id:
-                            raise RuntimeError(
-                                "Uploaded media changed while being saved."
+                    stored_file_is_valid = (
+                        media_path.is_file()
+                        and calculate_file_sha256(media_path) == media_id
+                    )
+
+                    if not stored_file_is_valid:
+                        temporary_path = None
+                        try:
+                            file_descriptor, temporary_name = tempfile.mkstemp(
+                                prefix=f".{media_id}.",
+                                suffix=file_extension,
+                                dir=media_path.parent,
+                            )
+                            temporary_path = Path(temporary_name)
+
+                            with os.fdopen(file_descriptor, "wb") as output_file:
+                                output_file.write(file_buffer)
+                                output_file.flush()
+                                os.fsync(output_file.fileno())
+
+                            if calculate_file_sha256(temporary_path) != media_id:
+                                raise RuntimeError(
+                                    "Uploaded media changed while being saved."
+                                )
+
+                            os.replace(temporary_path, media_path)
+                        finally:
+                            if (
+                                temporary_path is not None
+                                and temporary_path.exists()
+                            ):
+                                temporary_path.unlink()
+                except Exception as error:
+                    st.error(f'{t["save_failed"]}: {error}')
+                    st.stop()
+                finally:
+                    file_buffer.release()
+
+                if (
+                    st.session_state.video_id != media_id
+                    or st.session_state.media_type != media_type
+                ):
+                    st.session_state.video_id = media_id
+                    st.session_state.transcribed = False
+                    st.session_state.segments = []
+                    st.session_state.search_results = []
+                    st.session_state.transcript_export_path = None
+                    st.session_state.clips_export_path = None
+                    st.session_state.transcript_insights = None
+
+                    existing_transcript = Path(
+                        f"data/transcripts/{media_id}.json"
+                    )
+                    if existing_transcript.exists():
+                        try:
+                            saved_segments = TranscriptManager.load(
+                                str(existing_transcript)
+                            )
+                            indexer = TranscriptIndexer()
+                            try:
+                                indexer.index_segments(media_id, saved_segments)
+                            finally:
+                                indexer.close()
+
+                            st.session_state.segments = saved_segments
+                            st.session_state.transcribed = True
+                        except Exception as error:
+                            st.warning(
+                                f'{t["no_transcript"]} {error}'
                             )
 
-                        os.replace(temporary_path, media_path)
-                    finally:
-                        if (
-                            temporary_path is not None
-                            and temporary_path.exists()
-                        ):
-                            temporary_path.unlink()
-            except Exception as error:
-                st.error(f'{t["save_failed"]}: {error}')
-                st.stop()
-            finally:
-                file_buffer.release()
+                st.session_state.media_path = str(media_path)
+                st.session_state.media_type = media_type
+                st.session_state.video_path = (
+                    str(media_path) if media_type == "video" else None
+                )
+                try:
+                    MediaCatalog().register_media(
+                        media_id,
+                        media_type,
+                        uploaded_file.name,
+                        str(media_path),
+                        status=(
+                            "transcribed"
+                            if st.session_state.transcribed
+                            else "uploaded"
+                        ),
+                    )
+                except Exception as error:
+                    st.error(f'{t["save_failed"]}: {error}')
+                    st.stop()
 
-            if (
-                st.session_state.video_id != media_id
-                or st.session_state.media_type != media_type
-            ):
-                st.session_state.video_id = media_id
-                st.session_state.transcribed = False
-                st.session_state.segments = []
-                st.session_state.search_results = []
-                st.session_state.transcript_export_path = None
-                st.session_state.clips_export_path = None
+                st.success(t["uploaded"])
+
+                info_col1, info_col2 = st.columns(2)
+                with info_col1:
+                    st.metric(t["file"], uploaded_file.name)
+                with info_col2:
+                    st.metric(
+                        t["size"],
+                        f"{uploaded_file.size / (1024 * 1024):.2f} MB",
+                    )
+
+                st.markdown("#### " + t["video_preview"])
+                if media_type == "video":
+                    st.video(str(media_path))
+                else:
+                    st.audio(str(media_path))
+
+        st.divider()
+        st.subheader("🎙️ " + t["transcription_title"])
+        st.write(t["transcription_desc"])
+
+        if not st.session_state.media_path:
+            st.info(t["need_video"])
+        elif st.button(
+            t["start_transcription"],
+            type="primary",
+            use_container_width=True,
+        ):
+            media_id = st.session_state.video_id
+            media_path = Path(st.session_state.media_path)
+            audio_path = Path("data/audio") / f"{media_id}.wav"
+
+            try:
+                MediaCatalog().update_status(media_id, "processing")
+
+                with st.spinner(t["extracting_audio"]):
+                    AudioExtractor.prepare(str(media_path), str(audio_path))
+
+                with st.spinner(t["loading_model"]):
+                    engine = FasterWhisperEngine(model_size="tiny")
+                    segments = engine.transcribe(str(audio_path))
+
+                TranscriptManager.save(
+                    segments,
+                    f"data/transcripts/{media_id}.json",
+                )
+                insights_path = Path("data/insights") / f"{media_id}.json"
+                if insights_path.is_file():
+                    insights_path.unlink()
                 st.session_state.transcript_insights = None
 
-                existing_transcript = Path(
-                    f"data/transcripts/{media_id}.json"
-                )
-                if existing_transcript.exists():
-                    try:
-                        saved_segments = TranscriptManager.load(
-                            str(existing_transcript)
-                        )
-                        indexer = TranscriptIndexer()
-                        try:
-                            indexer.index_segments(media_id, saved_segments)
-                        finally:
-                            indexer.close()
+                indexer = TranscriptIndexer()
+                try:
+                    indexer.index_segments(media_id, segments)
+                finally:
+                    indexer.close()
 
-                        st.session_state.segments = saved_segments
-                        st.session_state.transcribed = True
-                    except Exception as error:
-                        st.warning(
-                            f'{t["no_transcript"]} {error}'
-                        )
+                MediaCatalog().update_status(media_id, "transcribed")
+                st.session_state.segments = segments
+                st.session_state.transcribed = True
+                st.session_state.search_results = []
+                st.session_state.transcript_export_path = None
+                st.success(f'{t["transcription_done"]}: {len(segments)}')
+                st.rerun()
 
-            st.session_state.media_path = str(media_path)
-            st.session_state.media_type = media_type
-            st.session_state.video_path = (
-                str(media_path) if media_type == "video" else None
-            )
-            try:
-                MediaCatalog().register_media(
-                    media_id,
-                    media_type,
-                    uploaded_file.name,
-                    str(media_path),
-                    status=(
-                        "transcribed"
-                        if st.session_state.transcribed
-                        else "uploaded"
-                    ),
-                )
             except Exception as error:
-                st.error(f'{t["save_failed"]}: {error}')
-                st.stop()
-
-            st.success(t["uploaded"])
-
-            info_col1, info_col2 = st.columns(2)
-            with info_col1:
-                st.metric(t["file"], uploaded_file.name)
-            with info_col2:
-                st.metric(
-                    t["size"],
-                    f"{uploaded_file.size / (1024 * 1024):.2f} MB",
-                )
-
-            st.markdown("#### " + t["video_preview"])
-            if media_type == "video":
-                st.video(str(media_path))
-            else:
-                st.audio(str(media_path))
-
-    st.divider()
-    st.subheader("🎙️ " + t["transcription_title"])
-    st.write(t["transcription_desc"])
-
-    if not st.session_state.media_path:
-        st.info(t["need_video"])
-    elif st.button(
-        t["start_transcription"],
-        type="primary",
-        use_container_width=True,
-    ):
-        media_id = st.session_state.video_id
-        media_path = Path(st.session_state.media_path)
-        audio_path = Path("data/audio") / f"{media_id}.wav"
-
-        try:
-            MediaCatalog().update_status(media_id, "processing")
-
-            with st.spinner(t["extracting_audio"]):
-                AudioExtractor.prepare(str(media_path), str(audio_path))
-
-            with st.spinner(t["loading_model"]):
-                engine = FasterWhisperEngine(model_size="tiny")
-                segments = engine.transcribe(str(audio_path))
-
-            TranscriptManager.save(
-                segments,
-                f"data/transcripts/{media_id}.json",
-            )
-            insights_path = Path("data/insights") / f"{media_id}.json"
-            if insights_path.is_file():
-                insights_path.unlink()
-            st.session_state.transcript_insights = None
-
-            indexer = TranscriptIndexer()
-            try:
-                indexer.index_segments(media_id, segments)
-            finally:
-                indexer.close()
-
-            MediaCatalog().update_status(media_id, "transcribed")
-            st.session_state.segments = segments
-            st.session_state.transcribed = True
-            st.session_state.search_results = []
-            st.session_state.transcript_export_path = None
-            st.success(f'{t["transcription_done"]}: {len(segments)}')
-            st.rerun()
-
-        except Exception as error:
-            try:
-                MediaCatalog().update_status(media_id, "failed", str(error))
-            except Exception:
-                pass
-            st.error(f'{t["transcription_failed"]}: {error}')
+                try:
+                    MediaCatalog().update_status(media_id, "failed", str(error))
+                except Exception:
+                    pass
+                st.error(f'{t["transcription_failed"]}: {error}')
 
 
-# 2. Transcript editor and export
+    # 2. Transcript editor and export
 # --------------------------------------------------
 
 with tab_transcript:
-    st.subheader("📝 " + t["transcript_title"])
-    st.write(t["transcript_desc"])
-
-    if not st.session_state.transcribed:
-        st.info(t["no_transcript"])
+    if not has_permission("transcript"):
+        st.info(t["access_denied"])
     else:
-        video_id = st.session_state.video_id
-        edited_segments = []
+        st.subheader("📝 " + t["transcript_title"])
+        st.write(t["transcript_desc"])
 
-        st.caption(t["speaker_diarization_help"])
-        if st.button(t["diarize_speakers"]):
-            try:
-                media_path = Path(st.session_state.media_path)
-                audio_path = Path("data/audio") / f"{video_id}.wav"
-                with st.spinner(t["loading_model"]):
-                    if not audio_path.is_file():
-                        AudioExtractor.prepare(str(media_path), str(audio_path))
-                    diarizer = PyannoteSpeakerDiarizer()
-                    annotated_segments = diarizer.annotate(
-                        st.session_state.segments,
-                        str(audio_path),
+        if not st.session_state.transcribed:
+            st.info(t["no_transcript"])
+        else:
+            video_id = st.session_state.video_id
+            edited_segments = []
+
+            st.caption(t["speaker_diarization_help"])
+            if st.button(t["diarize_speakers"]):
+                try:
+                    media_path = Path(st.session_state.media_path)
+                    audio_path = Path("data/audio") / f"{video_id}.wav"
+                    with st.spinner(t["loading_model"]):
+                        if not audio_path.is_file():
+                            AudioExtractor.prepare(str(media_path), str(audio_path))
+                        diarizer = PyannoteSpeakerDiarizer()
+                        annotated_segments = diarizer.annotate(
+                            st.session_state.segments,
+                            str(audio_path),
+                        )
+                        TranscriptManager.save(
+                            annotated_segments,
+                            f"data/transcripts/{video_id}.json",
+                        )
+                        indexer = TranscriptIndexer()
+                        try:
+                            indexer.index_segments(video_id, annotated_segments)
+                        finally:
+                            indexer.close()
+                        st.session_state.segments = annotated_segments
+                        st.session_state.search_results = []
+                        st.success(t["diarize_speakers"])
+                        st.rerun()
+                except Exception as error:
+                    st.error(f'{t["transcription_failed"]}: {error}')
+
+            if st.button(t["generate_insights"]):
+                try:
+                    insights = TranscriptInsights.generate(st.session_state.segments)
+                    TranscriptInsights.save(
+                        insights,
+                        Path("data/insights") / f"{video_id}.json",
                     )
+                    st.session_state.transcript_insights = insights
+                    st.success(t["insights_saved"])
+                except Exception as error:
+                    st.error(f'{t["transcription_failed"]}: {error}')
+
+            insights_path = Path("data/insights") / f"{video_id}.json"
+            if st.session_state.get("transcript_insights") is None and insights_path.is_file():
+                try:
+                    st.session_state.transcript_insights = TranscriptInsights.load(insights_path)
+                except Exception:
+                    st.session_state.transcript_insights = None
+
+            current_insights = st.session_state.get("transcript_insights")
+            if current_insights:
+                st.markdown(f'#### {t["insights_title"]}')
+                st.caption(t["extractive_note"])
+                st.write(current_insights["summary"] or t["no_results"])
+                if current_insights["keywords"]:
+                    st.markdown(f'**{t["keywords_title"]}**')
+                    st.write(", ".join(item["term"] for item in current_insights["keywords"]))
+
+            if st.session_state.get("media_type") == "video":
+                keyframe_dir = Path("data/keyframes") / video_id
+                if st.button(t["extract_keyframes"]):
+                    try:
+                        with st.spinner(t["extracting_keyframes"]):
+                            extracted_frames = KeyframeExtractor.extract(
+                                st.session_state.media_path,
+                                keyframe_dir,
+                                return_timestamps=True,
+                            )
+                            keyframe_index = KeyframeSearchIndex()
+                            try:
+                                keyframe_index.replace_media_keyframes(
+                                    video_id,
+                                    extracted_frames,
+                                    interval_seconds=30,
+                                )
+                            finally:
+                                keyframe_index.close()
+                        st.session_state.visual_search_results = None
+                        st.success(t["keyframes_done"])
+                    except Exception as error:
+                        st.error(f'{t["keyframes_failed"]}: {error}')
+
+                keyframe_paths = sorted(keyframe_dir.glob("keyframe_*.jpg"))
+                if keyframe_paths:
+                    keyframe_index = KeyframeSearchIndex()
+                    try:
+                        keyframe_metadata = keyframe_index.get_media_keyframes(video_id)
+                    finally:
+                        keyframe_index.close()
+                    timestamp_by_path = {
+                        item["image_path"]: item["timestamp_seconds"]
+                        for item in keyframe_metadata
+                    }
+                    st.markdown(f'#### {t["keyframes_title"]}')
+                    image_columns = st.columns(3)
+                    for frame_index, frame_path in enumerate(keyframe_paths):
+                        timestamp = timestamp_by_path.get(str(frame_path.resolve()))
+                        caption = (
+                            f"{timestamp:.1f}s" if timestamp is not None
+                            else f"Frame {frame_index + 1}"
+                        )
+                        with image_columns[frame_index % len(image_columns)]:
+                            st.image(
+                                str(frame_path),
+                                caption=caption,
+                                use_container_width=True,
+                            )
+
+            for index, segment in enumerate(st.session_state.segments):
+                with st.container(border=True):
+                    time_col, text_col = st.columns([1.5, 5])
+                    with time_col:
+                        st.caption(f'{t["start"]}: {segment["start"]}s')
+                        st.caption(f'{t["end"]}: {segment["end"]}s')
+                        if segment.get("speaker"):
+                            st.caption(f'{t["speaker"]}: {segment["speaker"]}')
+                        if st.button(
+                            t["play_segment"],
+                            key=f"play_segment_{video_id}_{index}",
+                        ):
+                            st.session_state.transcript_seek = float(segment["start"])
+                    with text_col:
+                        edited_text = st.text_input(
+                            f'{t["segment"]} {index + 1}',
+                            value=segment["text"],
+                            key=f"segment_{video_id}_{index}",
+                        )
+
+                    edited_segments.append({
+                        "start": segment["start"],
+                        "end": segment["end"],
+                        "text": edited_text,
+                        **({"speaker": segment["speaker"]} if segment.get("speaker") else {}),
+                    })
+
+            if st.session_state.get("transcript_seek") is not None:
+                seek_time = max(0, int(st.session_state.transcript_seek))
+                st.markdown(f'#### {t["selected_segment"]} · {seek_time}s')
+                media_path = st.session_state.get("media_path")
+                if media_path and Path(media_path).is_file():
+                    if st.session_state.get("media_type") == "video":
+                        st.video(media_path, start_time=seek_time)
+                    else:
+                        st.audio(media_path, start_time=seek_time)
+
+            if st.button(t["save_changes"], type="primary"):
+                try:
                     TranscriptManager.save(
-                        annotated_segments,
+                        edited_segments,
                         f"data/transcripts/{video_id}.json",
                     )
                     indexer = TranscriptIndexer()
                     try:
-                        indexer.index_segments(video_id, annotated_segments)
+                        indexer.index_segments(video_id, edited_segments)
                     finally:
                         indexer.close()
-                    st.session_state.segments = annotated_segments
+
+                    st.session_state.segments = edited_segments
                     st.session_state.search_results = []
-                    st.success(t["diarize_speakers"])
+                    st.session_state.transcript_export_path = None
+                    st.session_state.transcript_insights = None
+                    insights_path = Path("data/insights") / f"{video_id}.json"
+                    if insights_path.is_file():
+                        insights_path.unlink()
+                    st.success(t["changes_saved"])
                     st.rerun()
-            except Exception as error:
-                st.error(f'{t["transcription_failed"]}: {error}')
-
-        if st.button(t["generate_insights"]):
-            try:
-                insights = TranscriptInsights.generate(st.session_state.segments)
-                TranscriptInsights.save(
-                    insights,
-                    Path("data/insights") / f"{video_id}.json",
-                )
-                st.session_state.transcript_insights = insights
-                st.success(t["insights_saved"])
-            except Exception as error:
-                st.error(f'{t["transcription_failed"]}: {error}')
-
-        insights_path = Path("data/insights") / f"{video_id}.json"
-        if st.session_state.get("transcript_insights") is None and insights_path.is_file():
-            try:
-                st.session_state.transcript_insights = TranscriptInsights.load(insights_path)
-            except Exception:
-                st.session_state.transcript_insights = None
-
-        current_insights = st.session_state.get("transcript_insights")
-        if current_insights:
-            st.markdown(f'#### {t["insights_title"]}')
-            st.caption(t["extractive_note"])
-            st.write(current_insights["summary"] or t["no_results"])
-            if current_insights["keywords"]:
-                st.markdown(f'**{t["keywords_title"]}**')
-                st.write(", ".join(item["term"] for item in current_insights["keywords"]))
-
-        if st.session_state.get("media_type") == "video":
-            keyframe_dir = Path("data/keyframes") / video_id
-            if st.button(t["extract_keyframes"]):
-                try:
-                    with st.spinner(t["extracting_keyframes"]):
-                        extracted_frames = KeyframeExtractor.extract(
-                            st.session_state.media_path,
-                            keyframe_dir,
-                            return_timestamps=True,
-                        )
-                        keyframe_index = KeyframeSearchIndex()
-                        try:
-                            keyframe_index.replace_media_keyframes(
-                                video_id,
-                                extracted_frames,
-                                interval_seconds=30,
-                            )
-                        finally:
-                            keyframe_index.close()
-                    st.session_state.visual_search_results = None
-                    st.success(t["keyframes_done"])
                 except Exception as error:
-                    st.error(f'{t["keyframes_failed"]}: {error}')
+                    st.error(f'{t["save_failed_transcript"]}: {error}')
 
-            keyframe_paths = sorted(keyframe_dir.glob("keyframe_*.jpg"))
-            if keyframe_paths:
-                keyframe_index = KeyframeSearchIndex()
+            st.divider()
+            if st.button(t["export_transcript"]):
                 try:
-                    keyframe_metadata = keyframe_index.get_media_keyframes(video_id)
-                finally:
-                    keyframe_index.close()
-                timestamp_by_path = {
-                    item["image_path"]: item["timestamp_seconds"]
-                    for item in keyframe_metadata
-                }
-                st.markdown(f'#### {t["keyframes_title"]}')
-                image_columns = st.columns(3)
-                for frame_index, frame_path in enumerate(keyframe_paths):
-                    timestamp = timestamp_by_path.get(str(frame_path.resolve()))
-                    caption = (
-                        f"{timestamp:.1f}s" if timestamp is not None
-                        else f"Frame {frame_index + 1}"
+                    export_path = TranscriptExporter.export_csv(
+                        st.session_state.segments,
+                        f"exports/{video_id}_transcript.csv",
+                        video_id,
                     )
-                    with image_columns[frame_index % len(image_columns)]:
-                        st.image(
-                            str(frame_path),
-                            caption=caption,
-                            use_container_width=True,
-                        )
+                    st.session_state.transcript_export_path = str(export_path)
+                    st.rerun()
+                except Exception as error:
+                    st.error(f'{t["export_failed"]}: {error}')
 
-        for index, segment in enumerate(st.session_state.segments):
-            with st.container(border=True):
-                time_col, text_col = st.columns([1.5, 5])
-                with time_col:
-                    st.caption(f'{t["start"]}: {segment["start"]}s')
-                    st.caption(f'{t["end"]}: {segment["end"]}s')
-                    if segment.get("speaker"):
-                        st.caption(f'{t["speaker"]}: {segment["speaker"]}')
-                    if st.button(
-                        t["play_segment"],
-                        key=f"play_segment_{video_id}_{index}",
-                    ):
-                        st.session_state.transcript_seek = float(segment["start"])
-                with text_col:
-                    edited_text = st.text_input(
-                        f'{t["segment"]} {index + 1}',
-                        value=segment["text"],
-                        key=f"segment_{video_id}_{index}",
+            if st.session_state.transcript_export_path:
+                export_path = Path(st.session_state.transcript_export_path)
+                if export_path.exists():
+                    st.download_button(
+                        t["download_transcript"],
+                        data=export_path.read_bytes(),
+                        file_name=export_path.name,
+                        mime="text/csv",
+                        key=f"download_transcript_{video_id}",
                     )
-
-                edited_segments.append({
-                    "start": segment["start"],
-                    "end": segment["end"],
-                    "text": edited_text,
-                    **({"speaker": segment["speaker"]} if segment.get("speaker") else {}),
-                })
-
-        if st.session_state.get("transcript_seek") is not None:
-            seek_time = max(0, int(st.session_state.transcript_seek))
-            st.markdown(f'#### {t["selected_segment"]} · {seek_time}s')
-            media_path = st.session_state.get("media_path")
-            if media_path and Path(media_path).is_file():
-                if st.session_state.get("media_type") == "video":
-                    st.video(media_path, start_time=seek_time)
-                else:
-                    st.audio(media_path, start_time=seek_time)
-
-        if st.button(t["save_changes"], type="primary"):
-            try:
-                TranscriptManager.save(
-                    edited_segments,
-                    f"data/transcripts/{video_id}.json",
-                )
-                indexer = TranscriptIndexer()
-                try:
-                    indexer.index_segments(video_id, edited_segments)
-                finally:
-                    indexer.close()
-
-                st.session_state.segments = edited_segments
-                st.session_state.search_results = []
-                st.session_state.transcript_export_path = None
-                st.session_state.transcript_insights = None
-                insights_path = Path("data/insights") / f"{video_id}.json"
-                if insights_path.is_file():
-                    insights_path.unlink()
-                st.success(t["changes_saved"])
-                st.rerun()
-            except Exception as error:
-                st.error(f'{t["save_failed_transcript"]}: {error}')
-
-        st.divider()
-        if st.button(t["export_transcript"]):
-            try:
-                export_path = TranscriptExporter.export_csv(
-                    st.session_state.segments,
-                    f"exports/{video_id}_transcript.csv",
-                    video_id,
-                )
-                st.session_state.transcript_export_path = str(export_path)
-                st.rerun()
-            except Exception as error:
-                st.error(f'{t["export_failed"]}: {error}')
-
-        if st.session_state.transcript_export_path:
-            export_path = Path(st.session_state.transcript_export_path)
-            if export_path.exists():
-                st.download_button(
-                    t["download_transcript"],
-                    data=export_path.read_bytes(),
-                    file_name=export_path.name,
-                    mime="text/csv",
-                    key=f"download_transcript_{video_id}",
-                )
 
 
 # --------------------------------------------------
 # 3. Search and clip creation
 
 with tab_search:
-    st.subheader("🔎 " + t["search_title"])
-    st.write(t["search_desc"])
-
-    search_scope = st.radio(
-        t["search_scope"],
-        [t["current_media"], t["entire_archive"]],
-        horizontal=True,
-        key=f"search_scope_{st.session_state.video_id or 'archive'}",
-    )
-
-    if st.session_state.get("search_results_scope") != search_scope:
-        st.session_state.search_results = []
-        st.session_state.visual_search_results = None
-        st.session_state.search_results_scope = search_scope
-
-    current_scope = search_scope == t["current_media"]
-    if current_scope and not st.session_state.transcribed:
-        st.info(t["no_transcript"])
+    if not has_permission("search"):
+        st.info(t["access_denied"])
     else:
-        if not current_scope and not MediaCatalog().get_all():
-            st.info(t["no_archive_media"])
+        st.subheader("🔎 " + t["search_title"])
+        st.write(t["search_desc"])
 
-        scope_key = (
-            st.session_state.video_id if current_scope
-            else "entire_archive"
-        )
-        query = st.text_input(
-            t["query"],
-            key=f"search_query_{scope_key}",
-        )
-        search_type = st.radio(
-            t["search_type"],
-            [t["exact"], t["fuzzy"], t["hybrid"]],
+        search_scope = st.radio(
+            t["search_scope"],
+            [t["current_media"], t["entire_archive"]],
             horizontal=True,
-            key=f"search_type_{scope_key}",
+            key=f"search_scope_{st.session_state.video_id or 'archive'}",
         )
 
-        catalog = MediaCatalog()
-        catalog_records = catalog.get_all()
-        with st.expander(t["search_filters"], expanded=False):
-            media_type_choice = st.selectbox(
-                t["filter_media_type"],
-                [t["filter_all"], t["filter_video"], t["filter_audio"]],
-                key=f"search_media_type_{scope_key}",
+        if st.session_state.get("search_results_scope") != search_scope:
+            st.session_state.search_results = []
+            st.session_state.visual_search_results = None
+            st.session_state.search_results_scope = search_scope
+
+        current_scope = search_scope == t["current_media"]
+        if current_scope and not st.session_state.transcribed:
+            st.info(t["no_transcript"])
+        else:
+            if not current_scope and not MediaCatalog().get_all():
+                st.info(t["no_archive_media"])
+
+            scope_key = (
+                st.session_state.video_id if current_scope
+                else "entire_archive"
             )
-            source_contains = st.text_input(
-                t["filter_source"],
-                key=f"search_source_{scope_key}",
+            query = st.text_input(
+                t["query"],
+                key=f"search_query_{scope_key}",
             )
-            collection_choice = st.selectbox(
-                t["filter_collection"],
-                [t["all_collections"]] + catalog.get_collections(),
-                key=f"search_collection_{scope_key}",
-            )
-            tag_choices = st.multiselect(
-                t["filter_tags"],
-                catalog.get_all_tags(),
-                key=f"search_tags_{scope_key}",
-            )
-            date_range = st.date_input(
-                t["filter_date"],
-                value=(),
-                key=f"search_date_range_{scope_key}",
-            )
-            filter_db = SearchEngine()
-            try:
-                speaker_values = [
-                    row["speaker"]
-                    for row in filter_db.db.connection.execute(
-                        "SELECT DISTINCT speaker FROM segments "
-                        "WHERE speaker IS NOT NULL AND TRIM(speaker) != '' "
-                        "ORDER BY speaker COLLATE NOCASE"
-                    ).fetchall()
-                ]
-            finally:
-                filter_db.close()
-            speaker_choice = st.selectbox(
-                t["filter_speaker"],
-                [t["filter_all"], t["filter_no_speaker"]] + speaker_values,
-                key=f"search_speaker_{scope_key}",
+            search_type = st.radio(
+                t["search_type"],
+                [t["exact"], t["fuzzy"], t["hybrid"]],
+                horizontal=True,
+                key=f"search_type_{scope_key}",
             )
 
-        selected_media_type = (
-            None if media_type_choice == t["filter_all"]
-            else "video" if media_type_choice == t["filter_video"]
-            else "audio"
-        )
-        selected_start_date = (
-            date_range[0].isoformat()
-            if date_range and len(date_range) == 2 else None
-        )
-        selected_end_date = (
-            date_range[1].isoformat()
-            if date_range and len(date_range) == 2 else None
-        )
-        filtered_catalog = catalog.filter_media(
-            collection=(
-                None if collection_choice == t["all_collections"]
-                else collection_choice
-            ),
-            tags=tag_choices,
-            media_type=selected_media_type,
-            source_contains=source_contains.strip() or None,
-            start_date=selected_start_date,
-            end_date=selected_end_date,
-        )
-        has_metadata_filters = (
-            media_type_choice != t["filter_all"]
-            or bool(source_contains.strip())
-            or collection_choice != t["all_collections"]
-            or bool(tag_choices)
-            or (date_range and len(date_range) == 2)
-        )
-        allowed_media_ids = (
-            [item["media_id"] for item in filtered_catalog]
-            if has_metadata_filters else None
-        )
-        selected_speaker = (
-            None if speaker_choice in (t["filter_all"], t["filter_no_speaker"])
-            else speaker_choice
-        )
-        only_unspecified_speaker = speaker_choice == t["filter_no_speaker"]
+            catalog = MediaCatalog()
+            catalog_records = catalog.get_all()
+            with st.expander(t["search_filters"], expanded=False):
+                media_type_choice = st.selectbox(
+                    t["filter_media_type"],
+                    [t["filter_all"], t["filter_video"], t["filter_audio"]],
+                    key=f"search_media_type_{scope_key}",
+                )
+                source_contains = st.text_input(
+                    t["filter_source"],
+                    key=f"search_source_{scope_key}",
+                )
+                collection_choice = st.selectbox(
+                    t["filter_collection"],
+                    [t["all_collections"]] + catalog.get_collections(),
+                    key=f"search_collection_{scope_key}",
+                )
+                tag_choices = st.multiselect(
+                    t["filter_tags"],
+                    catalog.get_all_tags(),
+                    key=f"search_tags_{scope_key}",
+                )
+                date_range = st.date_input(
+                    t["filter_date"],
+                    value=(),
+                    key=f"search_date_range_{scope_key}",
+                )
+                filter_db = SearchEngine()
+                try:
+                    speaker_values = [
+                        row["speaker"]
+                        for row in filter_db.db.connection.execute(
+                            "SELECT DISTINCT speaker FROM segments "
+                            "WHERE speaker IS NOT NULL AND TRIM(speaker) != '' "
+                            "ORDER BY speaker COLLATE NOCASE"
+                        ).fetchall()
+                    ]
+                finally:
+                    filter_db.close()
+                speaker_choice = st.selectbox(
+                    t["filter_speaker"],
+                    [t["filter_all"], t["filter_no_speaker"]] + speaker_values,
+                    key=f"search_speaker_{scope_key}",
+                )
 
-        if search_type == t["hybrid"]:
-            st.caption(t["semantic_index_hint"])
+            selected_media_type = (
+                None if media_type_choice == t["filter_all"]
+                else "video" if media_type_choice == t["filter_video"]
+                else "audio"
+            )
+            selected_start_date = (
+                date_range[0].isoformat()
+                if date_range and len(date_range) == 2 else None
+            )
+            selected_end_date = (
+                date_range[1].isoformat()
+                if date_range and len(date_range) == 2 else None
+            )
+            filtered_catalog = catalog.filter_media(
+                collection=(
+                    None if collection_choice == t["all_collections"]
+                    else collection_choice
+                ),
+                tags=tag_choices,
+                media_type=selected_media_type,
+                source_contains=source_contains.strip() or None,
+                start_date=selected_start_date,
+                end_date=selected_end_date,
+            )
+            has_metadata_filters = (
+                media_type_choice != t["filter_all"]
+                or bool(source_contains.strip())
+                or collection_choice != t["all_collections"]
+                or bool(tag_choices)
+                or (date_range and len(date_range) == 2)
+            )
+            allowed_media_ids = (
+                [item["media_id"] for item in filtered_catalog]
+                if has_metadata_filters else None
+            )
+            selected_speaker = (
+                None if speaker_choice in (t["filter_all"], t["filter_no_speaker"])
+                else speaker_choice
+            )
+            only_unspecified_speaker = speaker_choice == t["filter_no_speaker"]
 
-        if search_type == t["hybrid"] and st.button(t["build_semantic_index"]):
-            search_engine = None
-            try:
-                provider = SentenceTransformerProvider()
-                catalog_records = MediaCatalog().get_all()
-                search_engine = SearchEngine()
-                total_indexed = 0
-                progress = st.progress(0.0)
-                for position, record in enumerate(catalog_records, start=1):
-                    total_indexed += search_engine.index_semantic_media(
-                        record["media_id"], provider
-                    )
-                    progress.progress(position / max(len(catalog_records), 1))
-                st.success(f'{t["semantic_index_done"]}: {total_indexed}')
-            except Exception as error:
-                st.error(f'{t["search_failed"]}: {error}')
-            finally:
-                if search_engine is not None:
-                    search_engine.close()
+            if search_type == t["hybrid"]:
+                st.caption(t["semantic_index_hint"])
 
-        if st.button(t["search_button"], type="primary"):
-            if not query.strip():
-                st.warning(t["empty_query"])
-            else:
+            if search_type == t["hybrid"] and st.button(t["build_semantic_index"]):
                 search_engine = None
                 try:
+                    provider = SentenceTransformerProvider()
+                    catalog_records = MediaCatalog().get_all()
                     search_engine = SearchEngine()
-                    media_filter = (
-                        st.session_state.video_id if current_scope else None
-                    )
-                    speaker_filter = (
-                        "__UNSPECIFIED_SPEAKER__"
-                        if only_unspecified_speaker else selected_speaker
-                    )
-                    search_options = {
-                        "video_id": media_filter,
-                        "media_ids": allowed_media_ids,
-                        "speaker": speaker_filter,
-                    }
-                    if search_type == t["exact"]:
-                        results = search_engine.exact_search(query, **search_options)
-                    elif search_type == t["fuzzy"]:
-                        results = search_engine.fuzzy_search(query, **search_options)
-                    else:
-                        provider = SentenceTransformerProvider()
-                        results = search_engine.hybrid_search(
-                            query, provider, **search_options
+                    total_indexed = 0
+                    progress = st.progress(0.0)
+                    for position, record in enumerate(catalog_records, start=1):
+                        total_indexed += search_engine.index_semantic_media(
+                            record["media_id"], provider
                         )
-
-                    st.session_state.search_results = results
-                    st.session_state.search_results_scope = search_scope
+                        progress.progress(position / max(len(catalog_records), 1))
+                    st.success(f'{t["semantic_index_done"]}: {total_indexed}')
                 except Exception as error:
                     st.error(f'{t["search_failed"]}: {error}')
                 finally:
                     if search_engine is not None:
                         search_engine.close()
 
-        st.caption(t["duration_note"])
+            if st.button(t["search_button"], type="primary"):
+                if not query.strip():
+                    st.warning(t["empty_query"])
+                else:
+                    search_engine = None
+                    try:
+                        search_engine = SearchEngine()
+                        media_filter = (
+                            st.session_state.video_id if current_scope else None
+                        )
+                        speaker_filter = (
+                            "__UNSPECIFIED_SPEAKER__"
+                            if only_unspecified_speaker else selected_speaker
+                        )
+                        search_options = {
+                            "video_id": media_filter,
+                            "media_ids": allowed_media_ids,
+                            "speaker": speaker_filter,
+                        }
+                        if search_type == t["exact"]:
+                            results = search_engine.exact_search(query, **search_options)
+                        elif search_type == t["fuzzy"]:
+                            results = search_engine.fuzzy_search(query, **search_options)
+                        else:
+                            provider = SentenceTransformerProvider()
+                            results = search_engine.hybrid_search(
+                                query, provider, **search_options
+                            )
 
-        if st.session_state.search_results:
-            st.markdown(
-                f"### {t['results']} ({len(st.session_state.search_results)})"
-            )
+                        st.session_state.search_results = results
+                        st.session_state.search_results_scope = search_scope
+                    except Exception as error:
+                        st.error(f'{t["search_failed"]}: {error}')
+                    finally:
+                        if search_engine is not None:
+                            search_engine.close()
 
-            catalog_records = {
-                record["media_id"]: record
-                for record in MediaCatalog().get_all()
-            }
-            for result in st.session_state.search_results:
-                with st.container(border=True):
-                    media_id = result["video_id"]
-                    media_record = catalog_records.get(media_id)
-                    media_path = None
-                    media_type = None
-                    source_name = media_id[:12]
+            st.caption(t["duration_note"])
 
-                    if media_record:
-                        media_path = Path(media_record["stored_path"])
-                        media_type = media_record["media_type"]
-                        source_name = media_record["source_name"]
-                    elif (
-                        media_id == st.session_state.video_id
-                        and st.session_state.media_path
-                    ):
-                        media_path = Path(st.session_state.media_path)
-                        media_type = st.session_state.media_type
+            if st.session_state.search_results:
+                st.markdown(
+                    f"### {t['results']} ({len(st.session_state.search_results)})"
+                )
 
-                    st.caption(f'{t["media_source"]}: {source_name}')
-                    if result.get("speaker"):
-                        st.caption(f'{t["speaker"]}: {result["speaker"]}')
-                    st.markdown(f'**{t["text"]}:** {result["original_text"]}')
-                    st.markdown(
-                        f'**{t["time"]}:** {result["start"]}s – {result["end"]}s'
-                    )
+                catalog_records = {
+                    record["media_id"]: record
+                    for record in MediaCatalog().get_all()
+                }
+                for result in st.session_state.search_results:
+                    with st.container(border=True):
+                        media_id = result["video_id"]
+                        media_record = catalog_records.get(media_id)
+                        media_path = None
+                        media_type = None
+                        source_name = media_id[:12]
 
-                    if "similarity" in result:
-                        st.progress(
-                            max(0, min(100, int(result["similarity"]))) / 100,
-                            text=f'{t["similarity"]}: {result["similarity"]}%',
+                        if media_record:
+                            media_path = Path(media_record["stored_path"])
+                            media_type = media_record["media_type"]
+                            source_name = media_record["source_name"]
+                        elif (
+                            media_id == st.session_state.video_id
+                            and st.session_state.media_path
+                        ):
+                            media_path = Path(st.session_state.media_path)
+                            media_type = st.session_state.media_type
+
+                        st.caption(f'{t["media_source"]}: {source_name}')
+                        if result.get("speaker"):
+                            st.caption(f'{t["speaker"]}: {result["speaker"]}')
+                        st.markdown(f'**{t["text"]}:** {result["original_text"]}')
+                        st.markdown(
+                            f'**{t["time"]}:** {result["start"]}s – {result["end"]}s'
                         )
 
-                    if media_path and media_path.exists():
-                        with st.expander(t["media_preview"]):
-                            if media_type == "video":
-                                st.video(str(media_path))
-                            else:
-                                st.audio(str(media_path))
-                    else:
-                        st.caption(t["missing_clip"])
+                        if "similarity" in result:
+                            st.progress(
+                                max(0, min(100, int(result["similarity"]))) / 100,
+                                text=f'{t["similarity"]}: {result["similarity"]}%',
+                            )
 
-                    if media_type == "video" and media_path and media_path.exists():
-                        if st.button(
-                            "✂️ " + t["save_clip"],
-                            key=f"save_clip_{media_id}_{result['id']}",
-                        ):
-                            try:
-                                clip_path = ClipManager().create_clip(
-                                    str(media_path),
-                                    result["start"],
-                                    result["end"],
-                                    f"{media_id}_clip_{result['id']}",
-                                )
-                                ClipMetadata().save_clip(
-                                    media_id,
-                                    str(clip_path),
-                                    result["start"],
-                                    result["end"],
-                                    result["original_text"],
-                                )
-                                st.success(t["clip_saved"])
-                            except Exception as error:
-                                st.error(f'{t["clip_failed"]}: {error}')
-                    elif media_type == "audio":
-                        st.caption(t["audio_clip_unavailable"])
-        else:
-            st.info(t["no_results"])
+                        if media_path and media_path.exists():
+                            with st.expander(t["media_preview"]):
+                                if media_type == "video":
+                                    st.video(str(media_path))
+                                else:
+                                    st.audio(str(media_path))
+                        else:
+                            st.caption(t["missing_clip"])
+
+                        if media_type == "video" and media_path and media_path.exists():
+                            if st.button(
+                                "✂️ " + t["save_clip"],
+                                key=f"save_clip_{media_id}_{result['id']}",
+                            ):
+                                try:
+                                    clip_path = ClipManager().create_clip(
+                                        str(media_path),
+                                        result["start"],
+                                        result["end"],
+                                        f"{media_id}_clip_{result['id']}",
+                                    )
+                                    ClipMetadata().save_clip(
+                                        media_id,
+                                        str(clip_path),
+                                        result["start"],
+                                        result["end"],
+                                        result["original_text"],
+                                    )
+                                    st.success(t["clip_saved"])
+                                except Exception as error:
+                                    st.error(f'{t["clip_failed"]}: {error}')
+                        elif media_type == "audio":
+                            st.caption(t["audio_clip_unavailable"])
+            else:
+                st.info(t["no_results"])
 
 
 
@@ -1719,103 +1728,75 @@ with tab_search:
 # 4. Visual keyframe search
 
 with tab_visual:
-    st.subheader("🖼️ " + t["visual_search_title"])
-    st.caption(t["visual_search_hint"])
-    st.caption(t["visual_time_note"])
-    visual_scope = st.radio(
-        t["search_scope"],
-        [t["current_media"], t["entire_archive"]],
-        horizontal=True,
-        key="visual_search_scope",
-    )
-    current_video_id = (
-        st.session_state.get("video_id")
-        if st.session_state.get("media_type") == "video"
-        else None
-    )
-    if visual_scope == t["current_media"] and not current_video_id:
-        st.info(t["keyframes_video_only"])
-        visual_media_records = []
+    if not has_permission("visual"):
+        st.info(t["access_denied"])
     else:
-        visual_media_records = [
-            record for record in MediaCatalog().get_all()
-            if record["media_type"] == "video"
-            and (
-                visual_scope == t["entire_archive"]
-                or record["media_id"] == current_video_id
-            )
-        ]
-    visual_media_ids = [record["media_id"] for record in visual_media_records]
-    visual_media_filter = (
-        [current_video_id]
-        if visual_scope == t["current_media"] and current_video_id
-        else None
-    )
-    visual_context = (
-        visual_scope,
-        current_video_id if visual_scope == t["current_media"] else None,
-    )
-    if st.session_state.get("visual_search_context") != visual_context:
-        st.session_state.visual_search_results = None
-        st.session_state.visual_search_context = visual_context
-    visual_query = st.text_input(
-        t["visual_search_query"],
-        key="visual_search_query_standalone",
-    )
-    reference_image = st.file_uploader(
-        t["visual_reference_image"],
-        type=["png", "jpg", "jpeg", "webp"],
-        key="visual_reference_standalone",
-    )
+        st.subheader("🖼️ " + t["visual_search_title"])
+        st.caption(t["visual_search_hint"])
+        st.caption(t["visual_time_note"])
+        visual_scope = st.radio(
+            t["search_scope"],
+            [t["current_media"], t["entire_archive"]],
+            horizontal=True,
+            key="visual_search_scope",
+        )
+        current_video_id = (
+            st.session_state.get("video_id")
+            if st.session_state.get("media_type") == "video"
+            else None
+        )
+        if visual_scope == t["current_media"] and not current_video_id:
+            st.info(t["keyframes_video_only"])
+            visual_media_records = []
+        else:
+            visual_media_records = [
+                record for record in MediaCatalog().get_all()
+                if record["media_type"] == "video"
+                and (
+                    visual_scope == t["entire_archive"]
+                    or record["media_id"] == current_video_id
+                )
+            ]
+        visual_media_ids = [record["media_id"] for record in visual_media_records]
+        visual_media_filter = (
+            [current_video_id]
+            if visual_scope == t["current_media"] and current_video_id
+            else None
+        )
+        visual_context = (
+            visual_scope,
+            current_video_id if visual_scope == t["current_media"] else None,
+        )
+        if st.session_state.get("visual_search_context") != visual_context:
+            st.session_state.visual_search_results = None
+            st.session_state.visual_search_context = visual_context
+        visual_query = st.text_input(
+            t["visual_search_query"],
+            key="visual_search_query_standalone",
+        )
+        reference_image = st.file_uploader(
+            t["visual_reference_image"],
+            type=["png", "jpg", "jpeg", "webp"],
+            key="visual_reference_standalone",
+        )
 
-    if st.button(t["build_visual_index"], key="build_visual_index_standalone"):
-        visual_index = None
-        try:
-            visual_provider = SentenceTransformerVisualProvider()
-            visual_index = KeyframeSearchIndex()
-            total_indexed = 0
-            skipped = 0
-            progress = st.progress(0.0)
-            for position, record in enumerate(visual_media_records, start=1):
-                frame_dir = Path("data/keyframes") / record["media_id"]
-                frames = sorted(frame_dir.glob("keyframe_*.jpg"))
-                source_path = Path(record["stored_path"])
-                if not frames:
-                    if not source_path.is_file():
-                        skipped += 1
-                        progress.progress(position / max(len(visual_media_records), 1))
-                        continue
-                    timestamped_frames = KeyframeExtractor.extract(
-                        source_path,
-                        frame_dir,
-                        return_timestamps=True,
-                    )
-                    visual_index.replace_media_keyframes(
-                        record["media_id"], timestamped_frames
-                    )
-                else:
-                    existing_frames = visual_index.get_media_keyframes(
-                        record["media_id"]
-                    )
-                    existing_paths = [
-                        item["image_path"] for item in existing_frames
-                    ]
-                    current_paths = [str(path.resolve()) for path in frames]
-                    if existing_paths == current_paths:
-                        timestamped_metadata = [
-                            (Path(item["image_path"]), item["timestamp_seconds"])
-                            for item in existing_frames
-                        ]
-                        # Re-hash the image files so externally changed frames
-                        # invalidate their stale visual embeddings.
-                        visual_index.replace_media_keyframes(
-                            record["media_id"], timestamped_metadata
-                        )
-                    else:
+        if st.button(t["build_visual_index"], key="build_visual_index_standalone"):
+            visual_index = None
+            try:
+                visual_provider = SentenceTransformerVisualProvider()
+                visual_index = KeyframeSearchIndex()
+                total_indexed = 0
+                skipped = 0
+                progress = st.progress(0.0)
+                for position, record in enumerate(visual_media_records, start=1):
+                    frame_dir = Path("data/keyframes") / record["media_id"]
+                    frames = sorted(frame_dir.glob("keyframe_*.jpg"))
+                    source_path = Path(record["stored_path"])
+                    if not frames:
                         if not source_path.is_file():
-                            raise FileNotFoundError(
-                                f'Original video is missing: {source_path}'
-                            )
+                            skipped += 1
+                            progress.progress(position / max(len(visual_media_records), 1))
+                            continue
                         timestamped_frames = KeyframeExtractor.extract(
                             source_path,
                             frame_dir,
@@ -1824,986 +1805,1165 @@ with tab_visual:
                         visual_index.replace_media_keyframes(
                             record["media_id"], timestamped_frames
                         )
-                total_indexed += visual_index.index_media(
-                    record["media_id"], visual_provider
+                    else:
+                        existing_frames = visual_index.get_media_keyframes(
+                            record["media_id"]
+                        )
+                        existing_paths = [
+                            item["image_path"] for item in existing_frames
+                        ]
+                        current_paths = [str(path.resolve()) for path in frames]
+                        if existing_paths == current_paths:
+                            timestamped_metadata = [
+                                (Path(item["image_path"]), item["timestamp_seconds"])
+                                for item in existing_frames
+                            ]
+                            # Re-hash the image files so externally changed frames
+                            # invalidate their stale visual embeddings.
+                            visual_index.replace_media_keyframes(
+                                record["media_id"], timestamped_metadata
+                            )
+                        else:
+                            if not source_path.is_file():
+                                raise FileNotFoundError(
+                                    f'Original video is missing: {source_path}'
+                                )
+                            timestamped_frames = KeyframeExtractor.extract(
+                                source_path,
+                                frame_dir,
+                                return_timestamps=True,
+                            )
+                            visual_index.replace_media_keyframes(
+                                record["media_id"], timestamped_frames
+                            )
+                    total_indexed += visual_index.index_media(
+                        record["media_id"], visual_provider
+                    )
+                    progress.progress(position / max(len(visual_media_records), 1))
+                st.session_state.visual_search_results = None
+                st.success(
+                    f'{t["visual_index_done"]}: {total_indexed} · '
+                    f'{t["visual_skipped"]}: {skipped}'
                 )
-                progress.progress(position / max(len(visual_media_records), 1))
-            st.session_state.visual_search_results = None
-            st.success(
-                f'{t["visual_index_done"]}: {total_indexed} · '
-                f'{t["visual_skipped"]}: {skipped}'
-            )
-        except Exception as error:
-            st.error(f'{t["visual_search_failed"]}: {error}')
-        finally:
-            if visual_index is not None:
-                visual_index.close()
-
-    if st.button(t["visual_search_button"], key="run_visual_search_standalone"):
-        if not visual_query.strip() and reference_image is None:
-            st.warning(t["visual_search_empty"])
-        elif not visual_media_ids:
-            st.warning(t["no_visual_results"])
-        else:
-            visual_index = None
-            temporary_reference = None
-            try:
-                visual_provider = SentenceTransformerVisualProvider()
-                visual_index = KeyframeSearchIndex()
-                if reference_image is not None:
-                    suffix = Path(reference_image.name).suffix or ".jpg"
-                    with tempfile.NamedTemporaryFile(
-                        suffix=suffix, delete=False
-                    ) as temp_file:
-                        temp_file.write(reference_image.getvalue())
-                        temporary_reference = Path(temp_file.name)
-                    visual_results = visual_index.search_image(
-                        temporary_reference,
-                        visual_provider,
-                        media_ids=visual_media_filter,
-                    )
-                else:
-                    visual_results = visual_index.search_text(
-                        visual_query,
-                        visual_provider,
-                        media_ids=visual_media_filter,
-                    )
-                st.session_state.visual_search_results = visual_results
             except Exception as error:
                 st.error(f'{t["visual_search_failed"]}: {error}')
             finally:
-                if temporary_reference and temporary_reference.exists():
-                    temporary_reference.unlink()
                 if visual_index is not None:
                     visual_index.close()
 
-    visual_results = st.session_state.get("visual_search_results")
-    if visual_results:
-        st.markdown(f'#### {t["visual_results"]} ({len(visual_results)})')
-        visual_catalog = {
-            item["media_id"]: item for item in MediaCatalog().get_all()
-        }
-        for visual_result in visual_results:
-            with st.container(border=True):
-                image_path = Path(visual_result["image_path"])
-                if image_path.is_file():
-                    st.image(
-                        str(image_path),
-                        caption=(
-                            f'{visual_catalog.get(visual_result["media_id"], {}).get("source_name", visual_result["media_id"][:12])} · '
-                            f'{visual_result["timestamp_seconds"]:.2f}s'
-                        ),
-                        use_container_width=True,
-                    )
-                st.caption(
-                    f'{t["visual_score"]}: {visual_result["visual_score"]:.3f}'
-                )
-                source_record = visual_catalog.get(visual_result["media_id"])
-                if source_record:
-                    st.caption(f'{t["media_source"]}: {source_record["source_name"]}')
-                st.caption(
-                    f'{t["time"]}: {visual_result["timestamp_seconds"]:.2f}s'
-                )
-                source_path = (
-                    Path(source_record["stored_path"])
-                    if source_record else None
-                )
-                if source_path and source_path.is_file() and st.button(
-                    t["visual_play_at_time"],
-                    key=f'visual_play_{visual_result["keyframe_id"]}',
-                ):
-                    st.video(
-                        str(source_path),
-                        start_time=int(visual_result["timestamp_seconds"]),
-                    )
-    elif visual_results == []:
-        st.info(t["no_visual_results"])
-
-
-# 5. Unified transcript + visual search
-# --------------------------------------------------
-
-with tab_cross_modal:
-    st.subheader("🔎 " + t["cross_modal_title"])
-    st.caption(t["cross_modal_desc"])
-    cross_scope = st.radio(
-        t["search_scope"],
-        [t["current_media"], t["entire_archive"]],
-        horizontal=True,
-        key="cross_modal_scope",
-    )
-    current_media_id = st.session_state.get("video_id")
-    cross_records = MediaCatalog().get_all()
-    if cross_scope == t["current_media"]:
-        if not current_media_id:
-            st.info(t["no_archive_media"])
-            cross_media_ids = []
-        else:
-            cross_media_ids = [current_media_id]
-    else:
-        cross_media_ids = [item["media_id"] for item in cross_records]
-
-    cross_context = (cross_scope, tuple(cross_media_ids))
-    if st.session_state.get("cross_modal_context") != cross_context:
-        st.session_state.cross_modal_results = None
-        st.session_state.cross_modal_context = cross_context
-
-    cross_query = st.text_input(
-        t["cross_modal_query"], key="cross_modal_query_input"
-    )
-    include_visual = st.checkbox(
-        t["cross_modal_include_visual"],
-        value=True,
-        key="cross_modal_include_visual_toggle",
-        help=t["cross_modal_visual_note"],
-    )
-    cross_reference = st.file_uploader(
-        t["cross_modal_image"],
-        type=["png", "jpg", "jpeg", "webp"],
-        key="cross_modal_reference_image",
-    )
-    if st.button(t["cross_modal_button"], type="primary", key="run_cross_modal_search"):
-        st.session_state.cross_modal_results = None
-        if not cross_query.strip() and cross_reference is None:
-            st.warning(t["empty_query"])
-        elif not cross_media_ids:
-            st.info(t["cross_modal_no_results"])
-        else:
-            cross_engine = None
-            cross_index = None
-            temporary_reference = None
-            try:
-                cross_engine = SearchEngine()
-                cross_index = KeyframeSearchIndex()
-                cross_search = CrossModalSearch(cross_engine, cross_index)
-                if cross_reference is not None:
-                    cross_provider = SentenceTransformerVisualProvider()
-                    suffix = Path(cross_reference.name).suffix or ".jpg"
-                    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp_file:
-                        temp_file.write(cross_reference.getvalue())
-                        temporary_reference = Path(temp_file.name)
-                    cross_results = cross_search.search_image(
-                        temporary_reference,
-                        cross_provider,
-                        media_ids=cross_media_ids,
-                    )
-                else:
-                    cross_provider = None
-                    if include_visual:
-                        try:
-                            cross_provider = SentenceTransformerVisualProvider()
-                        except Exception as provider_error:
-                            st.warning(
-                                f'{t["cross_modal_visual_note"]} ({provider_error})'
-                            )
-                    cross_results = cross_search.search_text(
-                        cross_query,
-                        media_ids=cross_media_ids,
-                        visual_provider=cross_provider,
-                        include_visual=include_visual and cross_provider is not None,
-                    )
-                st.session_state.cross_modal_results = cross_results
-            except Exception as error:
-                st.error(f'{t["search_failed"]}: {error}')
-            finally:
-                if temporary_reference and temporary_reference.exists():
-                    temporary_reference.unlink()
-                if cross_index is not None:
-                    cross_index.close()
-                if cross_engine is not None:
-                    cross_engine.close()
-
-    cross_results = st.session_state.get("cross_modal_results")
-    cross_catalog = {item["media_id"]: item for item in cross_records}
-    if cross_results:
-        st.markdown(f'### {t["results"]} ({len(cross_results)})')
-        for result_index, result in enumerate(cross_results):
-            media_id = result["media_id"]
-            source_record = cross_catalog.get(media_id)
-            source_name = (
-                source_record["source_name"] if source_record
-                else media_id[:12]
-            )
-            source_path = (
-                Path(source_record["stored_path"]) if source_record else None
-            )
-            with st.container(border=True):
-                result_label = (
-                    t["cross_modal_result_frame"]
-                    if result["result_type"] == "keyframe"
-                    else t["cross_modal_result_transcript"]
-                )
-                st.markdown(f'**{result_index + 1}. {result_label}**')
-                st.caption(f'{t["media_source"]}: {source_name}')
-                st.caption(
-                    f'{t["time"]}: {result["timestamp_seconds"]:.2f}s · '
-                    f'{t["cross_modal_rank_score"]}: {result["cross_modal_score"]:.4f}'
-                )
-                matched_labels = {
-                    "exact": t["exact"],
-                    "fuzzy": t["fuzzy"],
-                    "visual": t["visual_search_tab"],
-                }
-                st.caption(" + ".join(
-                    matched_labels.get(source, source)
-                    for source in result["matched_by"]
-                ))
-                if result["result_type"] == "keyframe":
-                    frame_path = Path(result["image_path"])
-                    if frame_path.is_file():
-                        st.image(str(frame_path), use_container_width=True)
-                    if "visual_score" in result:
-                        st.caption(
-                            f'{t["visual_score"]}: {result["visual_score"]:.3f}'
+        if st.button(t["visual_search_button"], key="run_visual_search_standalone"):
+            if not visual_query.strip() and reference_image is None:
+                st.warning(t["visual_search_empty"])
+            elif not visual_media_ids:
+                st.warning(t["no_visual_results"])
+            else:
+                visual_index = None
+                temporary_reference = None
+                try:
+                    visual_provider = SentenceTransformerVisualProvider()
+                    visual_index = KeyframeSearchIndex()
+                    if reference_image is not None:
+                        suffix = Path(reference_image.name).suffix or ".jpg"
+                        with tempfile.NamedTemporaryFile(
+                            suffix=suffix, delete=False
+                        ) as temp_file:
+                            temp_file.write(reference_image.getvalue())
+                            temporary_reference = Path(temp_file.name)
+                        visual_results = visual_index.search_image(
+                            temporary_reference,
+                            visual_provider,
+                            media_ids=visual_media_filter,
                         )
+                    else:
+                        visual_results = visual_index.search_text(
+                            visual_query,
+                            visual_provider,
+                            media_ids=visual_media_filter,
+                        )
+                    st.session_state.visual_search_results = visual_results
+                except Exception as error:
+                    st.error(f'{t["visual_search_failed"]}: {error}')
+                finally:
+                    if temporary_reference and temporary_reference.exists():
+                        temporary_reference.unlink()
+                    if visual_index is not None:
+                        visual_index.close()
+
+        visual_results = st.session_state.get("visual_search_results")
+        if visual_results:
+            st.markdown(f'#### {t["visual_results"]} ({len(visual_results)})')
+            visual_catalog = {
+                item["media_id"]: item for item in MediaCatalog().get_all()
+            }
+            for visual_result in visual_results:
+                with st.container(border=True):
+                    image_path = Path(visual_result["image_path"])
+                    if image_path.is_file():
+                        st.image(
+                            str(image_path),
+                            caption=(
+                                f'{visual_catalog.get(visual_result["media_id"], {}).get("source_name", visual_result["media_id"][:12])} · '
+                                f'{visual_result["timestamp_seconds"]:.2f}s'
+                            ),
+                            use_container_width=True,
+                        )
+                    st.caption(
+                        f'{t["visual_score"]}: {visual_result["visual_score"]:.3f}'
+                    )
+                    source_record = visual_catalog.get(visual_result["media_id"])
+                    if source_record:
+                        st.caption(f'{t["media_source"]}: {source_record["source_name"]}')
+                    st.caption(
+                        f'{t["time"]}: {visual_result["timestamp_seconds"]:.2f}s'
+                    )
+                    source_path = (
+                        Path(source_record["stored_path"])
+                        if source_record else None
+                    )
                     if source_path and source_path.is_file() and st.button(
-                        t["cross_modal_preview"],
-                        key=f'cross_modal_preview_{result["keyframe_id"]}_{result_index}',
+                        t["visual_play_at_time"],
+                        key=f'visual_play_{visual_result["keyframe_id"]}',
                     ):
                         st.video(
                             str(source_path),
-                            start_time=int(result["timestamp_seconds"]),
+                            start_time=int(visual_result["timestamp_seconds"]),
                         )
-                else:
-                    st.markdown(f'**{t["text"]}:** {result["original_text"]}')
-                    st.caption(
-                        f'{t["start"]}: {result["start"]}s · '
-                        f'{t["end"]}: {result["end"]}s'
+        elif visual_results == []:
+            st.info(t["no_visual_results"])
+
+
+    # 5. Unified transcript + visual search
+# --------------------------------------------------
+
+with tab_cross_modal:
+    if not has_permission("cross_modal"):
+        st.info(t["access_denied"])
+    else:
+        st.subheader("🔎 " + t["cross_modal_title"])
+        st.caption(t["cross_modal_desc"])
+        cross_scope = st.radio(
+            t["search_scope"],
+            [t["current_media"], t["entire_archive"]],
+            horizontal=True,
+            key="cross_modal_scope",
+        )
+        current_media_id = st.session_state.get("video_id")
+        cross_records = MediaCatalog().get_all()
+        if cross_scope == t["current_media"]:
+            if not current_media_id:
+                st.info(t["no_archive_media"])
+                cross_media_ids = []
+            else:
+                cross_media_ids = [current_media_id]
+        else:
+            cross_media_ids = [item["media_id"] for item in cross_records]
+
+        cross_context = (cross_scope, tuple(cross_media_ids))
+        if st.session_state.get("cross_modal_context") != cross_context:
+            st.session_state.cross_modal_results = None
+            st.session_state.cross_modal_context = cross_context
+
+        cross_query = st.text_input(
+            t["cross_modal_query"], key="cross_modal_query_input"
+        )
+        include_visual = st.checkbox(
+            t["cross_modal_include_visual"],
+            value=True,
+            key="cross_modal_include_visual_toggle",
+            help=t["cross_modal_visual_note"],
+        )
+        cross_reference = st.file_uploader(
+            t["cross_modal_image"],
+            type=["png", "jpg", "jpeg", "webp"],
+            key="cross_modal_reference_image",
+        )
+        if st.button(t["cross_modal_button"], type="primary", key="run_cross_modal_search"):
+            st.session_state.cross_modal_results = None
+            if not cross_query.strip() and cross_reference is None:
+                st.warning(t["empty_query"])
+            elif not cross_media_ids:
+                st.info(t["cross_modal_no_results"])
+            else:
+                cross_engine = None
+                cross_index = None
+                temporary_reference = None
+                try:
+                    cross_engine = SearchEngine()
+                    cross_index = KeyframeSearchIndex()
+                    cross_search = CrossModalSearch(cross_engine, cross_index)
+                    if cross_reference is not None:
+                        cross_provider = SentenceTransformerVisualProvider()
+                        suffix = Path(cross_reference.name).suffix or ".jpg"
+                        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp_file:
+                            temp_file.write(cross_reference.getvalue())
+                            temporary_reference = Path(temp_file.name)
+                        cross_results = cross_search.search_image(
+                            temporary_reference,
+                            cross_provider,
+                            media_ids=cross_media_ids,
+                        )
+                    else:
+                        cross_provider = None
+                        if include_visual:
+                            try:
+                                cross_provider = SentenceTransformerVisualProvider()
+                            except Exception as provider_error:
+                                st.warning(
+                                    f'{t["cross_modal_visual_note"]} ({provider_error})'
+                                )
+                        cross_results = cross_search.search_text(
+                            cross_query,
+                            media_ids=cross_media_ids,
+                            visual_provider=cross_provider,
+                            include_visual=include_visual and cross_provider is not None,
+                        )
+                    st.session_state.cross_modal_results = cross_results
+                except Exception as error:
+                    st.error(f'{t["search_failed"]}: {error}')
+                finally:
+                    if temporary_reference and temporary_reference.exists():
+                        temporary_reference.unlink()
+                    if cross_index is not None:
+                        cross_index.close()
+                    if cross_engine is not None:
+                        cross_engine.close()
+
+        cross_results = st.session_state.get("cross_modal_results")
+        cross_catalog = {item["media_id"]: item for item in cross_records}
+        if cross_results:
+            st.markdown(f'### {t["results"]} ({len(cross_results)})')
+            for result_index, result in enumerate(cross_results):
+                media_id = result["media_id"]
+                source_record = cross_catalog.get(media_id)
+                source_name = (
+                    source_record["source_name"] if source_record
+                    else media_id[:12]
+                )
+                source_path = (
+                    Path(source_record["stored_path"]) if source_record else None
+                )
+                with st.container(border=True):
+                    result_label = (
+                        t["cross_modal_result_frame"]
+                        if result["result_type"] == "keyframe"
+                        else t["cross_modal_result_transcript"]
                     )
-                    if result.get("speaker"):
-                        st.caption(f'{t["speaker"]}: {result["speaker"]}')
-                    if source_path and source_path.is_file() and st.button(
-                        t["cross_modal_preview"],
-                        key=f'cross_modal_preview_{result["id"]}_{result_index}',
-                    ):
-                        if source_record and source_record["media_type"] == "video":
-                            st.video(str(source_path), start_time=int(result["start"]))
-                        else:
-                            st.audio(str(source_path), start_time=int(result["start"]))
-    elif cross_results == []:
-        st.info(t["cross_modal_no_results"])
+                    st.markdown(f'**{result_index + 1}. {result_label}**')
+                    st.caption(f'{t["media_source"]}: {source_name}')
+                    st.caption(
+                        f'{t["time"]}: {result["timestamp_seconds"]:.2f}s · '
+                        f'{t["cross_modal_rank_score"]}: {result["cross_modal_score"]:.4f}'
+                    )
+                    matched_labels = {
+                        "exact": t["exact"],
+                        "fuzzy": t["fuzzy"],
+                        "visual": t["visual_search_tab"],
+                    }
+                    st.caption(" + ".join(
+                        matched_labels.get(source, source)
+                        for source in result["matched_by"]
+                    ))
+                    if result["result_type"] == "keyframe":
+                        frame_path = Path(result["image_path"])
+                        if frame_path.is_file():
+                            st.image(str(frame_path), use_container_width=True)
+                        if "visual_score" in result:
+                            st.caption(
+                                f'{t["visual_score"]}: {result["visual_score"]:.3f}'
+                            )
+                        if source_path and source_path.is_file() and st.button(
+                            t["cross_modal_preview"],
+                            key=f'cross_modal_preview_{result["keyframe_id"]}_{result_index}',
+                        ):
+                            st.video(
+                                str(source_path),
+                                start_time=int(result["timestamp_seconds"]),
+                            )
+                    else:
+                        st.markdown(f'**{t["text"]}:** {result["original_text"]}')
+                        st.caption(
+                            f'{t["start"]}: {result["start"]}s · '
+                            f'{t["end"]}: {result["end"]}s'
+                        )
+                        if result.get("speaker"):
+                            st.caption(f'{t["speaker"]}: {result["speaker"]}')
+                        if source_path and source_path.is_file() and st.button(
+                            t["cross_modal_preview"],
+                            key=f'cross_modal_preview_{result["id"]}_{result_index}',
+                        ):
+                            if source_record and source_record["media_type"] == "video":
+                                st.video(str(source_path), start_time=int(result["start"]))
+                            else:
+                                st.audio(str(source_path), start_time=int(result["start"]))
+        elif cross_results == []:
+            st.info(t["cross_modal_no_results"])
 
 
-# 6. Evidence-first archive Q&A
+    # 6. Evidence-first archive Q&A
 # --------------------------------------------------
 
 with tab_qa:
-    st.subheader("💬 " + t["archive_qa_title"])
-    st.caption(t["archive_qa_desc"])
-
-    qa_scope = st.radio(
-        t["search_scope"],
-        [t["current_media"], t["entire_archive"]],
-        horizontal=True,
-        key="archive_qa_scope",
-    )
-    qa_records = MediaCatalog().get_all()
-    qa_current_media_id = st.session_state.get("video_id")
-    if qa_scope == t["current_media"]:
-        qa_media_ids = (
-            [qa_current_media_id] if qa_current_media_id else []
-        )
+    if not has_permission("qa"):
+        st.info(t["access_denied"])
     else:
-        qa_media_ids = [item["media_id"] for item in qa_records]
+        st.subheader("💬 " + t["archive_qa_title"])
+        st.caption(t["archive_qa_desc"])
 
-    qa_question = st.text_area(
-        t["archive_qa_question"],
-        key="archive_qa_question_input",
-        height=100,
-    )
-    qa_use_semantic = st.checkbox(
-        t["archive_qa_semantic"],
-        value=False,
-        key="archive_qa_use_semantic",
-    )
-    qa_context = (
-        qa_scope, tuple(qa_media_ids), qa_question.strip(), qa_use_semantic
-    )
-    if st.session_state.get("archive_qa_context") != qa_context:
-        st.session_state.archive_qa_result = None
-        st.session_state.archive_qa_context = qa_context
-
-    if st.button(
-        t["archive_qa_button"],
-        type="primary",
-        key="run_archive_qa",
-    ):
-        if not qa_question.strip():
-            st.warning(t["empty_query"])
+        qa_scope = st.radio(
+            t["search_scope"],
+            [t["current_media"], t["entire_archive"]],
+            horizontal=True,
+            key="archive_qa_scope",
+        )
+        qa_records = MediaCatalog().get_all()
+        qa_current_media_id = st.session_state.get("video_id")
+        if qa_scope == t["current_media"]:
+            qa_media_ids = (
+                [qa_current_media_id] if qa_current_media_id else []
+            )
         else:
-            qa_engine = None
-            try:
-                qa_engine = SearchEngine()
-                qa_semantic_provider = None
-                if qa_use_semantic:
-                    try:
-                        qa_semantic_provider = SentenceTransformerProvider()
-                    except Exception as provider_error:
-                        st.warning(
-                            f'{t["archive_qa_semantic_unavailable"]} ({provider_error})'
-                        )
-                qa_result = ArchiveQA(qa_engine).ask(
-                    qa_question,
-                    media_ids=qa_media_ids,
-                    semantic_provider=qa_semantic_provider,
-                )
-                st.session_state.archive_qa_result = qa_result
-            except Exception as error:
-                st.error(f'{t["search_failed"]}: {error}')
-            finally:
-                if qa_engine is not None:
-                    qa_engine.close()
+            qa_media_ids = [item["media_id"] for item in qa_records]
 
-    qa_result = st.session_state.get("archive_qa_result")
-    if qa_result:
-        for warning in qa_result.get("warnings", []):
-            st.warning(warning)
+        qa_question = st.text_area(
+            t["archive_qa_question"],
+            key="archive_qa_question_input",
+            height=100,
+        )
+        qa_use_semantic = st.checkbox(
+            t["archive_qa_semantic"],
+            value=False,
+            key="archive_qa_use_semantic",
+        )
+        qa_context = (
+            qa_scope, tuple(qa_media_ids), qa_question.strip(), qa_use_semantic
+        )
+        if st.session_state.get("archive_qa_context") != qa_context:
+            st.session_state.archive_qa_result = None
+            st.session_state.archive_qa_context = qa_context
 
-        if qa_result["status"] == "evidence_found":
-            st.markdown(f'### {t["archive_qa_answer"]}')
-            st.success(qa_result["answer"])
-            st.caption(t["archive_qa_scope_note"])
-
-            qa_catalog = {item["media_id"]: item for item in qa_records}
-            st.markdown(f'#### {t["archive_qa_evidence"]}')
-            for evidence in qa_result["evidence"]:
-                media_id = evidence["media_id"]
-                source_record = qa_catalog.get(media_id)
-                source_name = (
-                    source_record["source_name"]
-                    if source_record else media_id[:12]
-                )
-                source_path = (
-                    Path(source_record["stored_path"])
-                    if source_record else None
-                )
-                with st.container(border=True):
-                    st.markdown(
-                        f'**{evidence["rank"]}. {source_name}**'
-                    )
-                    st.caption(
-                        f'{t["archive_qa_segment"]}: {evidence["segment_id"]} · '
-                        f'{t["start"]}: {evidence["start"]:.2f}s · '
-                        f'{t["end"]}: {evidence["end"]:.2f}s'
-                    )
-                    if evidence.get("speaker"):
-                        st.caption(f'{t["speaker"]}: {evidence["speaker"]}')
-                    source_labels = {
-                        "exact": t["exact"],
-                        "fuzzy": t["fuzzy"],
-                        "semantic": t["semantic"],
-                    }
-                    st.caption(
-                        f'{t["archive_qa_retrieved_by"]}: '
-                        + ", ".join(
-                            source_labels.get(source, source)
-                            for source in evidence["retrieved_by"]
-                        )
-                    )
-                    st.write(evidence["text"])
-                    if source_path and source_path.is_file() and st.button(
-                        t["archive_qa_play"],
-                        key=f'archive_qa_play_{media_id}_{evidence["segment_id"]}',
-                    ):
-                        if source_record["media_type"] == "video":
-                            st.video(
-                                str(source_path),
-                                start_time=int(evidence["start"]),
+        if st.button(
+            t["archive_qa_button"],
+            type="primary",
+            key="run_archive_qa",
+        ):
+            if not qa_question.strip():
+                st.warning(t["empty_query"])
+            else:
+                qa_engine = None
+                try:
+                    qa_engine = SearchEngine()
+                    qa_semantic_provider = None
+                    if qa_use_semantic:
+                        try:
+                            qa_semantic_provider = SentenceTransformerProvider()
+                        except Exception as provider_error:
+                            st.warning(
+                                f'{t["archive_qa_semantic_unavailable"]} ({provider_error})'
                             )
-                        else:
-                            st.audio(
-                                str(source_path),
-                                start_time=int(evidence["start"]),
+                    qa_result = ArchiveQA(qa_engine).ask(
+                        qa_question,
+                        media_ids=qa_media_ids,
+                        semantic_provider=qa_semantic_provider,
+                    )
+                    st.session_state.archive_qa_result = qa_result
+                except Exception as error:
+                    st.error(f'{t["search_failed"]}: {error}')
+                finally:
+                    if qa_engine is not None:
+                        qa_engine.close()
+
+        qa_result = st.session_state.get("archive_qa_result")
+        if qa_result:
+            for warning in qa_result.get("warnings", []):
+                st.warning(warning)
+
+            if qa_result["status"] == "evidence_found":
+                st.markdown(f'### {t["archive_qa_answer"]}')
+                st.success(qa_result["answer"])
+                st.caption(t["archive_qa_scope_note"])
+
+                qa_catalog = {item["media_id"]: item for item in qa_records}
+                st.markdown(f'#### {t["archive_qa_evidence"]}')
+                for evidence in qa_result["evidence"]:
+                    media_id = evidence["media_id"]
+                    source_record = qa_catalog.get(media_id)
+                    source_name = (
+                        source_record["source_name"]
+                        if source_record else media_id[:12]
+                    )
+                    source_path = (
+                        Path(source_record["stored_path"])
+                        if source_record else None
+                    )
+                    with st.container(border=True):
+                        st.markdown(
+                            f'**{evidence["rank"]}. {source_name}**'
+                        )
+                        st.caption(
+                            f'{t["archive_qa_segment"]}: {evidence["segment_id"]} · '
+                            f'{t["start"]}: {evidence["start"]:.2f}s · '
+                            f'{t["end"]}: {evidence["end"]:.2f}s'
+                        )
+                        if evidence.get("speaker"):
+                            st.caption(f'{t["speaker"]}: {evidence["speaker"]}')
+                        source_labels = {
+                            "exact": t["exact"],
+                            "fuzzy": t["fuzzy"],
+                            "semantic": t["semantic"],
+                        }
+                        st.caption(
+                            f'{t["archive_qa_retrieved_by"]}: '
+                            + ", ".join(
+                                source_labels.get(source, source)
+                                for source in evidence["retrieved_by"]
                             )
-        else:
-            st.info(t["archive_qa_abstain"])
+                        )
+                        st.write(evidence["text"])
+                        if source_path and source_path.is_file() and st.button(
+                            t["archive_qa_play"],
+                            key=f'archive_qa_play_{media_id}_{evidence["segment_id"]}',
+                        ):
+                            if source_record["media_type"] == "video":
+                                st.video(
+                                    str(source_path),
+                                    start_time=int(evidence["start"]),
+                                )
+                            else:
+                                st.audio(
+                                    str(source_path),
+                                    start_time=int(evidence["start"]),
+                                )
+            else:
+                st.info(t["archive_qa_abstain"])
 
 
-# 7. Timestamped review notes
+    # 7. Timestamped review notes
 # --------------------------------------------------
 
 with tab_notes:
-    st.subheader("📝 " + t["archive_notes_title"])
-    st.caption(t["archive_notes_desc"])
-
-    note_records = MediaCatalog().get_all()
-    if not note_records:
-        st.info(t["no_archive_media"])
+    if not has_permission("notes"):
+        st.info(t["access_denied"])
     else:
-        note_catalog = {
-            item["media_id"]: item for item in note_records
-        }
-        note_media_ids = [item["media_id"] for item in note_records]
-        current_note_media = st.session_state.get("video_id")
-        note_default_index = (
-            note_media_ids.index(current_note_media)
-            if current_note_media in note_media_ids else 0
-        )
-        selected_note_media_id = st.selectbox(
-            t["archive_notes_media"],
-            options=note_media_ids,
-            index=note_default_index,
-            format_func=lambda media_id: (
-                f'{note_catalog[media_id]["source_name"]} '
-                f'({media_id[:10]})'
-            ),
-            key="archive_notes_media_select",
-        )
-        with st.form("archive_note_create_form", clear_on_submit=True):
-            new_note_timestamp = st.number_input(
-                t["archive_notes_timestamp"],
-                min_value=0.0,
-                value=0.0,
-                step=1.0,
-                key="archive_note_new_timestamp",
-            )
-            new_note_author = st.text_input(
-                t["archive_notes_author"],
-                value="local_user",
-                key="archive_note_new_author",
-            )
-            new_note_text = st.text_area(
-                t["archive_notes_text"],
-                key="archive_note_new_text",
-                max_chars=ArchiveNotes.MAX_TEXT_LENGTH,
-            )
-            create_note = st.form_submit_button(
-                t["archive_notes_add"],
-                type="primary",
-            )
+        st.subheader("📝 " + t["archive_notes_title"])
+        st.caption(t["archive_notes_desc"])
 
-        if create_note:
+        note_records = MediaCatalog().get_all()
+        if not note_records:
+            st.info(t["no_archive_media"])
+        else:
+            note_catalog = {
+                item["media_id"]: item for item in note_records
+            }
+            note_media_ids = [item["media_id"] for item in note_records]
+            current_note_media = st.session_state.get("video_id")
+            note_default_index = (
+                note_media_ids.index(current_note_media)
+                if current_note_media in note_media_ids else 0
+            )
+            selected_note_media_id = st.selectbox(
+                t["archive_notes_media"],
+                options=note_media_ids,
+                index=note_default_index,
+                format_func=lambda media_id: (
+                    f'{note_catalog[media_id]["source_name"]} '
+                    f'({media_id[:10]})'
+                ),
+                key="archive_notes_media_select",
+            )
+            with st.form("archive_note_create_form", clear_on_submit=True):
+                new_note_timestamp = st.number_input(
+                    t["archive_notes_timestamp"],
+                    min_value=0.0,
+                    value=0.0,
+                    step=1.0,
+                    key="archive_note_new_timestamp",
+                )
+                new_note_author = st.text_input(
+                    t["archive_notes_author"],
+                    value="local_user",
+                    key="archive_note_new_author",
+                )
+                new_note_text = st.text_area(
+                    t["archive_notes_text"],
+                    key="archive_note_new_text",
+                    max_chars=ArchiveNotes.MAX_TEXT_LENGTH,
+                )
+                create_note = st.form_submit_button(
+                    t["archive_notes_add"],
+                    type="primary",
+                )
+
+            if create_note:
+                note_manager = ArchiveNotes()
+                try:
+                    note_manager.add_note(
+                        selected_note_media_id,
+                        new_note_timestamp,
+                        new_note_text,
+                        author=new_note_author,
+                    )
+                    st.success(t["archive_notes_saved"])
+                except Exception as error:
+                    st.error(f'{t["save_failed"]}: {error}')
+                finally:
+                    note_manager.close()
+
             note_manager = ArchiveNotes()
             try:
-                note_manager.add_note(
-                    selected_note_media_id,
-                    new_note_timestamp,
-                    new_note_text,
-                    author=new_note_author,
-                )
-                st.success(t["archive_notes_saved"])
-            except Exception as error:
-                st.error(f'{t["save_failed"]}: {error}')
+                media_notes = note_manager.list_notes(selected_note_media_id)
             finally:
                 note_manager.close()
 
-        note_manager = ArchiveNotes()
-        try:
-            media_notes = note_manager.list_notes(selected_note_media_id)
-        finally:
-            note_manager.close()
-
-        if not media_notes:
-            st.info(t["archive_notes_empty"])
-        else:
-            for note in media_notes:
-                with st.expander(
-                    f'{note["timestamp_seconds"]:.2f}s · {note["author"]} · '
-                    f'{note["note_text"][:70]}',
-                    expanded=False,
-                ):
-                    st.caption(
-                        f'{t["archive_notes_created"]}: {note["created_at"]} · '
-                        f'{t["archive_notes_updated_by"]}: {note["updated_by"]}'
-                    )
-                    with st.form(f'archive_note_edit_form_{note["note_id"]}'):
-                        edited_timestamp = st.number_input(
-                            t["archive_notes_timestamp"],
-                            min_value=0.0,
-                            value=float(note["timestamp_seconds"]),
-                            step=1.0,
-                            key=f'archive_note_timestamp_{note["note_id"]}',
-                        )
-                        edited_text = st.text_area(
-                            t["archive_notes_text"],
-                            value=note["note_text"],
-                            max_chars=ArchiveNotes.MAX_TEXT_LENGTH,
-                            key=f'archive_note_text_{note["note_id"]}',
-                        )
-                        edited_by = st.text_input(
-                            t["archive_notes_updated_by"],
-                            value="local_user",
-                            key=f'archive_note_editor_{note["note_id"]}',
-                        )
-                        update_note = st.form_submit_button(
-                            t["archive_notes_update"]
-                        )
-                    if update_note:
-                        note_manager = ArchiveNotes()
-                        try:
-                            note_manager.update_note(
-                                note["note_id"],
-                                timestamp_seconds=edited_timestamp,
-                                note_text=edited_text,
-                                updated_by=edited_by,
-                            )
-                            st.success(t["archive_notes_updated"])
-                            st.rerun()
-                        except Exception as error:
-                            st.error(f'{t["save_failed"]}: {error}')
-                        finally:
-                            note_manager.close()
-
-                    note_source = note_catalog.get(selected_note_media_id)
-                    note_source_path = (
-                        Path(note_source["stored_path"])
-                        if note_source else None
-                    )
-                    if note_source_path and note_source_path.is_file() and st.button(
-                        t["archive_notes_play"],
-                        key=f'archive_note_play_{note["note_id"]}',
+            if not media_notes:
+                st.info(t["archive_notes_empty"])
+            else:
+                for note in media_notes:
+                    with st.expander(
+                        f'{note["timestamp_seconds"]:.2f}s · {note["author"]} · '
+                        f'{note["note_text"][:70]}',
+                        expanded=False,
                     ):
-                        if note_source["media_type"] == "video":
-                            st.video(
-                                str(note_source_path),
-                                start_time=int(note["timestamp_seconds"]),
+                        st.caption(
+                            f'{t["archive_notes_created"]}: {note["created_at"]} · '
+                            f'{t["archive_notes_updated_by"]}: {note["updated_by"]}'
+                        )
+                        with st.form(f'archive_note_edit_form_{note["note_id"]}'):
+                            edited_timestamp = st.number_input(
+                                t["archive_notes_timestamp"],
+                                min_value=0.0,
+                                value=float(note["timestamp_seconds"]),
+                                step=1.0,
+                                key=f'archive_note_timestamp_{note["note_id"]}',
                             )
-                        else:
-                            st.audio(
-                                str(note_source_path),
-                                start_time=int(note["timestamp_seconds"]),
+                            edited_text = st.text_area(
+                                t["archive_notes_text"],
+                                value=note["note_text"],
+                                max_chars=ArchiveNotes.MAX_TEXT_LENGTH,
+                                key=f'archive_note_text_{note["note_id"]}',
                             )
-                    if st.button(
-                        t["archive_notes_delete"],
-                        key=f'archive_note_delete_{note["note_id"]}',
-                    ):
-                        note_manager = ArchiveNotes()
-                        try:
-                            note_manager.delete_note(
-                                note["note_id"],
-                                actor="local_user",
+                            edited_by = st.text_input(
+                                t["archive_notes_updated_by"],
+                                value="local_user",
+                                key=f'archive_note_editor_{note["note_id"]}',
                             )
-                            st.success(t["archive_notes_deleted"])
-                            st.rerun()
-                        except Exception as error:
-                            st.error(f'{t["save_failed"]}: {error}')
-                        finally:
-                            note_manager.close()
+                            update_note = st.form_submit_button(
+                                t["archive_notes_update"]
+                            )
+                        if update_note:
+                            note_manager = ArchiveNotes()
+                            try:
+                                note_manager.update_note(
+                                    note["note_id"],
+                                    timestamp_seconds=edited_timestamp,
+                                    note_text=edited_text,
+                                    updated_by=edited_by,
+                                )
+                                st.success(t["archive_notes_updated"])
+                                st.rerun()
+                            except Exception as error:
+                                st.error(f'{t["save_failed"]}: {error}')
+                            finally:
+                                note_manager.close()
+
+                        note_source = note_catalog.get(selected_note_media_id)
+                        note_source_path = (
+                            Path(note_source["stored_path"])
+                            if note_source else None
+                        )
+                        if note_source_path and note_source_path.is_file() and st.button(
+                            t["archive_notes_play"],
+                            key=f'archive_note_play_{note["note_id"]}',
+                        ):
+                            if note_source["media_type"] == "video":
+                                st.video(
+                                    str(note_source_path),
+                                    start_time=int(note["timestamp_seconds"]),
+                                )
+                            else:
+                                st.audio(
+                                    str(note_source_path),
+                                    start_time=int(note["timestamp_seconds"]),
+                                )
+                        if st.button(
+                            t["archive_notes_delete"],
+                            key=f'archive_note_delete_{note["note_id"]}',
+                        ):
+                            note_manager = ArchiveNotes()
+                            try:
+                                note_manager.delete_note(
+                                    note["note_id"],
+                                    actor="local_user",
+                                )
+                                st.success(t["archive_notes_deleted"])
+                                st.rerun()
+                            except Exception as error:
+                                st.error(f'{t["save_failed"]}: {error}')
+                            finally:
+                                note_manager.close()
 
 
-# 8. Saved clips
+    # 8. Saved clips
 # --------------------------------------------------
 
 with tab_clips:
-    st.subheader("🎞️ " + t["clips_title"])
-    st.write(t["clips_desc"])
-
-    if not st.session_state.video_id:
-        st.info(t["need_video"])
-    elif st.session_state.media_type != "video":
-        st.info(t["audio_clip_unavailable"])
+    if not has_permission("clips"):
+        st.info(t["access_denied"])
     else:
-        video_id = st.session_state.video_id
+        st.subheader("🎞️ " + t["clips_title"])
+        st.write(t["clips_desc"])
 
-        try:
-            clips = ClipMetadata().get_all_clips()
-        except Exception as error:
-            st.error(f'{t["load_clips_failed"]}: {error}')
-            clips = []
-
-        current_clips = [
-            clip for clip in clips
-            if clip.get("video_id") == video_id
-        ]
-
-        if current_clips:
-            for clip in current_clips:
-                with st.container(border=True):
-                    st.markdown(
-                        f'**{t["clip"]} {clip["id"]}** · '
-                        f'{clip["start"]}s – {clip["end"]}s'
-                    )
-                    st.caption(clip.get("notes", ""))
-                    clip_file = Path(clip["clip_path"])
-
-                    if clip_file.exists():
-                        st.video(str(clip_file))
-                    else:
-                        st.warning(f'{t["missing_clip"]}: {clip_file.name}')
-
-            if st.button(t["export_clips"]):
-                try:
-                    clips_csv = ClipExporter.export_csv(
-                        current_clips,
-                        f"exports/{video_id}_clips.csv",
-                    )
-                    st.session_state.clips_export_path = str(clips_csv)
-                    st.rerun()
-                except Exception as error:
-                    st.error(f'{t["export_failed"]}: {error}')
-
-            if st.session_state.clips_export_path:
-                clips_export_path = Path(st.session_state.clips_export_path)
-                if clips_export_path.exists():
-                    st.download_button(
-                        t["download_clips"],
-                        data=clips_export_path.read_bytes(),
-                        file_name=clips_export_path.name,
-                        mime="text/csv",
-                        key=f"download_clips_{video_id}",
-                    )
+        if not st.session_state.video_id:
+            st.info(t["need_video"])
+        elif st.session_state.media_type != "video":
+            st.info(t["audio_clip_unavailable"])
         else:
-            st.info(t["no_clips"])
+            video_id = st.session_state.video_id
+
+            try:
+                clips = ClipMetadata().get_all_clips()
+            except Exception as error:
+                st.error(f'{t["load_clips_failed"]}: {error}')
+                clips = []
+
+            current_clips = [
+                clip for clip in clips
+                if clip.get("video_id") == video_id
+            ]
+
+            if current_clips:
+                for clip in current_clips:
+                    with st.container(border=True):
+                        st.markdown(
+                            f'**{t["clip"]} {clip["id"]}** · '
+                            f'{clip["start"]}s – {clip["end"]}s'
+                        )
+                        st.caption(clip.get("notes", ""))
+                        clip_file = Path(clip["clip_path"])
+
+                        if clip_file.exists():
+                            st.video(str(clip_file))
+                        else:
+                            st.warning(f'{t["missing_clip"]}: {clip_file.name}')
+
+                if st.button(t["export_clips"]):
+                    try:
+                        clips_csv = ClipExporter.export_csv(
+                            current_clips,
+                            f"exports/{video_id}_clips.csv",
+                        )
+                        st.session_state.clips_export_path = str(clips_csv)
+                        st.rerun()
+                    except Exception as error:
+                        st.error(f'{t["export_failed"]}: {error}')
+
+                if st.session_state.clips_export_path:
+                    clips_export_path = Path(st.session_state.clips_export_path)
+                    if clips_export_path.exists():
+                        st.download_button(
+                            t["download_clips"],
+                            data=clips_export_path.read_bytes(),
+                            file_name=clips_export_path.name,
+                            mime="text/csv",
+                            key=f"download_clips_{video_id}",
+                        )
+            else:
+                st.info(t["no_clips"])
 
 
-# 5. Archive organization
+    # 5. Archive organization
 # --------------------------------------------------
 
 with tab_archive:
-    st.subheader("🗂️ " + t["archive_title"])
-    st.write(t["archive_desc"])
-
-    catalog = MediaCatalog()
-    archive_records = catalog.get_all()
-
-    if not archive_records:
-        st.info(t["no_archive_items"])
+    if not has_permission("archive"):
+        st.info(t["access_denied"])
     else:
-        labels = {
-            f'{item["source_name"]} · {item["media_id"]}': item["media_id"]
-            for item in archive_records
-        }
-        selected_label = st.selectbox(
-            t["archive_media"],
-            list(labels.keys()),
-        )
-        selected_media_id = labels[selected_label]
-        selected_record = catalog.get_by_id(selected_media_id) or {}
+        st.subheader("🗂️ " + t["archive_title"])
+        st.write(t["archive_desc"])
 
-        with st.form("archive_metadata_form"):
-            collection_value = st.text_input(
-                t["collection"],
-                value=selected_record.get("collection", ""),
-                placeholder=t["collection_placeholder"],
-                key=f"archive_collection_{selected_media_id}",
+        catalog = MediaCatalog()
+        archive_records = catalog.get_all()
+
+        if not archive_records:
+            st.info(t["no_archive_items"])
+        else:
+            labels = {
+                f'{item["source_name"]} · {item["media_id"]}': item["media_id"]
+                for item in archive_records
+            }
+            selected_label = st.selectbox(
+                t["archive_media"],
+                list(labels.keys()),
             )
-            tags_value = st.text_input(
-                t["tags"],
-                value=", ".join(selected_record.get("tags", [])),
-                help=t["tags_help"],
-                key=f"archive_tags_{selected_media_id}",
+            selected_media_id = labels[selected_label]
+            selected_record = catalog.get_by_id(selected_media_id) or {}
+
+            with st.form("archive_metadata_form"):
+                collection_value = st.text_input(
+                    t["collection"],
+                    value=selected_record.get("collection", ""),
+                    placeholder=t["collection_placeholder"],
+                    key=f"archive_collection_{selected_media_id}",
+                )
+                tags_value = st.text_input(
+                    t["tags"],
+                    value=", ".join(selected_record.get("tags", [])),
+                    help=t["tags_help"],
+                    key=f"archive_tags_{selected_media_id}",
+                )
+                save_metadata = st.form_submit_button(t["save_archive_metadata"])
+
+            if save_metadata:
+                try:
+                    catalog.update_archive_metadata(
+                        selected_media_id,
+                        collection=collection_value,
+                        tags=[
+                            tag.strip()
+                            for tag in tags_value.split(",")
+                            if tag.strip()
+                        ],
+                    )
+                    st.success(t["archive_metadata_saved"])
+                    st.rerun()
+                except Exception as error:
+                    st.error(f'{t["save_failed"]}: {error}')
+
+            st.divider()
+            st.markdown(f'### {t["archive_items"]}')
+            collection_options = [t["all_collections"]] + catalog.get_collections()
+            selected_collection = st.selectbox(
+                t["filter_collection"],
+                collection_options,
             )
-            save_metadata = st.form_submit_button(t["save_archive_metadata"])
-
-        if save_metadata:
-            try:
-                catalog.update_archive_metadata(
-                    selected_media_id,
-                    collection=collection_value,
-                    tags=[
-                        tag.strip()
-                        for tag in tags_value.split(",")
-                        if tag.strip()
-                    ],
-                )
-                st.success(t["archive_metadata_saved"])
-                st.rerun()
-            except Exception as error:
-                st.error(f'{t["save_failed"]}: {error}')
-
-        st.divider()
-        st.markdown(f'### {t["archive_items"]}')
-        collection_options = [t["all_collections"]] + catalog.get_collections()
-        selected_collection = st.selectbox(
-            t["filter_collection"],
-            collection_options,
-        )
-        tag_options = catalog.get_all_tags()
-        selected_tags = st.multiselect(
-            t["filter_tags"],
-            tag_options,
-        )
-        filtered_records = catalog.filter_media(
-            collection=(
-                None if selected_collection == t["all_collections"]
-                else selected_collection
-            ),
-            tags=selected_tags,
-        )
-        st.caption(f'{len(filtered_records)} / {len(archive_records)}')
-        for item in filtered_records:
-            with st.container(border=True):
-                st.markdown(f'**{item["source_name"]}**')
-                st.caption(
-                    f'{item["media_type"]} · {item["status"]} · '
-                    f'{item.get("collection", t["all_collections"])}'
-                )
-                if item.get("tags"):
-                    st.write(" · ".join(item["tags"]))
-                st.caption(item["media_id"])
+            tag_options = catalog.get_all_tags()
+            selected_tags = st.multiselect(
+                t["filter_tags"],
+                tag_options,
+            )
+            filtered_records = catalog.filter_media(
+                collection=(
+                    None if selected_collection == t["all_collections"]
+                    else selected_collection
+                ),
+                tags=selected_tags,
+            )
+            st.caption(f'{len(filtered_records)} / {len(archive_records)}')
+            for item in filtered_records:
+                with st.container(border=True):
+                    st.markdown(f'**{item["source_name"]}**')
+                    st.caption(
+                        f'{item["media_type"]} · {item["status"]} · '
+                        f'{item.get("collection", t["all_collections"])}'
+                    )
+                    if item.get("tags"):
+                        st.write(" · ".join(item["tags"]))
+                    st.caption(item["media_id"])
 
 
-# 6. Durable processing queue
+    # 6. Durable processing queue
 # --------------------------------------------------
 
 with tab_queue:
-    st.subheader("⚙️ " + t["queue_title"])
-    st.write(t["queue_desc"])
-    st.info(t["queue_note"])
+    if not has_permission("queue"):
+        st.info(t["access_denied"])
+    else:
+        st.subheader("⚙️ " + t["queue_title"])
+        st.write(t["queue_desc"])
+        st.info(t["queue_note"])
 
-    queue = ProcessingQueue()
-    with st.form("enqueue_media_folder"):
-        input_directory = st.text_input(t["queue_input"])
-        add_job = st.form_submit_button(t["queue_add"])
+        queue = ProcessingQueue()
+        with st.form("enqueue_media_folder"):
+            input_directory = st.text_input(t["queue_input"])
+            add_job = st.form_submit_button(t["queue_add"])
 
-    if add_job:
-        candidate = Path(input_directory).expanduser()
-        if not input_directory.strip() or not candidate.exists() or not candidate.is_dir():
-            st.error(t["queue_path_required"])
-        else:
+        if add_job:
+            candidate = Path(input_directory).expanduser()
+            if not input_directory.strip() or not candidate.exists() or not candidate.is_dir():
+                st.error(t["queue_path_required"])
+            else:
+                try:
+                    queue.enqueue(
+                        "batch_import",
+                        {"input_directory": str(candidate.resolve()), "recursive": True},
+                        max_attempts=3,
+                    )
+                    st.success(t["queue_added"])
+                    queue.close()
+                    st.rerun()
+                except Exception as error:
+                    st.error(f'{t["queue_failed"]}: {error}')
+
+        if st.button(t["queue_recover"]):
             try:
-                queue.enqueue(
-                    "batch_import",
-                    {"input_directory": str(candidate.resolve()), "recursive": True},
-                    max_attempts=3,
-                )
-                st.success(t["queue_added"])
+                recovered = queue.recover_interrupted_jobs(900)
+                st.success(f'{t["queue_recovered"]}: {recovered}')
                 queue.close()
                 st.rerun()
             except Exception as error:
                 st.error(f'{t["queue_failed"]}: {error}')
 
-    if st.button(t["queue_recover"]):
-        try:
-            recovered = queue.recover_interrupted_jobs(900)
-            st.success(f'{t["queue_recovered"]}: {recovered}')
-            queue.close()
-            st.rerun()
-        except Exception as error:
-            st.error(f'{t["queue_failed"]}: {error}')
-
-    if st.button(t["queue_run_next"], type="primary"):
-        job = queue.claim_next()
-        if job is None:
-            st.info(t["queue_empty"])
-        else:
-            try:
-                queue.update_progress(job["job_id"], 5)
-                payload = job["payload"]
-                processor = MediaBatchProcessor()
-                progress_bar = st.progress(0.05)
-                def update_job_progress(done, total):
-                    queue.update_progress(
-                        job["job_id"],
-                        5 + (90 * done / max(total, 1)),
-                    )
-                    progress_bar.progress(done / max(total, 1))
-                    if queue.is_cancel_requested(job["job_id"]):
-                        raise RuntimeError("Processing cancellation requested.")
-
-                def update_job_stage(stage, current_file, stage_progress):
-                    queue.update_stage(
-                        job["job_id"],
-                        stage,
-                        current_file=current_file,
-                        stage_progress=stage_progress,
-                    )
-
-                results = processor.process_directory(
-                    payload["input_directory"],
-                    recursive=payload.get("recursive", True),
-                    progress_callback=update_job_progress,
-                    stage_callback=update_job_stage,
-                )
-                if queue.is_cancel_requested(job["job_id"]):
-                    cancelled_job = queue.cancel_running(job["job_id"])
-                    st.warning(t["queue_cancel_requested"])
-                    queue.close()
-                    st.rerun()
-                failures = [item for item in results if item["status"] == "failed"]
-                if failures:
-                    detail = "; ".join(
-                        f'{item["source"]}: {item.get("error", "unknown error")}'
-                        for item in failures
-                    )
-                    failed_job = queue.fail(job["job_id"], detail)
-                    st.error(f'{t["queue_failed"]}: {detail}')
-                    st.caption(
-                        f'{t["queue_attempts"]}: {failed_job["attempts"]}/'
-                        f'{failed_job["max_attempts"]}'
-                    )
-                else:
-                    queue.update_progress(job["job_id"], 95)
-                    queue.complete(job["job_id"])
-                    st.success(t["queue_completed"])
-                    st.json(results)
-            except Exception as error:
+        if st.button(t["queue_run_next"], type="primary"):
+            job = queue.claim_next()
+            if job is None:
+                st.info(t["queue_empty"])
+            else:
                 try:
+                    queue.update_progress(job["job_id"], 5)
+                    payload = job["payload"]
+                    processor = MediaBatchProcessor()
+                    progress_bar = st.progress(0.05)
+                    def update_job_progress(done, total):
+                        queue.update_progress(
+                            job["job_id"],
+                            5 + (90 * done / max(total, 1)),
+                        )
+                        progress_bar.progress(done / max(total, 1))
+                        if queue.is_cancel_requested(job["job_id"]):
+                            raise RuntimeError("Processing cancellation requested.")
+
+                    def update_job_stage(stage, current_file, stage_progress):
+                        queue.update_stage(
+                            job["job_id"],
+                            stage,
+                            current_file=current_file,
+                            stage_progress=stage_progress,
+                        )
+
+                    results = processor.process_directory(
+                        payload["input_directory"],
+                        recursive=payload.get("recursive", True),
+                        progress_callback=update_job_progress,
+                        stage_callback=update_job_stage,
+                    )
                     if queue.is_cancel_requested(job["job_id"]):
                         cancelled_job = queue.cancel_running(job["job_id"])
                         st.warning(t["queue_cancel_requested"])
-                    else:
-                        failed_job = queue.fail(job["job_id"], str(error))
-                        st.error(f'{t["queue_failed"]}: {error}')
+                        queue.close()
+                        st.rerun()
+                    failures = [item for item in results if item["status"] == "failed"]
+                    if failures:
+                        detail = "; ".join(
+                            f'{item["source"]}: {item.get("error", "unknown error")}'
+                            for item in failures
+                        )
+                        failed_job = queue.fail(job["job_id"], detail)
+                        st.error(f'{t["queue_failed"]}: {detail}')
                         st.caption(
                             f'{t["queue_attempts"]}: {failed_job["attempts"]}/'
                             f'{failed_job["max_attempts"]}'
                         )
-                except Exception:
-                    st.error(f'{t["queue_failed"]}: {error}')
-            queue.close()
-            st.rerun()
+                    else:
+                        queue.update_progress(job["job_id"], 95)
+                        queue.complete(job["job_id"])
+                        st.success(t["queue_completed"])
+                        st.json(results)
+                except Exception as error:
+                    try:
+                        if queue.is_cancel_requested(job["job_id"]):
+                            cancelled_job = queue.cancel_running(job["job_id"])
+                            st.warning(t["queue_cancel_requested"])
+                        else:
+                            failed_job = queue.fail(job["job_id"], str(error))
+                            st.error(f'{t["queue_failed"]}: {error}')
+                            st.caption(
+                                f'{t["queue_attempts"]}: {failed_job["attempts"]}/'
+                                f'{failed_job["max_attempts"]}'
+                            )
+                    except Exception:
+                        st.error(f'{t["queue_failed"]}: {error}')
+                queue.close()
+                st.rerun()
 
-    st.divider()
-    jobs = queue.list_jobs(limit=50)
-    if not jobs:
-        st.info(t["queue_empty"])
-    for job in jobs:
-        with st.container(border=True):
-            st.markdown(f'**{job["job_type"]} · {job["job_id"][:12]}**')
-            st.caption(job["payload"].get("input_directory", ""))
-            st.write(
-                f'{t["queue_status"]}: {job["status"]} · '
-                f'{t["queue_attempts"]}: {job["attempts"]}/{job["max_attempts"]}'
-            )
-            stage_label = t.get(
-                f'queue_stage_{job.get("stage", "queued")}',
-                job.get("stage", "queued"),
-            )
-            st.caption(f'{t["queue_stage"]}: {stage_label}')
-            if job.get("current_file"):
-                st.caption(f'{t["queue_current_file"]}: {job["current_file"]}')
-            st.progress(
-                float(job.get("stage_progress", 0)) / 100,
-                text=(
-                    f'{t["queue_stage_progress"]}: '
-                    f'{job.get("stage_progress", 0):.0f}%'
-                ),
-            )
-            st.progress(
-                float(job["progress"]) / 100,
-                text=f'{t["queue_progress"]}: {job["progress"]:.0f}%',
-            )
-            if job.get("error"):
-                st.error(job["error"])
-            action_columns = st.columns(2)
-            if job["status"] == "queued":
-                with action_columns[0]:
-                    if st.button(t["queue_cancel"], key=f'cancel_{job["job_id"]}'):
-                        queue.cancel(job["job_id"])
-                        queue.close()
-                        st.rerun()
-            elif job["status"] == "running":
-                with action_columns[0]:
-                    if st.button(t["queue_cancel_requested"], key=f'request_cancel_{job["job_id"]}'):
-                        queue.cancel(job["job_id"])
-                        queue.close()
-                        st.rerun()
-            elif job["status"] == "failed":
-                with action_columns[0]:
-                    if st.button(t["queue_retry"], key=f'retry_{job["job_id"]}'):
-                        queue.retry(job["job_id"])
-                        queue.close()
-                        st.rerun()
+        st.divider()
+        jobs = queue.list_jobs(limit=50)
+        if not jobs:
+            st.info(t["queue_empty"])
+        for job in jobs:
+            with st.container(border=True):
+                st.markdown(f'**{job["job_type"]} · {job["job_id"][:12]}**')
+                st.caption(job["payload"].get("input_directory", ""))
+                st.write(
+                    f'{t["queue_status"]}: {job["status"]} · '
+                    f'{t["queue_attempts"]}: {job["attempts"]}/{job["max_attempts"]}'
+                )
+                stage_label = t.get(
+                    f'queue_stage_{job.get("stage", "queued")}',
+                    job.get("stage", "queued"),
+                )
+                st.caption(f'{t["queue_stage"]}: {stage_label}')
+                if job.get("current_file"):
+                    st.caption(f'{t["queue_current_file"]}: {job["current_file"]}')
+                st.progress(
+                    float(job.get("stage_progress", 0)) / 100,
+                    text=(
+                        f'{t["queue_stage_progress"]}: '
+                        f'{job.get("stage_progress", 0):.0f}%'
+                    ),
+                )
+                st.progress(
+                    float(job["progress"]) / 100,
+                    text=f'{t["queue_progress"]}: {job["progress"]:.0f}%',
+                )
+                if job.get("error"):
+                    st.error(job["error"])
+                action_columns = st.columns(2)
+                if job["status"] == "queued":
+                    with action_columns[0]:
+                        if st.button(t["queue_cancel"], key=f'cancel_{job["job_id"]}'):
+                            queue.cancel(job["job_id"])
+                            queue.close()
+                            st.rerun()
+                elif job["status"] == "running":
+                    with action_columns[0]:
+                        if st.button(t["queue_cancel_requested"], key=f'request_cancel_{job["job_id"]}'):
+                            queue.cancel(job["job_id"])
+                            queue.close()
+                            st.rerun()
+                elif job["status"] == "failed":
+                    with action_columns[0]:
+                        if st.button(t["queue_retry"], key=f'retry_{job["job_id"]}'):
+                            queue.retry(job["job_id"])
+                            queue.close()
+                            st.rerun()
 
-    queue.close()
+        queue.close()
 
 
-# 7. Archive and system dashboard
+    # 7. Archive and system dashboard
 # --------------------------------------------------
 
 with tab_dashboard:
-    st.subheader("📊 " + t["dashboard_title"])
-    if st.button(t["dashboard_refresh"]):
-        st.rerun()
+    if not has_permission("dashboard"):
+        st.info(t["access_denied"])
+    else:
+        st.subheader("📊 " + t["dashboard_title"])
+        if st.button(t["dashboard_refresh"]):
+            st.rerun()
 
-    metrics = ArchiveMetrics()
-    try:
-        snapshot = metrics.collect()
-        st.caption(f'{t["dashboard_media"]}: {snapshot["media_total"]}')
-        summary_columns = st.columns(4)
-        summary_columns[0].metric(t["dashboard_media"], snapshot["media_total"])
-        summary_columns[1].metric(t["dashboard_videos"], snapshot["video_total"])
-        summary_columns[2].metric(t["dashboard_audio"], snapshot["audio_total"])
-        summary_columns[3].metric(
-            t["dashboard_storage"],
-            f'{snapshot["storage_bytes"] / (1024 * 1024):.1f} MB',
-        )
+        metrics = ArchiveMetrics()
+        try:
+            snapshot = metrics.collect()
+            st.caption(f'{t["dashboard_media"]}: {snapshot["media_total"]}')
+            summary_columns = st.columns(4)
+            summary_columns[0].metric(t["dashboard_media"], snapshot["media_total"])
+            summary_columns[1].metric(t["dashboard_videos"], snapshot["video_total"])
+            summary_columns[2].metric(t["dashboard_audio"], snapshot["audio_total"])
+            summary_columns[3].metric(
+                t["dashboard_storage"],
+                f'{snapshot["storage_bytes"] / (1024 * 1024):.1f} MB',
+            )
 
-        detail_columns = st.columns(3)
-        detail_columns[0].metric(
-            t["dashboard_transcripts"],
-            snapshot["transcript_total"],
-        )
-        detail_columns[1].metric(
-            t["dashboard_missing"],
-            snapshot["missing_files"],
-        )
-        detail_columns[2].metric(
-            t["dashboard_db"],
-            snapshot["database_health"],
-        )
+            detail_columns = st.columns(3)
+            detail_columns[0].metric(
+                t["dashboard_transcripts"],
+                snapshot["transcript_total"],
+            )
+            detail_columns[1].metric(
+                t["dashboard_missing"],
+                snapshot["missing_files"],
+            )
+            detail_columns[2].metric(
+                t["dashboard_db"],
+                snapshot["database_health"],
+            )
 
-        status_column, queue_column = st.columns(2)
-        with status_column:
-            st.markdown(f'**{t["dashboard_status"]}**')
-            if snapshot["status_counts"]:
-                for status, count in sorted(snapshot["status_counts"].items()):
-                    st.write(f"{status}: {count}")
-            else:
-                st.caption(t["no_archive_items"])
-        with queue_column:
-            st.markdown(f'**{t["dashboard_queue"]}**')
-            if snapshot["queue_counts"]:
-                for status, count in sorted(snapshot["queue_counts"].items()):
-                    st.write(f"{status}: {count}")
-            else:
-                st.caption(t["queue_empty"])
+            status_column, queue_column = st.columns(2)
+            with status_column:
+                st.markdown(f'**{t["dashboard_status"]}**')
+                if snapshot["status_counts"]:
+                    for status, count in sorted(snapshot["status_counts"].items()):
+                        st.write(f"{status}: {count}")
+                else:
+                    st.caption(t["no_archive_items"])
+            with queue_column:
+                st.markdown(f'**{t["dashboard_queue"]}**')
+                if snapshot["queue_counts"]:
+                    for status, count in sorted(snapshot["queue_counts"].items()):
+                        st.write(f"{status}: {count}")
+                else:
+                    st.caption(t["queue_empty"])
 
-        st.divider()
-        st.markdown(f'**{t["dashboard_health"]}**')
-        health_checks = [
-            (t["dashboard_ffmpeg"], snapshot["ffmpeg_available"]),
-            (t["dashboard_whisper"], snapshot["faster_whisper_available"]),
-            (t["dashboard_semantic"], snapshot["semantic_search_available"]),
-            (t["dashboard_visual"], snapshot["visual_search_available"]),
-            (t["dashboard_diarization"], snapshot["diarization_available"]),
-        ]
-        for label, available in health_checks:
-            state = t["available"] if available else t["unavailable"]
-            st.write(f"{label}: {state}")
-    except Exception as error:
-        st.error(f'{t["dashboard_title"]}: {error}')
-    finally:
-        metrics.close()
+            st.divider()
+            st.markdown(f'**{t["dashboard_health"]}**')
+            health_checks = [
+                (t["dashboard_ffmpeg"], snapshot["ffmpeg_available"]),
+                (t["dashboard_whisper"], snapshot["faster_whisper_available"]),
+                (t["dashboard_semantic"], snapshot["semantic_search_available"]),
+                (t["dashboard_visual"], snapshot["visual_search_available"]),
+                (t["dashboard_diarization"], snapshot["diarization_available"]),
+            ]
+            for label, available in health_checks:
+                state = t["available"] if available else t["unavailable"]
+                st.write(f"{label}: {state}")
+        except Exception as error:
+            st.error(f'{t["dashboard_title"]}: {error}')
+        finally:
+            metrics.close()
 
 
-# 8. Audit history
+    # 8. Audit history
 # --------------------------------------------------
 
 with tab_audit:
-    st.subheader("🧾 " + t["audit_title"])
-    actor_filter = st.text_input(t["audit_actor"], key="audit_actor_filter")
-    entity_filter = st.selectbox(
-        t["audit_entity"],
-        [t["audit_all"], "media", "processing_job"],
-        key="audit_entity_filter",
-    )
-    audit_log = AuditLog()
-    try:
-        events = audit_log.list_events(
-            limit=200,
-            entity_type=None if entity_filter == t["audit_all"] else entity_filter,
-            actor=actor_filter.strip() or None,
+    if not has_permission("audit"):
+        st.info(t["access_denied"])
+    else:
+        st.subheader("🧾 " + t["audit_title"])
+        actor_filter = st.text_input(t["audit_actor"], key="audit_actor_filter")
+        entity_filter = st.selectbox(
+            t["audit_entity"],
+            [t["audit_all"], "media", "processing_job"],
+            key="audit_entity_filter",
         )
-        if not events:
-            st.info(t["audit_empty"])
-        for event in events:
-            with st.container(border=True):
-                st.markdown(
-                    f'**{event["action"]}** · {event["entity_type"]} · '
-                    f'{event["entity_id"][:16]}'
+        audit_log = AuditLog()
+        try:
+            events = audit_log.list_events(
+                limit=200,
+                entity_type=None if entity_filter == t["audit_all"] else entity_filter,
+                actor=actor_filter.strip() or None,
+            )
+            if not events:
+                st.info(t["audit_empty"])
+            for event in events:
+                with st.container(border=True):
+                    st.markdown(
+                        f'**{event["action"]}** · {event["entity_type"]} · '
+                        f'{event["entity_id"][:16]}'
+                    )
+                    st.caption(
+                        f'{event["occurred_at"]} UTC · {t["audit_actor"]}: '
+                        f'{event["actor"]}'
+                    )
+                    with st.expander(t["audit_details"]):
+                        st.json(event["details"])
+        except Exception as error:
+            st.error(f'{t["audit_title"]}: {error}')
+        finally:
+            audit_log.close()
+
+
+# --------------------------------------------------
+# 13. User management
+# --------------------------------------------------
+
+with tab_users:
+    if not auth_enabled:
+        st.info(t["auth_disabled"])
+    elif not has_permission("users"):
+        st.info(t["access_denied"])
+    else:
+        st.subheader("👥 " + t["user_management_title"])
+        with st.form("archive_create_user_form", clear_on_submit=True):
+            new_username = st.text_input(t["username"], key="archive_new_username")
+            new_display_name = st.text_input(
+                t["display_name"],
+                key="archive_new_display_name",
+            )
+            new_user_password = st.text_input(
+                t["password"],
+                type="password",
+                key="archive_new_user_password",
+            )
+            new_user_role = st.selectbox(
+                t["select_role"],
+                options=["editor", "search_only", "administrator"],
+                format_func=lambda role: t[f"role_{role}"],
+                key="archive_new_user_role",
+            )
+            create_user_submitted = st.form_submit_button(
+                t["create_user"],
+                type="primary",
+            )
+        if create_user_submitted:
+            try:
+                auth_manager.create_user(
+                    new_username,
+                    new_user_password,
+                    display_name=new_display_name or new_username,
+                    role=new_user_role,
+                    actor=current_user["username"],
                 )
-                st.caption(
-                    f'{event["occurred_at"]} UTC · {t["audit_actor"]}: '
-                    f'{event["actor"]}'
+                st.success(t["user_created"])
+                st.rerun()
+            except Exception as error:
+                st.error(str(error))
+
+        user_records = auth_manager.list_users()
+        if user_records:
+            st.dataframe(
+                [
+                    {
+                        t["username"]: user["username"],
+                        t["display_name"]: user["display_name"],
+                        t["select_role"]: t[f'role_{user["role"]}'],
+                        t["active"]: user["is_active"],
+                    }
+                    for user in user_records
+                ],
+                use_container_width=True,
+                hide_index=True,
+            )
+            user_names = [user["username"] for user in user_records]
+            selected_user_name = st.selectbox(
+                t["users"],
+                options=user_names,
+                key="archive_manage_user_select",
+            )
+            selected_user = next(
+                user for user in user_records
+                if user["username"] == selected_user_name
+            )
+            with st.form("archive_update_user_form"):
+                updated_role = st.selectbox(
+                    t["select_role"],
+                    options=["administrator", "editor", "search_only"],
+                    index=["administrator", "editor", "search_only"].index(
+                        selected_user["role"]
+                    ),
+                    format_func=lambda role: t[f"role_{role}"],
                 )
-                with st.expander(t["audit_details"]):
-                    st.json(event["details"])
-    except Exception as error:
-        st.error(f'{t["audit_title"]}: {error}')
-    finally:
-        audit_log.close()
+                updated_active = st.checkbox(
+                    t["active"],
+                    value=selected_user["is_active"],
+                )
+                update_user_submitted = st.form_submit_button(t["update_user"])
+            if update_user_submitted:
+                try:
+                    if updated_role != selected_user["role"]:
+                        auth_manager.update_user_role(
+                            selected_user_name,
+                            updated_role,
+                            actor=current_user["username"],
+                        )
+                    if updated_active != selected_user["is_active"]:
+                        auth_manager.set_user_active(
+                            selected_user_name,
+                            updated_active,
+                            actor=current_user["username"],
+                        )
+                    st.success(t["user_updated"])
+                    st.rerun()
+                except Exception as error:
+                    st.error(str(error))
+
+            with st.form("archive_reset_user_password_form"):
+                reset_password_value = st.text_input(
+                    t["new_password"],
+                    type="password",
+                )
+                reset_password_submitted = st.form_submit_button(
+                    t["reset_user_password"]
+                )
+            if reset_password_submitted:
+                try:
+                    auth_manager.reset_password(
+                        selected_user_name,
+                        reset_password_value,
+                        actor=current_user["username"],
+                    )
+                    st.success(t["user_password_reset"])
+                except Exception as error:
+                    st.error(str(error))
 
 
 # --------------------------------------------------
