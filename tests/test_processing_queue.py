@@ -180,3 +180,13 @@ def test_queue_counts_all_jobs_by_status(tmp_path):
 
     assert queue.count_by_status() == {"cancelled": 1, "queued": 1}
     queue.close()
+
+def test_worker_heartbeat_only_renews_running_jobs(tmp_path):
+    queue = ProcessingQueue(tmp_path / "queue.db")
+    job = queue.enqueue("batch_import", {})
+    queue.claim_next()
+
+    assert queue.heartbeat(job["job_id"]) is True
+    queue.complete(job["job_id"])
+    assert queue.heartbeat(job["job_id"]) is False
+    queue.close()
