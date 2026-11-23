@@ -122,7 +122,10 @@ def test_extract_returns_ffmpeg_timestamps_when_requested(tmp_path, monkeypatch)
         lambda name: "ffmpeg",
     )
 
+    captured = {}
+
     def fake_run(command, **kwargs):
+        captured["command"] = command
         _write_frame(command)
         stderr = (
             "[Parsed_showinfo] n: 0 pts: 0 pts_time:0.000000 "
@@ -140,12 +143,17 @@ def test_extract_returns_ffmpeg_timestamps_when_requested(tmp_path, monkeypatch)
     assert len(frames) == 1
     assert frames[0][0].is_file()
     assert frames[0][1] == 0.0
+    assert captured["command"][captured["command"].index("-loglevel") + 1] == "info"
+    assert "showinfo" in captured["command"][captured["command"].index("-vf") + 1]
 
 
 def test_timestamp_mode_rejects_missing_ffmpeg_timestamps(tmp_path, monkeypatch):
     video = tmp_path / "source.mp4"
     video.write_bytes(b"video")
     output = tmp_path / "keyframes"
+    output.mkdir()
+    previous = output / "old.jpg"
+    previous.write_bytes(b"previous")
     monkeypatch.setattr(
         "src.media.keyframe_extractor.shutil.which",
         lambda name: "ffmpeg",
@@ -163,4 +171,4 @@ def test_timestamp_mode_rejects_missing_ffmpeg_timestamps(tmp_path, monkeypatch)
         KeyframeExtractor.extract(
             video, output, return_timestamps=True
         )
-    assert not output.exists()
+    assert previous.read_bytes() == b"previous"
