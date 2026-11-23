@@ -1651,6 +1651,7 @@ with tab_cross_modal:
         key="cross_modal_reference_image",
     )
     if st.button(t["cross_modal_button"], type="primary", key="run_cross_modal_search"):
+        st.session_state.cross_modal_results = None
         if not cross_query.strip() and cross_reference is None:
             st.warning(t["empty_query"])
         elif not cross_media_ids:
@@ -1726,11 +1727,23 @@ with tab_cross_modal:
                     f'{t["time"]}: {result["timestamp_seconds"]:.2f}s · '
                     f'{t["cross_modal_rank_score"]}: {result["cross_modal_score"]:.4f}'
                 )
-                st.caption(" + ".join(result["matched_by"]))
+                matched_labels = {
+                    "exact": t["exact"],
+                    "fuzzy": t["fuzzy"],
+                    "visual": t["visual_search_tab"],
+                }
+                st.caption(" + ".join(
+                    matched_labels.get(source, source)
+                    for source in result["matched_by"]
+                ))
                 if result["result_type"] == "keyframe":
                     frame_path = Path(result["image_path"])
                     if frame_path.is_file():
                         st.image(str(frame_path), use_container_width=True)
+                    if "visual_score" in result:
+                        st.caption(
+                            f'{t["visual_score"]}: {result["visual_score"]:.3f}'
+                        )
                     if source_path and source_path.is_file() and st.button(
                         t["cross_modal_preview"],
                         key=f'cross_modal_preview_{result["keyframe_id"]}_{result_index}',
