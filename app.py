@@ -13,6 +13,7 @@ from src.media.keyframe_extractor import KeyframeExtractor
 from src.media.processing_queue import ProcessingQueue
 from src.media.batch_processor import MediaBatchProcessor
 from src.media.archive_metrics import ArchiveMetrics
+from src.security.auth_manager import AuthManager, AuthRateLimitError
 from src.transcription.faster_whisper_engine import FasterWhisperEngine
 from src.transcription.transcript_manager import TranscriptManager
 from src.transcription.speaker_diarizer import PyannoteSpeakerDiarizer
@@ -49,6 +50,11 @@ def calculate_file_sha256(file_path: Path) -> str:
     return digest.hexdigest()
 
 
+@st.cache_resource
+def get_auth_manager() -> AuthManager:
+    return AuthManager()
+
+
 st.set_page_config(
     page_title="فهرسة الفيديو والبحث",
     page_icon="🎬",
@@ -64,6 +70,39 @@ st.set_page_config(
 TEXT = {
     "ar": {
         "page_title": "نظام أرشفة وفهرسة الوسائط والبحث في محتواها",
+        "login": "تسجيل الدخول",
+        "logout": "تسجيل الخروج",
+        "username": "اسم المستخدم",
+        "password": "كلمة المرور",
+        "current_password": "كلمة المرور الحالية",
+        "new_password": "كلمة المرور الجديدة",
+        "confirm_password": "تأكيد كلمة المرور",
+        "signed_in_as": "مسجل الدخول باسم",
+        "change_password": "تغيير كلمة المرور",
+        "auth_setup_error": "تعذر تهيئة المصادقة: {error}",
+        "auth_bootstrap_required": "المصادقة مفعّلة لكن لا يوجد مستخدم إداري. عيّن ARCHIVE_ADMIN_USERNAME وARCHIVE_ADMIN_PASSWORD (كلمة مرور 12 حرفًا على الأقل) ثم أعد تشغيل التطبيق.",
+        "login_failed": "اسم المستخدم أو كلمة المرور غير صحيحة.",
+        "login_rate_limited": "محاولات دخول كثيرة. حاول لاحقًا.",
+        "session_disabled": "تم تعطيل هذا الحساب. سجّل الدخول بحساب آخر.",
+        "password_changed": "تم تغيير كلمة المرور بنجاح.",
+        "password_mismatch": "كلمتا المرور الجديدتان غير متطابقتين.",
+        "access_denied": "ليس لديك صلاحية للوصول إلى هذا القسم.",
+        "auth_disabled": "إدارة المستخدمين تتطلب تفعيل ARCHIVE_AUTH_ENABLED=true.",
+        "user_management_tab": "إدارة المستخدمين",
+        "user_management_title": "إدارة حسابات الأرشيف",
+        "create_user": "إنشاء مستخدم",
+        "display_name": "الاسم الظاهر",
+        "select_role": "الدور",
+        "role_administrator": "مدير النظام",
+        "role_editor": "محرر",
+        "role_search_only": "بحث فقط",
+        "users": "المستخدمون",
+        "active": "نشط",
+        "update_user": "تحديث المستخدم",
+        "reset_user_password": "إعادة تعيين كلمة المرور",
+        "user_created": "تم إنشاء المستخدم.",
+        "user_updated": "تم تحديث المستخدم.",
+        "user_password_reset": "تمت إعادة تعيين كلمة المرور.",
         "subtitle": "حوّل محتوى الفيديو والتسجيلات الصوتية العربية إلى نص قابل للبحث، واعثر على اللحظات المهمة بسهولة.",
         "language": "اللغة / Language",
         "arabic": "العربية",
@@ -324,6 +363,39 @@ TEXT = {
     },
     "en": {
         "page_title": "Arabic Media Archiving & Search",
+        "login": "Sign in",
+        "logout": "Sign out",
+        "username": "Username",
+        "password": "Password",
+        "current_password": "Current password",
+        "new_password": "New password",
+        "confirm_password": "Confirm password",
+        "signed_in_as": "Signed in as",
+        "change_password": "Change password",
+        "auth_setup_error": "Could not initialize authentication: {error}",
+        "auth_bootstrap_required": "Authentication is enabled but no administrator exists. Set ARCHIVE_ADMIN_USERNAME and ARCHIVE_ADMIN_PASSWORD (at least 12 characters), then restart the app.",
+        "login_failed": "Incorrect username or password.",
+        "login_rate_limited": "Too many sign-in attempts. Try again later.",
+        "session_disabled": "This account has been disabled. Sign in with another account.",
+        "password_changed": "Password changed successfully.",
+        "password_mismatch": "The new passwords do not match.",
+        "access_denied": "You do not have permission to access this section.",
+        "auth_disabled": "User management requires ARCHIVE_AUTH_ENABLED=true.",
+        "user_management_tab": "User Management",
+        "user_management_title": "Archive User Accounts",
+        "create_user": "Create user",
+        "display_name": "Display name",
+        "select_role": "Role",
+        "role_administrator": "Administrator",
+        "role_editor": "Editor",
+        "role_search_only": "Search only",
+        "users": "Users",
+        "active": "Active",
+        "update_user": "Update user",
+        "reset_user_password": "Reset user password",
+        "user_created": "User created.",
+        "user_updated": "User updated.",
+        "user_password_reset": "User password reset.",
         "subtitle": "Turn Arabic video and audio content into searchable text and find important moments with ease.",
         "language": "Language / اللغة",
         "arabic": "العربية",
@@ -643,6 +715,131 @@ t = TEXT[lang]
 is_ar = lang == "ar"
 direction = "rtl" if is_ar else "ltr"
 text_align = "right" if is_ar else "left"
+
+auth_enabled = os.getenv("ARCHIVE_AUTH_ENABLED", "false").strip().lower() in {
+    "1", "true", "yes", "on"
+}
+auth_manager = None
+if auth_enabled:
+    try:
+        auth_manager = get_auth_manager()
+        if not auth_manager.has_users():
+            bootstrap_username = os.getenv("ARCHIVE_ADMIN_USERNAME", "").strip()
+            bootstrap_password = os.getenv("ARCHIVE_ADMIN_PASSWORD", "")
+            if not bootstrap_username or not bootstrap_password:
+                st.error(t["auth_bootstrap_required"])
+                st.stop()
+            auth_manager.bootstrap_admin(
+                bootstrap_username,
+                bootstrap_password,
+                os.getenv("ARCHIVE_ADMIN_DISPLAY_NAME", "Archive Administrator"),
+            )
+    except Exception as error:
+        st.error(t["auth_setup_error"].format(error=error))
+        st.stop()
+
+    session_username = st.session_state.get("archive_auth_username")
+    current_user = (
+        auth_manager.get_user(session_username)
+        if session_username
+        else None
+    )
+    if current_user is None or not current_user["is_active"]:
+        if session_username:
+            st.session_state.pop("archive_auth_username", None)
+            st.sidebar.warning(t["session_disabled"])
+        with st.sidebar.form("archive_login_form"):
+            st.markdown("### " + t["login"])
+            login_username = st.text_input(t["username"], key="archive_login_username")
+            login_password = st.text_input(
+                t["password"],
+                type="password",
+                key="archive_login_password",
+            )
+            login_submitted = st.form_submit_button(t["login"], use_container_width=True)
+        if login_submitted:
+            try:
+                authenticated = auth_manager.authenticate(
+                    login_username,
+                    login_password,
+                )
+            except AuthRateLimitError:
+                st.sidebar.error(t["login_rate_limited"])
+            else:
+                if authenticated:
+                    st.session_state.archive_auth_username = authenticated["username"]
+                    st.rerun()
+                else:
+                    st.sidebar.error(t["login_failed"])
+        st.stop()
+
+    current_user = auth_manager.get_user(session_username)
+    with st.sidebar:
+        st.caption(
+            f'{t["signed_in_as"]}: {current_user["display_name"]} '
+            f'({t["role_" + current_user["role"]]} )'
+        )
+        if st.button(t["logout"], key="archive_logout", use_container_width=True):
+            st.session_state.pop("archive_auth_username", None)
+            st.rerun()
+        with st.expander(t["change_password"]):
+            with st.form("archive_change_password_form"):
+                old_password = st.text_input(
+                    t["current_password"],
+                    type="password",
+                    key="archive_current_password",
+                )
+                new_password = st.text_input(
+                    t["new_password"],
+                    type="password",
+                    key="archive_new_password",
+                )
+                confirm_password = st.text_input(
+                    t["confirm_password"],
+                    type="password",
+                    key="archive_confirm_password",
+                )
+                password_submitted = st.form_submit_button(t["change_password"])
+            if password_submitted:
+                if new_password != confirm_password:
+                    st.error(t["password_mismatch"])
+                else:
+                    try:
+                        auth_manager.change_password(
+                            current_user["username"],
+                            old_password,
+                            new_password,
+                        )
+                        st.success(t["password_changed"])
+                    except (TypeError, ValueError, KeyError) as error:
+                        st.error(str(error))
+else:
+    current_user = {
+        "username": "local_user",
+        "display_name": "Local User",
+        "role": "administrator",
+        "is_active": True,
+    }
+
+ROLE_PERMISSIONS = {
+    "administrator": {
+        "upload", "transcript", "search", "visual", "cross_modal",
+        "qa", "notes", "clips", "archive", "queue", "dashboard",
+        "audit", "users",
+    },
+    "editor": {
+        "upload", "transcript", "search", "visual", "cross_modal",
+        "qa", "notes", "clips", "archive", "queue", "dashboard", "audit",
+    },
+    "search_only": {"search", "visual", "cross_modal", "qa", "dashboard"},
+}
+
+
+def has_permission(permission: str) -> bool:
+    if permission == "users" and not auth_enabled:
+        return False
+    return permission in ROLE_PERMISSIONS.get(current_user["role"], set())
+
 
 st.markdown(
     f"""
