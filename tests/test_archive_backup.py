@@ -192,7 +192,10 @@ def test_verifier_rejects_unlisted_zip_entries(tmp_path):
         ArchiveBackup.verify_backup(backup)
 
 
-def test_restore_cleans_staging_directory_after_verification_failure(tmp_path):
+def test_restore_cleans_staging_directory_if_archive_changes_after_verification(
+    tmp_path,
+    monkeypatch,
+):
     backup = tmp_path / "tampered.zip"
     manifest = {
         "format_version": 1,
@@ -207,8 +210,13 @@ def test_restore_cleans_staging_directory_after_verification_failure(tmp_path):
         archive.writestr("data/file.txt", b"xyz")
         archive.writestr("manifest.json", json.dumps(manifest))
 
+    monkeypatch.setattr(
+        ArchiveBackup,
+        "verify_backup",
+        classmethod(lambda cls, path: manifest),
+    )
     target = tmp_path / "restored"
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="failed verification"):
         ArchiveBackup.restore_backup(backup, target)
 
     assert not target.exists()
