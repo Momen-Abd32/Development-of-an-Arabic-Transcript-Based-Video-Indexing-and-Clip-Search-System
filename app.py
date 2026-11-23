@@ -21,7 +21,7 @@ from src.transcription.speaker_diarizer import PyannoteSpeakerDiarizer
 from src.transcription.transcript_insights import TranscriptInsights
 from src.transcription.transcript_exporter import TranscriptExporter
 from src.indexing.indexer import TranscriptIndexer
-from src.search.search_engine import SearchEngine
+from src.search.search_engine import SearchEngine, UNSPECIFIED_SPEAKER
 from src.search.cross_modal_search import CrossModalSearch
 from src.search.archive_qa import ArchiveQA
 from src.search.local_answer_provider import OllamaAnswerProvider
@@ -2231,6 +2231,24 @@ with tab_qa:
         st.caption(
             f'{t["archive_qa_matching_media"]}: {len(qa_media_ids)}'
         )
+        qa_speaker_engine = SearchEngine()
+        try:
+            qa_speaker_names = qa_speaker_engine.list_speakers(
+                media_ids=qa_media_ids
+            )
+        finally:
+            qa_speaker_engine.close()
+        qa_speaker_label = st.selectbox(
+            t["filter_speaker"],
+            [t["filter_all"], t["filter_no_speaker"], *qa_speaker_names],
+            key="archive_qa_speaker_filter",
+        )
+        qa_speaker_filter = (
+            None if qa_speaker_label == t["filter_all"]
+            else UNSPECIFIED_SPEAKER
+            if qa_speaker_label == t["filter_no_speaker"]
+            else qa_speaker_label
+        )
 
         qa_question = st.text_area(
             t["archive_qa_question"],
@@ -2256,8 +2274,9 @@ with tab_qa:
             if qa_use_local_llm else "qwen2.5:3b"
         )
         qa_context = (
-            qa_scope, tuple(qa_media_ids), qa_question.strip(),
-            qa_use_semantic, qa_use_local_llm, qa_local_model.strip()
+            qa_scope, tuple(qa_media_ids), qa_speaker_filter,
+            qa_question.strip(), qa_use_semantic, qa_use_local_llm,
+            qa_local_model.strip()
         )
         if st.session_state.get("archive_qa_context") != qa_context:
             st.session_state.archive_qa_result = None
@@ -2293,6 +2312,7 @@ with tab_qa:
                     qa_result = ArchiveQA(qa_engine).ask(
                         qa_question,
                         media_ids=qa_media_ids,
+                        speaker=qa_speaker_filter,
                         semantic_provider=qa_semantic_provider,
                         answer_provider=qa_answer_provider,
                     )
