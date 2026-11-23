@@ -73,7 +73,7 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - **Clip extraction:** Extract a selected time range from the source video as an MP4 clip.
 - **Saved clip management:** Store clip metadata and view saved clips associated with a video.
 - **CSV export:** Export transcript segments and saved clip metadata.
-- **Human search-evaluation workspace:** Search exact, fuzzy, or hybrid transcript results, optionally build the semantic index, inspect source playback at each timestamp, mark relevant segments, and save reviewed media IDs/timestamps into a local evaluation dataset used by the metrics CLI.
+- **Human search-evaluation workspace:** Search exact, fuzzy, hybrid, or unified cross-modal results, optionally build the semantic index, inspect source playback and keyframes, mark relevant transcript/frame results, and save reviewed judgments into Git-ignored local datasets used by the metrics CLIs.
 - **Transcription evaluation utilities:** Calculate Word Error Rate (WER) and Character Error Rate (CER) against a reference transcript.
 
 ### Supported video formats
@@ -339,6 +339,7 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   │   ├── archive_qa.py
 │   │   ├── local_answer_provider.py
 │   │   ├── cross_modal_evaluation.py
+│   │   ├── cross_modal_evaluation_dataset.py
 │   │   ├── cross_modal_search.py
 │   │   ├── evaluation.py
 │   │   ├── evaluation_dataset.py
@@ -392,6 +393,7 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   ├── test_visual_search_evaluation_cli.py
 │   ├── test_cross_modal_search.py
 │   ├── test_cross_modal_evaluation.py
+│   ├── test_cross_modal_evaluation_dataset.py
 │   ├── test_cross_modal_search_evaluation_cli.py
 │   ├── test_transcript_insights.py
 │   ├── test_transcript_exporter.py
@@ -708,7 +710,7 @@ Enable **Generate a multi-passage answer with local Ollama** in the Q&A workspac
 
 The project includes macro-averaged Precision@k, Recall@k, and Mean Reciprocal Rank (MRR) for comparing exact, fuzzy, and hybrid transcript retrieval against human relevance judgments.
 
-Use the **Search Evaluation** workspace in the Streamlit app to enter a query, inspect exact/fuzzy/hybrid results, optionally build the semantic index for hybrid retrieval, mark relevant segments, and save judgments. The workspace writes `data/evaluation/search_queries.json` atomically and merges additional judgments for the same query. This file is ignored by Git because it contains references to the local archive. Alternatively, create the file manually from the checked-in template and replace its example media IDs/timestamps with human-reviewed segments. Include varied Arabic queries: MSA wording, spelling variants, diacritics, and mixed Arabic/English phrases.
+Use the **Search Evaluation** workspace in the Streamlit app to enter a query and choose exact, fuzzy, hybrid, or unified cross-modal retrieval. Hybrid mode can build the semantic index; cross-modal mode requires the optional visual dependencies and a built keyframe index. Mark relevant transcript passages and/or keyframes, inspect source playback, and save judgments. Transcript labels are written atomically to `data/evaluation/search_queries.json`; mixed transcript/keyframe labels are written to `data/evaluation/cross_modal_queries.json`. Both files are ignored by Git because they contain references to the local archive. Alternatively, create either file manually from its checked-in template and replace example IDs/timestamps/frame indices with human-reviewed results. Include varied Arabic queries: MSA wording, spelling variants, diacritics, and mixed Arabic/English phrases.
 
 Run one retrieval mode:
 
