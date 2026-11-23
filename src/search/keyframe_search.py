@@ -184,6 +184,38 @@ class KeyframeSearchIndex:
         if not rows:
             return 0
 
+        existing = self.connection.execute(
+            "SELECT embedding_json FROM keyframe_embeddings WHERE model_name = ? LIMIT 1",
+            (provider.model_name,),
+        ).fetchone()
+        expected_dimension = (
+            len(self._validate_vector(json.loads(existing["embedding_json"])))
+            if existing else None
+        )
+
+        # Run image decoding and model inference before opening a write
+        # transaction so a large model batch does not block archive writes.
+        staged_records = []
+        for offset in range(0, len(rows), batch_size):
+            batch = rows[offset:offset + batch_size]
+            images = [Path(row["image_path"]) for row in batch]
+            if any(not image.is_file() for image in images):
+                missing = next(image for image in images if not image.is_file())
+                raise FileNotFoundError(f"Keyframe image not found: {missing}")
+            vectors = provider.embed_images(images)
+            if len(vectors) != len(batch):
+                raise ValueError("Visual provider returned an unexpected vector count.")
+            for row, vector in zip(batch, vectors):
+                values = self._validate_vector(vector)
+                if expected_dimension is None:
+                    expected_dimension = len(values)
+                elif len(values) != expected_dimension:
+                    raise ValueError("Visual embedding dimensions are inconsistent.")
+                staged_records.append((
+                    row["id"], provider.model_name,
+                    json.dumps(values, separators=(",", ":")),
+                ))
+
         try:
             self.connection.execute(
                 """
@@ -194,43 +226,14 @@ class KeyframeSearchIndex:
                 """,
                 (provider.model_name, media_id),
             )
-            existing = self.connection.execute(
-                "SELECT embedding_json FROM keyframe_embeddings WHERE model_name = ? LIMIT 1",
-                (provider.model_name,),
-            ).fetchone()
-            expected_dimension = (
-                len(self._validate_vector(json.loads(existing["embedding_json"])))
-                if existing else None
+            self.connection.executemany(
+                """
+                INSERT INTO keyframe_embeddings
+                    (keyframe_id, model_name, embedding_json)
+                VALUES (?, ?, ?)
+                """,
+                staged_records,
             )
-
-            for offset in range(0, len(rows), batch_size):
-                batch = rows[offset:offset + batch_size]
-                images = [Path(row["image_path"]) for row in batch]
-                if any(not image.is_file() for image in images):
-                    missing = next(image for image in images if not image.is_file())
-                    raise FileNotFoundError(f"Keyframe image not found: {missing}")
-                vectors = provider.embed_images(images)
-                if len(vectors) != len(batch):
-                    raise ValueError("Visual provider returned an unexpected vector count.")
-                records = []
-                for row, vector in zip(batch, vectors):
-                    values = self._validate_vector(vector)
-                    if expected_dimension is None:
-                        expected_dimension = len(values)
-                    elif len(values) != expected_dimension:
-                        raise ValueError("Visual embedding dimensions are inconsistent.")
-                    records.append((
-                        row["id"], provider.model_name,
-                        json.dumps(values, separators=(",", ":")),
-                    ))
-                self.connection.executemany(
-                    """
-                    INSERT INTO keyframe_embeddings
-                        (keyframe_id, model_name, embedding_json)
-                    VALUES (?, ?, ?)
-                    """,
-                    records,
-                )
             self.connection.commit()
             return len(rows)
         except Exception:
