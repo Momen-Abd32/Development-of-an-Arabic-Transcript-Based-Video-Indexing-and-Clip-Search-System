@@ -146,3 +146,18 @@ def test_archive_qa_ignores_malformed_retrieval_rows_instead_of_citing_them():
     result = ArchiveQA(engine).ask("سؤال")
 
     assert result["status"] == "insufficient_evidence"
+
+
+
+def test_archive_qa_keeps_lexical_evidence_when_semantic_index_is_unavailable():
+    class FailingSemanticEngine(FakeSearchEngine):
+        def semantic_search(self, query, provider, **kwargs):
+            raise RuntimeError("No semantic embeddings are available")
+
+    engine = FailingSemanticEngine(exact=[segment(5, "انعقد الاجتماع يوم الأحد.")])
+    result = ArchiveQA(engine).ask("متى انعقد الاجتماع؟", semantic_provider=object())
+
+    assert result["status"] == "evidence_found"
+    assert result["answer"] == "انعقد الاجتماع يوم الأحد."
+    assert len(result["warnings"]) == 1
+    assert "No semantic embeddings" in result["warnings"][0]
