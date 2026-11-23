@@ -5,6 +5,8 @@ It does not invent a summary or claim that a passage proves more than it says.
 """
 from __future__ import annotations
 
+import math
+
 
 class ArchiveQA:
     """Retrieve timestamped transcript evidence and abstain when none is found."""
@@ -87,8 +89,31 @@ class ArchiveQA:
                     continue
                 if isinstance(segment_id, bool) or not isinstance(segment_id, int):
                     continue
+                raw_start = result.get("start")
+                raw_end = result.get("end")
+                text = result.get("original_text")
+                if isinstance(raw_start, bool) or isinstance(raw_end, bool):
+                    continue
+                try:
+                    start = float(raw_start)
+                    end = float(raw_end)
+                except (TypeError, ValueError, OverflowError):
+                    continue
+                if (
+                    not math.isfinite(start)
+                    or not math.isfinite(end)
+                    or start < 0
+                    or end <= start
+                    or not isinstance(text, str)
+                    or not text.strip()
+                ):
+                    continue
                 key = (video_id, segment_id)
-                item = fused.setdefault(key, dict(result))
+                item = fused.setdefault(key, {
+                    **result,
+                    "start": start,
+                    "end": end,
+                })
                 item["evidence_score"] = item.get("evidence_score", 0.0) + (
                     1.0 / (rrf_k + rank)
                 )
