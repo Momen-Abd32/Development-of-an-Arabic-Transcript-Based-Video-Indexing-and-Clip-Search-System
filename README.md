@@ -49,6 +49,7 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - **Transcript review and editing:** Review generated segments, correct their text, and save the updated transcript.
 - **Timestamp-based transcript playback:** Start video or audio preview from a selected transcript segment.
 - **Optional speaker diarization:** Attach speaker labels to transcript segments using pyannote.audio when model access is configured.
+- **Extractive transcript insights:** Select representative original transcript sentences and rank frequent Arabic/Latin keywords; results are stored separately from the verbatim transcript and never rewrite dialect.
 - **Arabic text normalization:** Normalize common Arabic character variations, remove diacritics and tatweel, and standardize whitespace to improve search consistency.
 - **Exact full-text search:** Find transcript segments using SQLite FTS5.
 - **Fuzzy search:** Find approximate matches using RapidFuzz.
@@ -115,7 +116,7 @@ The application separates its main responsibilities into modules under `src/`:
 | Module | Responsibility |
 |---|---|
 | `media` | Prepare normalized audio from video and standalone audio files; batch-import media folders |
-| `transcription` | Run speech recognition, validate and manage transcripts, and export transcript data |
+| `transcription` | Run speech recognition, validate and manage transcripts, generate optional speaker labels and extractive insights, and export transcript data |
 | `indexing` | Normalize Arabic text and index transcript segments |
 | `search` | Perform exact and fuzzy transcript searches |
 | `database` | Create and manage SQLite tables, indexes, and triggers |
@@ -210,6 +211,7 @@ The application uses a combination of local files and SQLite. The main runtime l
 | `data/audio/originals/` | Original standalone audio files |
 | `data/audio/` | Normalized WAV audio files prepared for transcription |
 | `data/transcripts/` | Transcript JSON files |
+| `data/insights/` | Optional extractive summaries, keywords, and source-segment references |
 | `data/database/videos.db` | Transcript segments and the FTS5 search index |
 | `data/database/media_catalog.json` | Media identifiers, original filenames, source paths, types, and processing status |
 | `data/database/clips.json` | Metadata for saved video clips |
@@ -305,6 +307,7 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   └── transcription/
 │       ├── faster_whisper_engine.py
 │       ├── transcript_exporter.py
+│       ├── transcript_insights.py
 │       └── transcript_manager.py
 │
 ├── tests/
