@@ -41,6 +41,7 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - **Standalone audio upload and playback:** Upload audio recordings without requiring a video container.
 - **Audio preparation:** Use FFmpeg to normalize audio from video or standalone audio files to mono 16 kHz WAV for transcription.
 - **Batch media import:** Recursively scan a local folder and process supported audio and video files one by one.
+- **Watched-folder ingestion:** Poll one or more local folders or mounted NAS shares, wait until new files remain unchanged across consecutive scans, and enqueue only new or changed files for background processing.
 - **Durable processing queue:** Persist folder-import jobs in a separate SQLite database, track overall progress, the current file and processing stage, and stage start/completion indicators; retry failures, cancel queued jobs immediately, request cooperative cancellation of active jobs between files, and recover interrupted jobs after restart.
 - **Independent background worker:** Run the persistent processing queue as a separate CLI process with polling, worker heartbeats, and expired-lease recovery.
 - **Archive dashboard:** Summarize media counts, stored file size, transcript totals, processing and queue states, missing source files, database integrity, and runtime dependency availability.
@@ -344,6 +345,8 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   ├── test_archive_metrics.py
 │   ├── test_archive_qa.py
 │   ├── test_archive_notes.py
+│   ├── test_folder_watcher.py
+│   ├── test_folder_watcher_cli.py
 │   ├── test_audio_extractor.py
 │   ├── test_media_batch_processor.py
 │   ├── test_media_catalog.py
@@ -378,6 +381,7 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
     ├── evaluate_visual_search.py
     ├── import_media_dataset.py
     ├── run_processing_worker.py
+    ├── watch_media_folders.py
     └── test_transcription.py
 ```
 
@@ -541,7 +545,19 @@ The importer stores source videos in `data/videos/`, original audio files in `da
 
 Each file is processed independently. A failure for one file is reported without stopping the rest of the batch. Identical content is processed once per batch, and an existing valid transcript is reused and re-indexed. The first new file that requires transcription initializes the Whisper model, which is then reused for the remaining files in that run.
 
-A USB drive or network share can be used by passing its mounted folder path. Direct cloud-provider synchronization, remote URL downloading, and continuous folder watching are not included yet.
+A USB drive or network share can be used by passing its mounted folder path. Continuous polling-based folder watching is available for local and mounted folders. Direct cloud-provider APIs and remote URL downloading are not implemented yet.
+
+## Watched Folder Ingestion
+
+To monitor one or more incoming folders continuously, start the watcher in a separate terminal:
+
+```bash
+python scripts/watch_media_folders.py --folder "D:\\DukkanMedia\\Incoming"
+```
+
+Multiple folders can be supplied by repeating `--folder`. Useful options include `--poll-seconds 10`, `--stable-scans 3`, and `--non-recursive`. A file is queued only after its size and modification timestamp remain unchanged for the configured number of consecutive scans. The watcher persists file signatures in the processing queue database and creates explicit file-import jobs, so new files do not require rescanning and re-indexing the entire folder.
+
+Run the watcher and the background worker in separate processes. The watcher only discovers stable files and enqueues work; the worker performs the normal SHA-256 validation, audio preparation, transcription, and indexing pipeline. If a file changes after being queued, the next stable scan detects its new signature and queues it again.
 
 ## Background Processing Worker
 
