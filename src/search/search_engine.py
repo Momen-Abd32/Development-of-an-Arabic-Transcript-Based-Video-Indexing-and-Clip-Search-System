@@ -180,6 +180,13 @@ class SearchEngine:
             limit=limit * 3,
             video_id=video_id,
         )
+        if not semantic:
+            scope = f" for media '{video_id}'" if video_id else " for the archive"
+            raise RuntimeError(
+                "No semantic embeddings are available"
+                + scope
+                + ". Build or refresh the semantic index before using hybrid search."
+            )
 
         fused = {}
         for results in (lexical, fuzzy, semantic):
