@@ -25,6 +25,7 @@ from src.search.search_engine import SearchEngine, UNSPECIFIED_SPEAKER
 from src.search.cross_modal_search import CrossModalSearch
 from src.search.archive_qa import ArchiveQA
 from src.search.evaluation_dataset import EvaluationDatasetStore
+from src.search.cross_modal_evaluation_dataset import CrossModalEvaluationDatasetStore
 from src.search.local_answer_provider import OllamaAnswerProvider
 from src.search.keyframe_search import KeyframeSearchIndex
 from src.search.visual_embedding_provider import SentenceTransformerVisualProvider
@@ -265,6 +266,8 @@ TEXT = {
         "evaluation_desc": "ابحث عن مقاطع ثم علّم النتائج ذات الصلة يدوياً. تُحفظ الأحكام في ملف مستقل لاستخدامها في حساب Precision وRecall وMRR.",
         "evaluation_query": "استعلام التقييم",
         "evaluation_mode": "طريقة الاسترجاع",
+        "evaluation_cross_modal": "بحث موحّد (نص + لقطات)",
+        "evaluation_frame_index": "رقم اللقطة",
         "evaluation_build_semantic": "بناء / تحديث الفهرس الدلالي لكل الأرشيف قبل البحث الهجين",
         "evaluation_search": "اعرض المقاطع لتقييمها",
         "evaluation_relevant": "هذه النتيجة ذات صلة",
@@ -439,6 +442,8 @@ TEXT = {
         "evaluation_desc": "Search for transcript segments and manually mark relevant results. Judgments are saved separately for Precision, Recall, and MRR evaluation.",
         "evaluation_query": "Evaluation query",
         "evaluation_mode": "Retrieval mode",
+        "evaluation_cross_modal": "Unified cross-modal (text + frames)",
+        "evaluation_frame_index": "Frame index",
         "evaluation_build_semantic": "Build / refresh the archive-wide semantic index before hybrid search",
         "evaluation_search": "Find segments to judge",
         "evaluation_relevant": "This result is relevant",
@@ -2440,15 +2445,7 @@ with tab_evaluation:
         st.subheader("📊 " + t["evaluation_title"])
         st.caption(t["evaluation_desc"])
         evaluation_store = EvaluationDatasetStore()
-        try:
-            evaluation_dataset = evaluation_store.load()
-            st.metric(
-                t["evaluation_dataset_count"],
-                len(evaluation_dataset["queries"]),
-            )
-        except Exception as error:
-            evaluation_dataset = {"queries": []}
-            st.error(f'{t["search_failed"]}: {error}')
+        cross_modal_evaluation_store = CrossModalEvaluationDatasetStore()
 
         evaluation_query = st.text_input(
             t["evaluation_query"],
@@ -2456,8 +2453,11 @@ with tab_evaluation:
         )
         evaluation_mode_label = st.selectbox(
             t["evaluation_mode"],
-            [t["exact"], t["fuzzy"], t["hybrid"]],
+            [t["exact"], t["fuzzy"], t["hybrid"], t["evaluation_cross_modal"]],
             key="evaluation_mode",
+        )
+        evaluation_is_cross_modal = (
+            evaluation_mode_label == t["evaluation_cross_modal"]
         )
         evaluation_build_semantic = (
             st.checkbox(
@@ -2467,6 +2467,23 @@ with tab_evaluation:
             )
             if evaluation_mode_label == t["hybrid"] else False
         )
+        if evaluation_is_cross_modal:
+            st.info(t["cross_modal_visual_note"])
+
+        selected_evaluation_store = (
+            cross_modal_evaluation_store
+            if evaluation_is_cross_modal else evaluation_store
+        )
+        try:
+            evaluation_dataset = selected_evaluation_store.load()
+            st.metric(
+                t["evaluation_dataset_count"],
+                len(evaluation_dataset["queries"]),
+            )
+        except Exception as error:
+            evaluation_dataset = {"queries": []}
+            st.error(f'{t["search_failed"]}: {error}')
+
         evaluation_context = (
             evaluation_query.strip(),
             evaluation_mode_label,
@@ -2485,9 +2502,23 @@ with tab_evaluation:
                 st.warning(t["empty_query"])
             else:
                 evaluation_engine = None
+                evaluation_visual_index = None
                 try:
                     evaluation_engine = SearchEngine()
-                    if evaluation_mode_label == t["hybrid"]:
+                    if evaluation_is_cross_modal:
+                        evaluation_visual_provider = SentenceTransformerVisualProvider()
+                        evaluation_visual_index = KeyframeSearchIndex()
+                        evaluation_cross_modal = CrossModalSearch(
+                            evaluation_engine,
+                            evaluation_visual_index,
+                        )
+                        found_results = evaluation_cross_modal.search_text(
+                            evaluation_query,
+                            limit=10,
+                            visual_provider=evaluation_visual_provider,
+                            include_visual=True,
+                        )
+                    elif evaluation_mode_label == t["hybrid"]:
                         evaluation_provider = SentenceTransformerProvider()
                         if evaluation_build_semantic:
                             media_ids = [
@@ -2516,9 +2547,12 @@ with tab_evaluation:
                         )
                     st.session_state.evaluation_results = found_results
                     st.session_state.evaluation_result_query = evaluation_query.strip()
+                    st.session_state.evaluation_result_mode = evaluation_mode_label
                 except Exception as error:
                     st.error(f'{t["search_failed"]}: {error}')
                 finally:
+                    if evaluation_visual_index is not None:
+                        evaluation_visual_index.close()
                     if evaluation_engine is not None:
                         evaluation_engine.close()
 
@@ -2532,20 +2566,43 @@ with tab_evaluation:
                 key="evaluation_reviewer_notes",
             )
             marked_results = []
+            result_mode = st.session_state.get(
+                "evaluation_result_mode", evaluation_mode_label
+            )
+            results_are_cross_modal = result_mode == t["evaluation_cross_modal"]
+
             for result_index, result in enumerate(evaluation_results):
-                media_id = result["video_id"]
-                start = float(result["start"])
-                end = float(result["end"])
+                result_type = result.get("result_type", "transcript")
+                media_id = (
+                    result.get("media_id")
+                    if results_are_cross_modal else result["video_id"]
+                )
                 source_record = evaluation_catalog.get(media_id)
                 source_name = (
                     source_record["source_name"] if source_record else media_id[:12]
                 )
+                if result_type == "keyframe":
+                    start = float(result["timestamp_seconds"])
+                    end = start
+                    identity = f'frame:{result["frame_index"]}'
+                else:
+                    start = float(
+                        result.get("timestamp_seconds", result.get("start", 0.0))
+                    )
+                    end = (
+                        float(result["end"])
+                        if "end" in result else start
+                    )
+                    identity = (
+                        f'segment:{result.get("id", result.get("segment_id", result_index))}'
+                    )
                 result_key = hashlib.sha256(
                     (
                         st.session_state.get("evaluation_result_query", "")
-                        + media_id + f"{start:.3f}:{end:.3f}"
+                        + result_type + media_id + identity
                     ).encode("utf-8")
                 ).hexdigest()[:16]
+
                 with st.container(border=True):
                     is_relevant = st.checkbox(
                         t["evaluation_relevant"],
@@ -2553,11 +2610,25 @@ with tab_evaluation:
                     )
                     st.markdown(
                         f'**{result_index + 1}. {source_name}** · '
-                        f'{t["start"]}: {start:.2f}s · {t["end"]}: {end:.2f}s'
+                        f'{t["start"]}: {start:.2f}s'
                     )
-                    if result.get("speaker"):
-                        st.caption(f'{t["speaker"]}: {result["speaker"]}')
-                    st.write(result["original_text"])
+                    if result_type == "keyframe":
+                        st.caption(
+                            f'{t["evaluation_frame_index"]}: {result["frame_index"]}'
+                        )
+                        image_path = Path(result["image_path"])
+                        if image_path.is_file():
+                            st.image(str(image_path), use_container_width=True)
+                        if "visual_score" in result:
+                            st.caption(
+                                f'{t["visual_score"]}: {result["visual_score"]:.4f}'
+                            )
+                    else:
+                        st.caption(f'{t["end"]}: {end:.2f}s')
+                        if result.get("speaker"):
+                            st.caption(f'{t["speaker"]}: {result["speaker"]}')
+                        st.write(result.get("original_text", result.get("text", "")))
+
                     source_path = (
                         Path(source_record["stored_path"])
                         if source_record else None
@@ -2570,12 +2641,28 @@ with tab_evaluation:
                             st.video(str(source_path), start_time=int(start))
                         else:
                             st.audio(str(source_path), start_time=int(start))
+
                     if is_relevant:
-                        marked_results.append({
-                            "media_id": media_id,
-                            "start": start,
-                            "end": end,
-                        })
+                        if results_are_cross_modal:
+                            if result_type == "keyframe":
+                                marked_results.append({
+                                    "result_type": "keyframe",
+                                    "media_id": media_id,
+                                    "frame_index": result["frame_index"],
+                                })
+                            else:
+                                marked_results.append({
+                                    "result_type": "transcript",
+                                    "media_id": media_id,
+                                    "start": result["start"],
+                                    "end": result["end"],
+                                })
+                        else:
+                            marked_results.append({
+                                "media_id": media_id,
+                                "start": start,
+                                "end": end,
+                            })
 
             if st.button(
                 t["evaluation_save"],
@@ -2584,6 +2671,13 @@ with tab_evaluation:
                 try:
                     if not marked_results:
                         st.warning(t["evaluation_select_relevant"])
+                    elif results_are_cross_modal:
+                        cross_modal_evaluation_store.add_judgment(
+                            st.session_state.get("evaluation_result_query", ""),
+                            marked_results,
+                            notes=evaluation_notes,
+                        )
+                        st.success(t["evaluation_saved"])
                     else:
                         evaluation_store.add_judgment(
                             st.session_state.get("evaluation_result_query", ""),
