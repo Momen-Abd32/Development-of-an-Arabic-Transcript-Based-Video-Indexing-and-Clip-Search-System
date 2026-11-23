@@ -1,0 +1,148 @@
+import pytest
+
+from src.search.archive_qa import ArchiveQA
+
+
+class FakeSearchEngine:
+    def __init__(self, exact=None, fuzzy=None, semantic=None):
+        self.exact = exact or []
+        self.fuzzy = fuzzy or []
+        self.semantic = semantic or []
+        self.calls = []
+
+    def exact_search(self, query, **kwargs):
+        self.calls.append(("exact", query, kwargs))
+        return self.exact
+
+    def fuzzy_search(self, query, **kwargs):
+        self.calls.append(("fuzzy", query, kwargs))
+        return self.fuzzy
+
+    def semantic_search(self, query, provider, **kwargs):
+        self.calls.append(("semantic", query, provider, kwargs))
+        return self.semantic
+
+
+def segment(segment_id, text, start=0.0, video_id="media-a", speaker=None):
+    return {
+        "id": segment_id,
+        "video_id": video_id,
+        "start": start,
+        "end": start + 3.0,
+        "original_text": text,
+        "speaker": speaker,
+    }
+
+
+def test_archive_qa_returns_verbatim_quote_and_timestamped_citation():
+    exact = [segment(4, "وصلت الشحنة إلى المستودع صباحاً.", start=12.5)]
+    engine = FakeSearchEngine(exact=exact)
+    result = ArchiveQA(engine).ask("متى وصلت الشحنة؟")
+
+    assert result["status"] == "evidence_found"
+    assert result["answer_type"] == "extractive_quote"
+    assert result["answer"] == "وصلت الشحنة إلى المستودع صباحاً."
+    assert result["answer_citation"] == {
+        "media_id": "media-a",
+        "segment_id": 4,
+        "start": 12.5,
+        "end": 15.5,
+    }
+    assert result["evidence"][0]["retrieved_by"] == ["exact"]
+
+
+def test_archive_qa_fuses_retrievers_and_deduplicates_same_segment():
+    shared = segment(2, "اجتمع الفريق في عمّان.", start=7)
+    exact_only = segment(3, "تمت مناقشة الخطة.", start=14)
+    engine = FakeSearchEngine(
+        exact=[shared, exact_only],
+        fuzzy=[shared],
+    )
+
+    result = ArchiveQA(engine).ask("أين اجتمع الفريق؟", limit=5)
+
+    assert len(result["evidence"]) == 2
+    assert result["evidence"][0]["segment_id"] == 2
+    assert result["evidence"][0]["retrieved_by"] == ["exact", "fuzzy"]
+    assert result["evidence"][0]["evidence_score"] > result["evidence"][1]["evidence_score"]
+
+
+def test_archive_qa_passes_archive_scope_and_speaker_filter_to_retrievers():
+    engine = FakeSearchEngine(exact=[segment(1, "قال المتحدث ذلك.", speaker="SPEAKER_00")])
+    result = ArchiveQA(engine).ask(
+        "ماذا قال المتحدث؟",
+        media_ids=["media-a", "media-b"],
+        speaker="SPEAKER_00",
+    )
+
+    assert result["status"] == "evidence_found"
+    assert all(call[2]["media_ids"] == ["media-a", "media-b"] for call in engine.calls)
+    assert all(call[2]["speaker"] == "SPEAKER_00" for call in engine.calls)
+
+
+def test_archive_qa_can_include_optional_semantic_retrieval():
+    provider = object()
+    engine = FakeSearchEngine(
+        semantic=[segment(9, "المؤتمر عُقد في عمّان.", start=21)]
+    )
+
+    result = ArchiveQA(engine).ask("أين عُقد المؤتمر؟", semantic_provider=provider)
+
+    assert result["status"] == "evidence_found"
+    assert result["evidence"][0]["retrieved_by"] == ["semantic"]
+    assert engine.calls[-1][0] == "semantic"
+    assert engine.calls[-1][2] is provider
+
+
+def test_archive_qa_abstains_when_no_relevant_evidence_exists():
+    engine = FakeSearchEngine()
+    result = ArchiveQA(engine).ask("ما نتيجة الاجتماع؟")
+
+    assert result == {
+        "status": "insufficient_evidence",
+        "answer_type": "abstention",
+        "answer": None,
+        "answer_citation": None,
+        "evidence": [],
+        "message": (
+            "No relevant transcript evidence was found in the selected archive scope. "
+            "The system will not guess an answer."
+        ),
+    }
+
+
+def test_archive_qa_returns_no_results_for_empty_archive_scope_without_search():
+    engine = FakeSearchEngine()
+    result = ArchiveQA(engine).ask("ما الموضوع؟", media_ids=[])
+
+    assert result["status"] == "insufficient_evidence"
+    assert engine.calls == []
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"question": ""},
+        {"question": "سؤال", "limit": 0},
+        {"question": "سؤال", "limit": True},
+        {"question": "سؤال", "fuzzy_threshold": 101},
+        {"question": "سؤال", "fuzzy_threshold": True},
+        {"question": "سؤال", "rrf_k": 0},
+        {"question": "سؤال", "rrf_k": True},
+    ],
+)
+def test_archive_qa_validates_inputs(kwargs):
+    question = kwargs.pop("question", "سؤال")
+    with pytest.raises(ValueError):
+        ArchiveQA(FakeSearchEngine()).ask(question, **kwargs)
+
+
+def test_archive_qa_ignores_malformed_retrieval_rows_instead_of_citing_them():
+    engine = FakeSearchEngine(
+        exact=[{"id": "not-an-int", "video_id": "media-a", "start": 0, "end": 1,
+                "original_text": "نص غير صالح"}]
+    )
+
+    result = ArchiveQA(engine).ask("سؤال")
+
+    assert result["status"] == "insufficient_evidence"
