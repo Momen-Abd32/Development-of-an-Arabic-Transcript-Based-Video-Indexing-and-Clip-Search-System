@@ -103,6 +103,7 @@ def test_bootstrap_creates_only_the_first_administrator(auth):
             "display_name": "Primary Admin",
             "role": "administrator",
             "is_active": True,
+            "session_version": 0,
             "created_at": auth.get_user("admin_one")["created_at"],
             "updated_at": auth.get_user("admin_one")["updated_at"],
         }
@@ -207,3 +208,64 @@ def test_audit_events_record_user_changes_without_password_material(auth, tmp_pa
         assert all("password_salt" not in str(event["details"]) for event in events)
     finally:
         audit.close()
+
+
+
+def test_role_activation_and_password_changes_increment_session_version(auth):
+    user = auth.create_user("editor_one", PASSWORD, role="editor")
+    assert user["session_version"] == 0
+
+    user = auth.update_user_role("editor_one", "search_only", actor="system")
+    assert user["session_version"] == 1
+
+    user = auth.set_user_active("editor_one", False, actor="system")
+    assert user["session_version"] == 2
+
+    user = auth.set_user_active("editor_one", True, actor="system")
+    assert user["session_version"] == 3
+
+    user = auth.reset_password(
+        "editor_one",
+        "New-Password-2026!",
+        actor="system",
+    )
+    assert user["session_version"] == 4
+
+    user = auth.change_password(
+        "editor_one",
+        "New-Password-2026!",
+        "Another-Password-2026!",
+    )
+    assert user["session_version"] == 5
+
+
+def test_auth_manager_adds_session_version_to_legacy_user_schema(tmp_path):
+    import sqlite3
+
+    database = tmp_path / "legacy-users.db"
+    connection = sqlite3.connect(database)
+    connection.execute("""
+        CREATE TABLE archive_users (
+            username TEXT PRIMARY KEY COLLATE NOCASE,
+            display_name TEXT NOT NULL,
+            password_salt BLOB NOT NULL,
+            password_hash BLOB NOT NULL,
+            password_iterations INTEGER NOT NULL,
+            role TEXT NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
+    connection.commit()
+    connection.close()
+
+    manager = AuthManager(database, iterations=10_000)
+    try:
+        columns = {
+            row["name"]
+            for row in manager.connection.execute("PRAGMA table_info(archive_users)")
+        }
+        assert "session_version" in columns
+    finally:
+        manager.close()
