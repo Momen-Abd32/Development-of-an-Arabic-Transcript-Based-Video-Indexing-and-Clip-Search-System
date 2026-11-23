@@ -149,6 +149,36 @@ class ProcessingQueue:
         ).fetchall()
         return {row["status"]: row["total"] for row in rows}
 
+    def _recover_expired_jobs(self, cutoff: str) -> int:
+        now = _timestamp()
+        cursor = self.connection.execute(
+            """
+            UPDATE processing_jobs
+            SET status = CASE
+                    WHEN attempts >= max_attempts THEN 'failed'
+                    ELSE 'queued'
+                END,
+                progress = CASE
+                    WHEN attempts >= max_attempts THEN progress
+                    ELSE 0
+                END,
+                locked_at = NULL,
+                finished_at = CASE
+                    WHEN attempts >= max_attempts THEN ?
+                    ELSE NULL
+                END,
+                updated_at = ?,
+                error = CASE
+                    WHEN attempts >= max_attempts
+                    THEN 'Worker lease expired; retry limit reached.'
+                    ELSE 'Recovered after worker lease expired.'
+                END
+            WHERE status = 'running' AND locked_at < ?
+            """,
+            (now, now, cutoff),
+        )
+        return cursor.rowcount
+
     def recover_stale_jobs(self, lease_seconds: int = 900) -> int:
         if (
             isinstance(lease_seconds, bool)
@@ -157,19 +187,10 @@ class ProcessingQueue:
         ):
             raise ValueError("Lease duration must be a positive integer.")
         cutoff = _timestamp(_utc_now() - timedelta(seconds=lease_seconds))
-        cursor = self.connection.execute(
-            """
-            UPDATE processing_jobs
-            SET status = 'queued', locked_at = NULL,
-                updated_at = ?, error = 'Recovered after worker lease expired.'
-            WHERE status = 'running' AND locked_at < ?
-            """,
-            (_timestamp(), cutoff),
-        )
-        return cursor.rowcount
+        return self._recover_expired_jobs(cutoff)
 
     def recover_interrupted_jobs(self, lease_seconds: int = 900) -> int:
-        """Requeue jobs whose worker lease expired, avoiding live workers."""
+        """Recover expired jobs without stealing leases from active workers."""
         if (
             isinstance(lease_seconds, bool)
             or not isinstance(lease_seconds, int)
@@ -177,16 +198,7 @@ class ProcessingQueue:
         ):
             raise ValueError("Lease duration must be a positive integer.")
         cutoff = _timestamp(_utc_now() - timedelta(seconds=lease_seconds))
-        cursor = self.connection.execute(
-            """
-            UPDATE processing_jobs
-            SET status = 'queued', locked_at = NULL,
-                updated_at = ?, error = 'Recovered after worker lease expired.'
-            WHERE status = 'running' AND locked_at < ?
-            """,
-            (_timestamp(), cutoff),
-        )
-        return cursor.rowcount
+        return self._recover_expired_jobs(cutoff)
 
     def claim_next(self) -> dict | None:
         self.connection.execute("BEGIN IMMEDIATE")
