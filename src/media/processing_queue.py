@@ -231,17 +231,30 @@ class ProcessingQueue:
             or not 0 <= progress <= 100
         ):
             raise ValueError("Progress must be between 0 and 100.")
+        now = _timestamp()
         cursor = self.connection.execute(
             """
             UPDATE processing_jobs
-            SET progress = ?, updated_at = ?
+            SET progress = ?, locked_at = ?, updated_at = ?
             WHERE job_id = ? AND status = 'running'
             """,
-            (float(progress), _timestamp(), job_id),
+            (float(progress), now, now, job_id),
         )
         if cursor.rowcount != 1:
             raise ValueError("Only running jobs can update progress.")
         return self.get(job_id)
+
+    def heartbeat(self, job_id: str) -> bool:
+        now = _timestamp()
+        cursor = self.connection.execute(
+            """
+            UPDATE processing_jobs
+            SET locked_at = ?, updated_at = ?
+            WHERE job_id = ? AND status = 'running'
+            """,
+            (now, now, job_id),
+        )
+        return cursor.rowcount == 1
 
     def complete(self, job_id: str) -> dict:
         cursor = self.connection.execute(
