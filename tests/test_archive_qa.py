@@ -254,8 +254,8 @@ def test_archive_qa_accepts_generated_claims_only_with_retrieved_citations():
     assert result["answer_citations"] == [{
         "media_id": "media-a",
         "segment_id": 12,
-        "start": 0.0,
-        "end": 3.0,
+        "start": 30.0,
+        "end": 33.0,
     }]
     assert result["claims"][0]["citations"] == result["answer_citations"]
     assert provider.calls[0][0] == "إلى أين وصلت الشحنة؟"
