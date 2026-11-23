@@ -36,7 +36,11 @@ def test_ollama_provider_posts_question_and_bounded_evidence_to_loopback(monkeyp
         captured["payload"] = json.loads(request.data.decode("utf-8"))
         return FakeResponse()
 
-    monkeypatch.setattr(provider_module, "urlopen", fake_urlopen)
+    class FakeOpener:
+        def open(self, request, timeout):
+            return fake_urlopen(request, timeout)
+
+    monkeypatch.setattr(provider_module, "build_opener", lambda handler: FakeOpener())
     provider = OllamaAnswerProvider(model="qwen2.5:3b", timeout=45)
     result = provider.generate_answer(
         "إلى أين وصلت الشحنة؟",
@@ -65,6 +69,7 @@ def test_ollama_provider_posts_question_and_bounded_evidence_to_loopback(monkeyp
     [
         "https://127.0.0.1:11434",
         "http://example.com:11434",
+        "http://localhost:11434",
         "http://192.168.1.10:11434",
         "http://127.0.0.1:8080",
         "http://user:pass@127.0.0.1:11434",
@@ -89,3 +94,25 @@ def test_ollama_provider_rejects_invalid_timeout(timeout):
 def test_ollama_provider_rejects_empty_model_name():
     with pytest.raises(ValueError, match="model name"):
         OllamaAnswerProvider(model=" ")
+
+
+def test_ollama_provider_blocks_redirects(monkeypatch):
+    class RedirectingOpener:
+        def open(self, request, timeout):
+            raise ValueError("Ollama endpoint redirects are not allowed.")
+
+    monkeypatch.setattr(
+        provider_module, "build_opener", lambda handler: RedirectingOpener()
+    )
+    provider = OllamaAnswerProvider()
+    with pytest.raises(ValueError, match="redirects are not allowed"):
+        provider.generate_answer(
+            "سؤال",
+            [{
+                "media_id": "media-1",
+                "segment_id": 1,
+                "start": 0,
+                "end": 1,
+                "text": "دليل",
+            }],
+        )
