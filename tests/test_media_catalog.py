@@ -275,7 +275,18 @@ def test_archive_metadata_rejects_invalid_values_without_mutating_catalog(tmp_pa
     assert catalog.get_by_id(MEDIA_ID) == original
 
 
-def test_catalog_rejects_invalid_persisted_collection_and_tags(tmp_path):
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("collection", " ", "collection"),
+        ("tags", ["valid", ""], "tags"),
+        ("tags", "not-a-list", "tags"),
+        ("tags", ["Duplicate", "duplicate"], "tags"),
+    ],
+)
+def test_catalog_rejects_invalid_persisted_collection_and_tags(
+    tmp_path, field, value, message
+):
     path = tmp_path / "media_catalog.json"
     record = {
         "media_id": MEDIA_ID,
@@ -284,12 +295,12 @@ def test_catalog_rejects_invalid_persisted_collection_and_tags(tmp_path):
         "stored_path": "data/audio/recording.mp3",
         "status": "uploaded",
         "created_at": "2026-11-21T10:00:00+00:00",
-        "collection": " ",
-        "tags": ["valid", ""],
+        field: value,
     }
-    path.write_text(json.dumps([record]), encoding="utf-8")
+    original = json.dumps([record])
+    path.write_text(original, encoding="utf-8")
     catalog = MediaCatalog(str(path))
 
-    with pytest.raises(ValueError, match="collection"):
+    with pytest.raises(ValueError, match=message):
         catalog.get_all()
-    assert path.read_text(encoding="utf-8") == json.dumps([record])
+    assert path.read_text(encoding="utf-8") == original
