@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+import math
 
 
 def _result_key(result: dict) -> tuple:
@@ -18,12 +19,16 @@ def _result_key(result: dict) -> tuple:
 
     if result_type == "transcript":
         try:
-            start = float(result["start"])
-            end = float(result["end"])
+            raw_start = result["start"]
+            raw_end = result["end"]
+            if isinstance(raw_start, bool) or isinstance(raw_end, bool):
+                raise ValueError("Boolean timestamps are invalid.")
+            start = float(raw_start)
+            end = float(raw_end)
         except (KeyError, TypeError, ValueError) as error:
-            raise ValueError("Transcript relevance requires start and end timestamps.") from error
-        if start < 0 or end <= start:
-            raise ValueError("Transcript relevance timestamps must satisfy 0 <= start < end.")
+            raise ValueError("Transcript relevance requires numeric start and end timestamps.") from error
+        if not math.isfinite(start) or not math.isfinite(end) or start < 0 or end <= start:
+            raise ValueError("Transcript relevance timestamps must satisfy finite 0 <= start < end.")
         return "transcript", media_id, round(start, 3), round(end, 3)
 
     raise ValueError("Cross-modal relevance result_type must be transcript or keyframe.")
