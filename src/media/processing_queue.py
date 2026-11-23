@@ -158,16 +158,23 @@ class ProcessingQueue:
         )
         return cursor.rowcount
 
-    def recover_interrupted_jobs(self) -> int:
-        """Requeue running jobs left behind by a previous application process."""
+    def recover_interrupted_jobs(self, lease_seconds: int = 900) -> int:
+        """Requeue jobs whose worker lease expired, avoiding live workers."""
+        if (
+            isinstance(lease_seconds, bool)
+            or not isinstance(lease_seconds, int)
+            or lease_seconds < 1
+        ):
+            raise ValueError("Lease duration must be a positive integer.")
+        cutoff = _timestamp(_utc_now() - timedelta(seconds=lease_seconds))
         cursor = self.connection.execute(
             """
             UPDATE processing_jobs
             SET status = 'queued', locked_at = NULL,
-                updated_at = ?, error = 'Recovered after application restart.'
-            WHERE status = 'running'
+                updated_at = ?, error = 'Recovered after worker lease expired.'
+            WHERE status = 'running' AND locked_at < ?
             """,
-            (_timestamp(),),
+            (_timestamp(), cutoff),
         )
         return cursor.rowcount
 
