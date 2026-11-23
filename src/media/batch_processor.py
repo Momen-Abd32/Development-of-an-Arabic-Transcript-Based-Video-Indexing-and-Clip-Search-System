@@ -112,10 +112,24 @@ class MediaBatchProcessor:
         input_directory: str,
         recursive: bool = True,
         progress_callback: Callable[[int, int], None] | None = None,
+        stage_callback: Callable[[str, str | None, float], None] | None = None,
     ) -> list[dict]:
-        """Process supported files independently and return one result per file."""
+        """Process supported files independently and report file-level stages."""
         input_path = Path(input_directory)
 
+        def report_stage(
+            stage: str,
+            current_file: Path | None = None,
+            stage_progress: float = 0,
+        ) -> None:
+            if stage_callback is not None:
+                stage_callback(
+                    stage,
+                    str(current_file) if current_file is not None else None,
+                    stage_progress,
+                )
+
+        report_stage("scanning", input_path, 0)
         if not input_path.exists():
             raise FileNotFoundError(f"Input directory not found: {input_path}")
 
@@ -135,6 +149,7 @@ class MediaBatchProcessor:
         )
 
         results = []
+        report_stage("ready", None, 100)
 
         def record_result(result: dict) -> None:
             results.append(result)
@@ -153,9 +168,11 @@ class MediaBatchProcessor:
 
             media_id = None
             try:
+                report_stage("verifying_source", source, 5)
                 media_id = self._calculate_sha256(source)
 
                 if media_id in seen_hashes:
+                    report_stage("duplicate_skipped", source, 100)
                     record_result({
                         "source": str(source),
                         "media_id": media_id,
@@ -174,6 +191,7 @@ class MediaBatchProcessor:
                         f"{media_id}{source.suffix.lower()}"
                     )
 
+                report_stage("copying_source", source, 15)
                 self._store_source(source, stored_source, media_id)
                 self.catalog.register_media(
                     media_id,
@@ -184,11 +202,16 @@ class MediaBatchProcessor:
                 )
 
                 transcript_path = self.transcript_dir / f"{media_id}.json"
+                report_stage("checking_transcript", source, 25)
 
                 if transcript_path.exists():
+                    report_stage("loading_saved_transcript", source, 40)
                     segments = TranscriptManager.load(str(transcript_path))
+                    report_stage("indexing_transcript", source, 85)
                     self._index(media_id, segments)
+                    report_stage("updating_catalog", source, 95)
                     self.catalog.update_status(media_id, "transcribed")
+                    report_stage("file_completed", source, 100)
                     seen_hashes.add(media_id)
                     record_result({
                         "source": str(source),
@@ -200,19 +223,26 @@ class MediaBatchProcessor:
                     continue
 
                 audio_path = self.audio_dir / f"{media_id}.wav"
+                report_stage("extracting_audio", source, 35)
                 AudioExtractor.prepare(str(stored_source), str(audio_path))
 
                 if engine is None:
+                    report_stage("loading_model", source, 45)
                     engine = FasterWhisperEngine(
                         model_size=self.model_size,
                         device=self.device,
                         compute_type=self.compute_type,
                     )
 
+                report_stage("transcribing", source, 60)
                 segments = engine.transcribe(str(audio_path))
+                report_stage("saving_transcript", source, 85)
                 TranscriptManager.save(segments, str(transcript_path))
+                report_stage("indexing_transcript", source, 92)
                 self._index(media_id, segments)
+                report_stage("updating_catalog", source, 97)
                 self.catalog.update_status(media_id, "transcribed")
+                report_stage("file_completed", source, 100)
                 seen_hashes.add(media_id)
 
                 record_result({
@@ -224,6 +254,7 @@ class MediaBatchProcessor:
                 })
 
             except Exception as error:
+                report_stage("file_failed", source, 100)
                 if media_id is not None:
                     try:
                         self.catalog.update_status(
