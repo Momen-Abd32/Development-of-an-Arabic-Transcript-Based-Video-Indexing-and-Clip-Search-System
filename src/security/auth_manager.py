@@ -63,6 +63,7 @@ class AuthManager:
                     role IN ('administrator', 'editor', 'search_only')
                 ),
                 is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+                session_version INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )
@@ -79,6 +80,14 @@ class AuthManager:
             CREATE INDEX IF NOT EXISTS idx_auth_attempts_user_time
             ON auth_login_attempts(username, attempted_at DESC)
         """)
+        user_columns = {
+            row["name"]
+            for row in self.connection.execute("PRAGMA table_info(archive_users)")
+        }
+        if "session_version" not in user_columns:
+            self.connection.execute(
+                "ALTER TABLE archive_users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0"
+            )
 
     def close(self) -> None:
         self.connection.close()
@@ -138,6 +147,7 @@ class AuthManager:
             "display_name": row["display_name"],
             "role": row["role"],
             "is_active": bool(row["is_active"]),
+            "session_version": row["session_version"],
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
@@ -336,8 +346,12 @@ class AuthManager:
                 raise ValueError("The last active administrator cannot be demoted.")
         now = self._now()
         self.connection.execute(
-            "UPDATE archive_users SET role = ?, updated_at = ? WHERE username = ?",
-            (role, now, username),
+            """
+            UPDATE archive_users
+            SET role = ?, session_version = session_version + ?, updated_at = ?
+            WHERE username = ?
+            """,
+            (role, int(previous_role != role), now, username),
         )
         self._record_audit(
             "user_role_updated",
@@ -376,9 +390,14 @@ class AuthManager:
             if active_admins <= 1:
                 raise ValueError("The last active administrator cannot be deactivated.")
         now = self._now()
+        previous_active = bool(row["is_active"])
         self.connection.execute(
-            "UPDATE archive_users SET is_active = ?, updated_at = ? WHERE username = ?",
-            (int(is_active), now, username),
+            """
+            UPDATE archive_users
+            SET is_active = ?, session_version = session_version + ?, updated_at = ?
+            WHERE username = ?
+            """,
+            (int(is_active), int(previous_active != is_active), now, username),
         )
         self._record_audit(
             "user_activated" if is_active else "user_deactivated",
@@ -407,7 +426,7 @@ class AuthManager:
             """
             UPDATE archive_users
             SET password_salt = ?, password_hash = ?, password_iterations = ?,
-                updated_at = ?
+                session_version = session_version + 1, updated_at = ?
             WHERE username = ?
             """,
             (salt, password_hash, self.iterations, now, username),
@@ -450,7 +469,7 @@ class AuthManager:
             """
             UPDATE archive_users
             SET password_salt = ?, password_hash = ?, password_iterations = ?,
-                updated_at = ?
+                session_version = session_version + 1, updated_at = ?
             WHERE username = ?
             """,
             (salt, password_hash, self.iterations, now, username),
