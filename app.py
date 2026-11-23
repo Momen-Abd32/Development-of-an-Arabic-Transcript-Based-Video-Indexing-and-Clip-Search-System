@@ -7,6 +7,7 @@ import streamlit as st
 
 from src.media.audio_extractor import AudioExtractor
 from src.media.audit_log import AuditLog
+from src.media.archive_notes import ArchiveNotes
 from src.media.media_catalog import MediaCatalog
 from src.media.keyframe_extractor import KeyframeExtractor
 from src.media.processing_queue import ProcessingQueue
@@ -174,6 +175,23 @@ TEXT = {
         "extracting_keyframes": "جاري استخراج الصور المصغّرة...",
         "keyframes_failed": "تعذر استخراج الصور المصغّرة",
         "keyframes_title": "الصور المصغّرة / اللقطات الرئيسية",
+        "archive_notes_tab": "ملاحظات المراجعة",
+        "archive_notes_title": "ملاحظات وتعليقات مرتبطة بالتوقيت",
+        "archive_notes_desc": "أضف ملاحظة إلى ملف محدد عند توقيت معين، وراجع أو عدّل أو احذف الملاحظات. تُسجل عمليات التغيير في سجل الأحداث.",
+        "archive_notes_media": "اختر ملف الوسائط",
+        "archive_notes_timestamp": "التوقيت بالثواني",
+        "archive_notes_author": "اسم صاحب الملاحظة",
+        "archive_notes_text": "نص الملاحظة",
+        "archive_notes_add": "إضافة الملاحظة",
+        "archive_notes_empty": "لا توجد ملاحظات لهذا الملف بعد.",
+        "archive_notes_saved": "تم حفظ الملاحظة.",
+        "archive_notes_updated": "تم تحديث الملاحظة.",
+        "archive_notes_deleted": "تم حذف الملاحظة.",
+        "archive_notes_update": "حفظ التعديل",
+        "archive_notes_updated_by": "تم التعديل بواسطة",
+        "archive_notes_delete": "حذف الملاحظة",
+        "archive_notes_play": "تشغيل المصدر من التوقيت",
+        "archive_notes_created": "تاريخ الإضافة",
         "archive_qa_tab": "اسأل الأرشيف",
         "archive_qa_title": "اسأل الأرشيف واستعرض الأدلة",
         "archive_qa_desc": "اكتب سؤالاً للبحث في التفريغات النصية. الإجابة المعروضة اقتباس حرفي من أفضل مقطع، مع رابط إلى مصدره وتوقيته؛ لن يخمّن النظام عند غياب الأدلة.",
@@ -293,6 +311,23 @@ TEXT = {
         "transcript_tab": "Transcript",
         "search_tab": "Video Search",
         "archive_qa_tab": "Ask the Archive",
+        "archive_notes_tab": "Review Notes",
+        "archive_notes_title": "Timestamped Notes and Comments",
+        "archive_notes_desc": "Add a note to a media item at a specific timestamp, then review, edit, or delete notes. Changes are recorded in the audit history.",
+        "archive_notes_media": "Select media",
+        "archive_notes_timestamp": "Timestamp in seconds",
+        "archive_notes_author": "Note author",
+        "archive_notes_text": "Note text",
+        "archive_notes_add": "Add note",
+        "archive_notes_empty": "There are no notes for this media item yet.",
+        "archive_notes_saved": "Note saved.",
+        "archive_notes_updated": "Note updated.",
+        "archive_notes_deleted": "Note deleted.",
+        "archive_notes_update": "Save changes",
+        "archive_notes_updated_by": "Updated by",
+        "archive_notes_delete": "Delete note",
+        "archive_notes_play": "Play source from timestamp",
+        "archive_notes_created": "Created",
         "archive_qa_title": "Ask the Archive and Inspect Evidence",
         "archive_qa_desc": "Ask a question about indexed transcripts. The displayed answer is a verbatim quote from the best matching segment with its source and timestamp; the system abstains when evidence is missing.",
         "archive_qa_question": "What would you like to know from the archive?",
@@ -744,11 +779,12 @@ with metric_col3:
 # Main sections
 # --------------------------------------------------
 
-tab_upload, tab_transcript, tab_search, tab_visual, tab_cross_modal, tab_qa, tab_clips, tab_archive, tab_queue, tab_dashboard, tab_audit = st.tabs(
+tab_upload, tab_transcript, tab_search, tab_visual, tab_cross_modal, tab_qa, tab_notes, tab_clips, tab_archive, tab_queue, tab_dashboard, tab_audit = st.tabs(
     [
         t["upload_tab"], t["transcript_tab"], t["search_tab"],
         t["visual_search_tab"], t["cross_modal_tab"], t["archive_qa_tab"],
-        t["clips_tab"], t["archive_tab"], t["queue_tab"], t["dashboard_tab"], t["audit_tab"],
+        t["archive_notes_tab"], t["clips_tab"], t["archive_tab"], t["queue_tab"],
+        t["dashboard_tab"], t["audit_tab"],
     ]
 )
 
@@ -1936,6 +1972,168 @@ with tab_qa:
                             )
         else:
             st.info(t["archive_qa_abstain"])
+
+
+# 7. Timestamped review notes
+# --------------------------------------------------
+
+with tab_notes:
+    st.subheader("📝 " + t["archive_notes_title"])
+    st.caption(t["archive_notes_desc"])
+
+    note_records = MediaCatalog().get_all()
+    if not note_records:
+        st.info(t["no_archive_media"])
+    else:
+        note_catalog = {
+            item["media_id"]: item for item in note_records
+        }
+        note_media_ids = [item["media_id"] for item in note_records]
+        current_note_media = st.session_state.get("video_id")
+        note_default_index = (
+            note_media_ids.index(current_note_media)
+            if current_note_media in note_media_ids else 0
+        )
+        selected_note_media_id = st.selectbox(
+            t["archive_notes_media"],
+            options=note_media_ids,
+            index=note_default_index,
+            format_func=lambda media_id: (
+                f'{note_catalog[media_id]["source_name"]} '
+                f'({media_id[:10]})'
+            ),
+            key="archive_notes_media_select",
+        )
+        with st.form("archive_note_create_form", clear_on_submit=True):
+            new_note_timestamp = st.number_input(
+                t["archive_notes_timestamp"],
+                min_value=0.0,
+                value=0.0,
+                step=1.0,
+                key="archive_note_new_timestamp",
+            )
+            new_note_author = st.text_input(
+                t["archive_notes_author"],
+                value="local_user",
+                key="archive_note_new_author",
+            )
+            new_note_text = st.text_area(
+                t["archive_notes_text"],
+                key="archive_note_new_text",
+                max_chars=ArchiveNotes.MAX_TEXT_LENGTH,
+            )
+            create_note = st.form_submit_button(
+                t["archive_notes_add"],
+                type="primary",
+            )
+
+        if create_note:
+            note_manager = ArchiveNotes()
+            try:
+                note_manager.add_note(
+                    selected_note_media_id,
+                    new_note_timestamp,
+                    new_note_text,
+                    author=new_note_author,
+                )
+                st.success(t["archive_notes_saved"])
+            except Exception as error:
+                st.error(f'{t["save_failed"]}: {error}')
+            finally:
+                note_manager.close()
+
+        note_manager = ArchiveNotes()
+        try:
+            media_notes = note_manager.list_notes(selected_note_media_id)
+        finally:
+            note_manager.close()
+
+        if not media_notes:
+            st.info(t["archive_notes_empty"])
+        else:
+            for note in media_notes:
+                with st.expander(
+                    f'{note["timestamp_seconds"]:.2f}s · {note["author"]} · '
+                    f'{note["note_text"][:70]}',
+                    expanded=False,
+                ):
+                    st.caption(
+                        f'{t["archive_notes_created"]}: {note["created_at"]} · '
+                        f'{t["archive_notes_updated_by"]}: {note["updated_by"]}'
+                    )
+                    with st.form(f'archive_note_edit_form_{note["note_id"]}'):
+                        edited_timestamp = st.number_input(
+                            t["archive_notes_timestamp"],
+                            min_value=0.0,
+                            value=float(note["timestamp_seconds"]),
+                            step=1.0,
+                            key=f'archive_note_timestamp_{note["note_id"]}',
+                        )
+                        edited_text = st.text_area(
+                            t["archive_notes_text"],
+                            value=note["note_text"],
+                            max_chars=ArchiveNotes.MAX_TEXT_LENGTH,
+                            key=f'archive_note_text_{note["note_id"]}',
+                        )
+                        edited_by = st.text_input(
+                            t["archive_notes_updated_by"],
+                            value="local_user",
+                            key=f'archive_note_editor_{note["note_id"]}',
+                        )
+                        update_note = st.form_submit_button(
+                            t["archive_notes_update"]
+                        )
+                    if update_note:
+                        note_manager = ArchiveNotes()
+                        try:
+                            note_manager.update_note(
+                                note["note_id"],
+                                timestamp_seconds=edited_timestamp,
+                                note_text=edited_text,
+                                updated_by=edited_by,
+                            )
+                            st.success(t["archive_notes_updated"])
+                            st.rerun()
+                        except Exception as error:
+                            st.error(f'{t["save_failed"]}: {error}')
+                        finally:
+                            note_manager.close()
+
+                    note_source = note_catalog.get(selected_note_media_id)
+                    note_source_path = (
+                        Path(note_source["stored_path"])
+                        if note_source else None
+                    )
+                    if note_source_path and note_source_path.is_file() and st.button(
+                        t["archive_notes_play"],
+                        key=f'archive_note_play_{note["note_id"]}',
+                    ):
+                        if note_source["media_type"] == "video":
+                            st.video(
+                                str(note_source_path),
+                                start_time=int(note["timestamp_seconds"]),
+                            )
+                        else:
+                            st.audio(
+                                str(note_source_path),
+                                start_time=int(note["timestamp_seconds"]),
+                            )
+                    if st.button(
+                        t["archive_notes_delete"],
+                        key=f'archive_note_delete_{note["note_id"]}',
+                    ):
+                        note_manager = ArchiveNotes()
+                        try:
+                            note_manager.delete_note(
+                                note["note_id"],
+                                actor="local_user",
+                            )
+                            st.success(t["archive_notes_deleted"])
+                            st.rerun()
+                        except Exception as error:
+                            st.error(f'{t["save_failed"]}: {error}')
+                        finally:
+                            note_manager.close()
 
 
 # 6. Saved clips
