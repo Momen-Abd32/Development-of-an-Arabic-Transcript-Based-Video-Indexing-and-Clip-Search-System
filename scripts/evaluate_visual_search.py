@@ -48,6 +48,13 @@ def main() -> int:
         parser.error("--top-k must be a positive integer.")
 
     cases = load_dataset(args.dataset)
+    for index, case in enumerate(cases):
+        if case.get("reference_image"):
+            reference_path = (args.dataset.parent / case["reference_image"]).resolve()
+            if not reference_path.is_file():
+                parser.error(
+                    f"Reference image for query {index} was not found: {reference_path}"
+                )
     provider = SentenceTransformerVisualProvider()
     index = KeyframeSearchIndex(args.database)
     try:
