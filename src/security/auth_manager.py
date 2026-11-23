@@ -323,6 +323,8 @@ class AuthManager:
         if row is None:
             raise KeyError(f"User not found: {username}")
         previous_role = row["role"]
+        if actor == username and role != "administrator":
+            raise ValueError("You cannot remove administrator access from your own account.")
         if previous_role == "administrator" and role != "administrator" and row["is_active"]:
             active_admins = self.connection.execute(
                 """
