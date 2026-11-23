@@ -102,3 +102,20 @@ def test_rejects_wrong_embedding_dimensions(semantic_index):
 
     with pytest.raises(ValueError, match="dimensions"):
         semantic_index.search("برمجة", WrongDimensionProvider())
+
+def test_rejects_inconsistent_dimensions_and_preserves_previous_index(semantic_index):
+    provider = FakeEmbeddingProvider()
+    semantic_index.index_media("media-a", provider)
+
+    class InconsistentProvider(FakeEmbeddingProvider):
+        def embed_documents(self, texts):
+            return [[1.0, 0.0], [1.0, 0.0, 0.0]]
+
+    with pytest.raises(ValueError, match="inconsistent vector dimensions"):
+        semantic_index.index_media("media-a", InconsistentProvider())
+
+    count = semantic_index.connection.execute(
+        "SELECT COUNT(*) FROM segment_embeddings WHERE video_id = ?",
+        ("media-a",),
+    ).fetchone()[0]
+    assert count == 2
