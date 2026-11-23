@@ -672,6 +672,10 @@ with tab_upload:
                 segments,
                 f"data/transcripts/{media_id}.json",
             )
+            insights_path = Path("data/insights") / f"{media_id}.json"
+            if insights_path.is_file():
+                insights_path.unlink()
+            st.session_state.transcript_insights = None
 
             indexer = TranscriptIndexer()
             try:
