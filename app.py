@@ -2205,17 +2205,21 @@ with tab_qa:
         qa_end_date = (
             qa_date_values[1].isoformat() if len(qa_date_values) >= 2 else None
         )
-        qa_filtered_records = qa_catalog_manager.filter_media(
-            media_type=qa_type_value,
-            source_contains=qa_source_filter.strip() or None,
-            start_date=qa_start_date,
-            end_date=qa_end_date,
-            collection=(
-                qa_collection_label
-                if qa_collection_label != t["filter_all"] else None
-            ),
-            tags=qa_selected_tags,
-        )
+        try:
+            qa_filtered_records = qa_catalog_manager.filter_media(
+                media_type=qa_type_value,
+                source_contains=qa_source_filter.strip() or None,
+                start_date=qa_start_date,
+                end_date=qa_end_date,
+                collection=(
+                    qa_collection_label
+                    if qa_collection_label != t["filter_all"] else None
+                ),
+                tags=qa_selected_tags,
+            )
+        except (TypeError, ValueError) as filter_error:
+            st.warning(f'{t["search_failed"]}: {filter_error}')
+            qa_filtered_records = []
         qa_current_media_id = st.session_state.get("video_id")
         if qa_scope == t["current_media"]:
             qa_media_ids = [
