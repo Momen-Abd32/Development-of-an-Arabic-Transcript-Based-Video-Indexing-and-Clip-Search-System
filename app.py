@@ -1189,11 +1189,13 @@ with tab_archive:
                 t["collection"],
                 value=selected_record.get("collection", ""),
                 placeholder=t["collection_placeholder"],
+                key=f"archive_collection_{selected_media_id}",
             )
             tags_value = st.text_input(
                 t["tags"],
                 value=", ".join(selected_record.get("tags", [])),
                 help=t["tags_help"],
+                key=f"archive_tags_{selected_media_id}",
             )
             save_metadata = st.form_submit_button(t["save_archive_metadata"])
 
