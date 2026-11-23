@@ -83,7 +83,7 @@ class KeyframeExtractor:
                 timestamps = [
                     float(match.group(1))
                     for match in re.finditer(
-                        r"pts_time:([+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+))",
+                        r"pts_time:([+-]?(?:\d+(?:\.\d*)?|\.\d+))",
                         result.stderr or "",
                     )
                 ]
