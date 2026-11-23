@@ -190,3 +190,20 @@ def test_worker_heartbeat_only_renews_running_jobs(tmp_path):
     queue.complete(job["job_id"])
     assert queue.heartbeat(job["job_id"]) is False
     queue.close()
+
+def test_expired_job_at_attempt_limit_becomes_failed_not_stuck_queued(tmp_path):
+    queue = ProcessingQueue(tmp_path / "queue.db")
+    job = queue.enqueue("batch_import", {}, max_attempts=1)
+    queue.claim_next()
+    queue.connection.execute(
+        "UPDATE processing_jobs SET locked_at = '2000-01-01T00:00:00+00:00' WHERE job_id = ?",
+        (job["job_id"],),
+    )
+
+    assert queue.recover_stale_jobs(60) == 1
+    recovered = queue.get(job["job_id"])
+    assert recovered["status"] == "failed"
+    assert recovered["finished_at"] is not None
+    assert "retry limit reached" in recovered["error"]
+    assert queue.claim_next() is None
+    queue.close()
