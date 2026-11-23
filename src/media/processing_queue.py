@@ -259,11 +259,19 @@ class ProcessingQueue:
         self.connection.execute(
             """
             UPDATE processing_jobs
-            SET status = ?, error = ?, locked_at = NULL,
+            SET status = ?, progress = CASE WHEN ? = 'queued' THEN 0 ELSE progress END,
+                error = ?, locked_at = NULL,
                 finished_at = ?, updated_at = ?
             WHERE job_id = ? AND status = 'running'
             """,
-            (status, error.strip()[:4000], None if should_retry else now, now, job_id),
+            (
+                status,
+                status,
+                error.strip()[:4000],
+                None if should_retry else now,
+                now,
+                job_id,
+            ),
         )
         return self.get(job_id)
 
