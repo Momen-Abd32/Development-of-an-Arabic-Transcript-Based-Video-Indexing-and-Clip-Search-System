@@ -1314,7 +1314,8 @@ with tab_queue:
                     max_attempts=3,
                 )
                 st.success(t["queue_added"])
-                st.rerun()
+                queue.close()
+        st.rerun()
             except Exception as error:
                 st.error(f'{t["queue_failed"]}: {error}')
 
@@ -1322,7 +1323,8 @@ with tab_queue:
         try:
             recovered = queue.recover_interrupted_jobs()
             st.success(f'{t["queue_recovered"]}: {recovered}')
-            st.rerun()
+            queue.close()
+        st.rerun()
         except Exception as error:
             st.error(f'{t["queue_failed"]}: {error}')
 
@@ -1364,7 +1366,8 @@ with tab_queue:
                     queue.complete(job["job_id"])
                     st.success(t["queue_completed"])
                     st.json(results)
-                st.rerun()
+                queue.close()
+        st.rerun()
             except Exception as error:
                 try:
                     failed_job = queue.fail(job["job_id"], str(error))
@@ -1396,12 +1399,14 @@ with tab_queue:
                 with action_columns[0]:
                     if st.button(t["queue_cancel"], key=f'cancel_{job["job_id"]}'):
                         queue.cancel(job["job_id"])
-                        st.rerun()
+                        queue.close()
+        st.rerun()
             elif job["status"] == "failed":
                 with action_columns[0]:
                     if st.button(t["queue_retry"], key=f'retry_{job["job_id"]}'):
                         queue.retry(job["job_id"])
-                        st.rerun()
+                        queue.close()
+        st.rerun()
 
     queue.close()
 
