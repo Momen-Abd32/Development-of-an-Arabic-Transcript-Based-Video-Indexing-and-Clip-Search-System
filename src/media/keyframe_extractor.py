@@ -63,7 +63,7 @@ class KeyframeExtractor:
                 "-loglevel", "error",
                 "-y",
                 "-i", str(source),
-                "-vf", f"fps=1/{interval_seconds},scale='min({width},iw)':-2" + (",showinfo" if return_timestamps else ""),
+                "-vf", f"setpts=PTS-STARTPTS,fps=1/{interval_seconds},scale='min({width},iw)':-2" + (",showinfo" if return_timestamps else ""),
                 "-frames:v", str(max_frames),
                 "-q:v", "2",
                 str(pattern),
