@@ -1096,6 +1096,7 @@ with tab_search:
 
     if st.session_state.get("search_results_scope") != search_scope:
         st.session_state.search_results = []
+        st.session_state.visual_search_results = None
         st.session_state.search_results_scope = search_scope
 
     current_scope = search_scope == t["current_media"]
