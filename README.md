@@ -42,6 +42,7 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - **Audio preparation:** Use FFmpeg to normalize audio from video or standalone audio files to mono 16 kHz WAV for transcription.
 - **Batch media import:** Recursively scan a local folder and process supported audio and video files one by one.
 - **Media catalog:** Persist each media file's type, original filename, stored path, and processing status.
+- **Archive collections and tags:** Organize media with optional collection names and deduplicated tags; filter the archive by collection and selected tags.
 - **Archive-wide search:** Search transcript segments across all imported media or limit the search to the currently selected file.
 - **Duplicate detection:** Identify identical files using SHA-256 and avoid processing duplicate content within the same batch.
 - **Transcript reuse:** Reuse existing transcript JSON files and rebuild their search index instead of transcribing the same media again.
