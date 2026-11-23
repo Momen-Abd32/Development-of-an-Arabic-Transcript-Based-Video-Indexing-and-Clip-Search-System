@@ -28,13 +28,24 @@ class DatabaseManager:
                 start REAL NOT NULL,
                 end REAL NOT NULL,
                 original_text TEXT NOT NULL,
-                normalized_text TEXT NOT NULL
+                normalized_text TEXT NOT NULL,
+                speaker TEXT
             )
         """)
+
+        columns = {
+            row["name"] for row in cursor.execute("PRAGMA table_info(segments)")
+        }
+        if "speaker" not in columns:
+            cursor.execute("ALTER TABLE segments ADD COLUMN speaker TEXT")
 
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_segments_video_id
             ON segments(video_id)
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_segments_speaker
+            ON segments(speaker)
         """)
 
         # Optional semantic vectors are stored separately so legacy transcript
