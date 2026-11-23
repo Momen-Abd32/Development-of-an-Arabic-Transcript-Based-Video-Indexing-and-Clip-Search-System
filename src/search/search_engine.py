@@ -233,6 +233,8 @@ class SearchEngine:
                 entry["hybrid_score"] = entry.get("hybrid_score", 0.0) + (
                     1.0 / (rrf_k + rank)
                 )
+                if "speaker" in result:
+                    entry["speaker"] = result["speaker"]
                 if "semantic_score" in result:
                     entry["semantic_score"] = result["semantic_score"]
                 if "similarity" in result:
