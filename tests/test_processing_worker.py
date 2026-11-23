@@ -100,3 +100,41 @@ def test_worker_rejects_invalid_lease_or_poll_interval(tmp_path):
     with pytest.raises(ValueError):
         worker.run_forever(poll_seconds=0)
     queue.close()
+
+
+class CancellingProcessor:
+    def __init__(self, queue, job_id):
+        self.queue = queue
+        self.job_id = job_id
+
+    def process_directory(self, input_directory, recursive=True, progress_callback=None):
+        self.queue.cancel(self.job_id)
+        if progress_callback:
+            progress_callback(1, 2)
+        raise AssertionError("The worker should stop after the cancellation callback.")
+
+
+def test_worker_stops_between_files_when_active_job_is_cancelled(tmp_path):
+    queue = ProcessingQueue(tmp_path / "queue.db")
+    job = queue.enqueue(
+        "batch_import",
+        {"input_directory": "archive"},
+    )
+    worker = ProcessingWorker(
+        queue=queue,
+        processor_factory=lambda: CancellingProcessor(queue, job["job_id"]),
+        lease_seconds=3,
+        heartbeat_interval=1,
+    )
+
+    result = worker.run_once()
+
+    assert result["job"]["status"] == "cancelled"
+    assert result["job"]["progress"] == 50
+    assert result["job"]["cancel_requested"] == 1
+    events = queue.audit_log.list_events(
+        entity_type="processing_job", entity_id=job["job_id"]
+    )
+    assert "job_cancellation_requested" in {event["action"] for event in events}
+    assert "job_cancelled" in {event["action"] for event in events}
+    queue.close()
