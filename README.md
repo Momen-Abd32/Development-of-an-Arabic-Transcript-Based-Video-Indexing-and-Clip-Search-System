@@ -320,7 +320,10 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   │   └── processing_worker.py
 │   │
 │   ├── search/
-│   │   └── search_engine.py
+│   │   ├── evaluation.py
+│   │   ├── keyframe_search.py
+│   │   ├── search_engine.py
+│   │   └── visual_embedding_provider.py
 │   │
 │   └── transcription/
 │       ├── faster_whisper_engine.py
@@ -345,6 +348,10 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   ├── test_search_engine.py
 │   ├── test_text_processor.py
 │   ├── test_keyframe_extractor.py
+│   ├── test_keyframe_search.py
+│   ├── test_search_evaluation.py
+│   ├── test_search_evaluation_cli.py
+│   ├── test_visual_embedding_provider.py
 │   ├── test_transcript_insights.py
 │   ├── test_transcript_exporter.py
 │   ├── test_transcript_manager.py
