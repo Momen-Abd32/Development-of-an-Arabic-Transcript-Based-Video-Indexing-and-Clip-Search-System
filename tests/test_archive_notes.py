@@ -102,7 +102,7 @@ def test_note_mutations_append_audit_events(tmp_path):
         audit.close()
 
 
-@pytest.mark.parametrize("timestamp", [-1, float("nan"), float("inf"), True])
+@pytest.mark.parametrize("timestamp", [-1, float("nan"), float("inf"), True, 10**1000])
 def test_add_note_rejects_invalid_timestamps(notes, timestamp):
     with pytest.raises((TypeError, ValueError)):
         notes.add_note(MEDIA_A, timestamp, "ملاحظة")
@@ -146,3 +146,20 @@ def test_note_table_has_timestamp_and_text_constraints(notes):
             """,
             ("c" * 32, MEDIA_A, -1, "bad", "editor", "now", "now", "editor"),
         )
+
+
+
+@pytest.mark.parametrize("author", ["", " ", "x" * 121, None])
+def test_add_note_rejects_invalid_author(notes, author):
+    with pytest.raises(ValueError):
+        notes.add_note(MEDIA_A, 0, "ملاحظة", author=author)
+
+
+def test_update_note_rejects_invalid_fields(notes):
+    created = notes.add_note(MEDIA_A, 2, "ملاحظة")
+    with pytest.raises(ValueError):
+        notes.update_note(created["note_id"], timestamp_seconds=-1)
+    with pytest.raises(ValueError):
+        notes.update_note(created["note_id"], note_text="   ")
+    with pytest.raises(ValueError):
+        notes.update_note(created["note_id"], note_text="تعديل", updated_by=" ")
