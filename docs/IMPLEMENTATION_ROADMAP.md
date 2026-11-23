@@ -55,9 +55,10 @@ The current feature branch contains initial foundations for multilingual semanti
 - Video keyframe extraction now produces sampled JPEGs and previews them in the transcript workspace; timestamp-aware visual search and keyframe indexing are still outstanding.
 - Media catalog records now support optional collection names and normalized tags, with backward-compatible JSON loading, archive management UI, and collection/tag filtering of the archive list.
 - A separate SQLite processing queue now persists folder-import jobs, attempts, status, per-file progress, failures, cancellation of queued jobs, manual retry, and expired-worker-lease recovery. An independent CLI worker now supports continuous polling and heartbeat leases. Stage-level progress and cooperative cancellation of active work remain future work; the Streamlit UI also retains a synchronous run-one-job option.
+- An append-only SQLite audit history now records media registration/status/metadata changes and processing-job lifecycle transitions, with UTC timestamps, actor labels, entity IDs, and JSON change details. The default actor is `system` until authenticated identities exist; tamper-evident storage and retention policies remain future work.
 - The archive dashboard now reports media-type and processing-state counts, stored media size, transcript file count, missing source files, SQLite integrity, and availability of FFmpeg and optional model packages. Runtime metrics are read-only and do not imply that a model is downloaded or loaded.
 - Speaker diarization requires optional pyannote dependencies, model access, and validation against representative Arabic recordings.
-- CI passed 230 tests on commit `0d4a27740ac157cc51c993e46f14e0b9bde93b7c`, including application/source compilation, the archive dashboard, background-worker lifecycle, heartbeat handling, and expired-job retry-limit coverage. Subsequent README/roadmap structure updates are documentation-only; the final code state is covered by this passing run.
+- The previous CI run passed 230 tests on commit `0d4a27740ac157cc51c993e46f14e0b9bde93b7c`. Audit-history additions include new focused tests; the current branch must pass a fresh CI run before these additions are considered verified.
 
 ## Delivery order
 
