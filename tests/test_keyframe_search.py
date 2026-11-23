@@ -116,3 +116,30 @@ def test_visual_index_preserves_previous_embeddings_when_reindex_fails(visual_in
 
     results = visual_index.search_text("سيارة", provider)
     assert len(results) == 1
+
+
+def test_persists_explicit_ffmpeg_presentation_timestamps(visual_index, tmp_path):
+    first = tmp_path / "first.jpg"
+    second = tmp_path / "second.jpg"
+    first.write_bytes(b"first")
+    second.write_bytes(b"second")
+
+    assert visual_index.replace_media_keyframes(
+        "media-ts",
+        [(first, 0.125), (second, 7.875)],
+    ) == 2
+    rows = visual_index.get_media_keyframes("media-ts")
+    assert [row["timestamp_seconds"] for row in rows] == [0.125, 7.875]
+
+
+def test_rejects_non_monotonic_explicit_timestamps(visual_index, tmp_path):
+    first = tmp_path / "first.jpg"
+    second = tmp_path / "second.jpg"
+    first.write_bytes(b"first")
+    second.write_bytes(b"second")
+
+    with pytest.raises(ValueError, match="increasing"):
+        visual_index.replace_media_keyframes(
+            "media-ts",
+            [(first, 5.0), (second, 4.0)],
+        )
