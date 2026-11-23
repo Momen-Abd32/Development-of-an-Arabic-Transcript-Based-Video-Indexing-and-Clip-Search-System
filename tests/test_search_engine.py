@@ -121,6 +121,49 @@ def test_boolean_search_limit_is_rejected(search_engine):
         search_engine.fuzzy_search("البرمجة", limit=True)
 
 
+class FakeEmbeddingProvider:
+    model_name = "fake-arabic-v1"
+
+    def embed_query(self, text):
+        return [1.0, 0.0]
+
+    def embed_documents(self, texts):
+        return [
+            [1.0, 0.0] if "البرمجة" in text else [0.0, 1.0]
+            for text in texts
+        ]
+
+
+def test_semantic_search_uses_optional_embedding_index(search_engine):
+    provider = FakeEmbeddingProvider()
+    assert search_engine.index_semantic_media("video1", provider) == 2
+
+    results = search_engine.semantic_search("البرمجة", provider)
+
+    assert len(results) == 2
+    assert all(result["video_id"] == "video1" for result in results)
+
+
+def test_hybrid_search_combines_existing_and_semantic_search(search_engine):
+    provider = FakeEmbeddingProvider()
+    search_engine.index_semantic_media("video1", provider)
+
+    results = search_engine.hybrid_search("البرمجة", provider)
+
+    assert results
+    assert all("hybrid_score" in result for result in results)
+    assert results[0]["video_id"] == "video1"
+
+
+def test_hybrid_search_validates_rrf_constant(search_engine):
+    with pytest.raises(ValueError):
+        search_engine.hybrid_search(
+            "البرمجة",
+            FakeEmbeddingProvider(),
+            rrf_k=True,
+        )
+
+
 def test_boolean_fuzzy_threshold_is_rejected(search_engine):
     with pytest.raises(ValueError):
         search_engine.fuzzy_search("البرمجة", threshold=True)
