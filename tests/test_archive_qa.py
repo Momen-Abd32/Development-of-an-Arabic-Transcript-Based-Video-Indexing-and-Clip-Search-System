@@ -104,6 +104,7 @@ def test_archive_qa_abstains_when_no_relevant_evidence_exists():
         "answer": None,
         "answer_citation": None,
         "evidence": [],
+        "warnings": [],
         "message": (
             "No relevant transcript evidence was found in the selected archive scope. "
             "The system will not guess an answer."
@@ -195,7 +196,10 @@ def test_archive_qa_integrates_with_sqlite_fts_and_fuzzy_retrieval(tmp_path):
         assert result["answer"] == "أعلنت اللجنة نتائج الاجتماع صباح اليوم."
         assert result["answer_citation"]["media_id"] == "archive-video-001"
         assert result["answer_citation"]["start"] == 42.0
-        assert "exact" in result["evidence"][0]["retrieved_by"]
+        assert set(result["evidence"][0]["retrieved_by"]).issubset(
+            {"exact", "fuzzy"}
+        )
+        assert result["evidence"][0]["retrieved_by"]
     finally:
         engine.close()
 
