@@ -322,7 +322,7 @@ def test_processing_stage_updates_are_persisted_and_validated(tmp_path):
         queue.update_stage(job["job_id"], " ")
     with pytest.raises(ValueError, match="non-empty string or None"):
         queue.update_stage(job["job_id"], "transcribing", current_file=" ")
-    for invalid in (-1, 101, float("nan"), float("inf"), True):
+    for invalid in (-1, 101, float("nan"), float("inf"), True, 10**1000):
         with pytest.raises(ValueError, match="Stage progress"):
             queue.update_stage(job["job_id"], "transcribing", stage_progress=invalid)
 
