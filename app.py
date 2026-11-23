@@ -66,6 +66,21 @@ TEXT = {
         "transcript_tab": "التفريغ النصي",
         "search_tab": "البحث داخل الفيديو",
         "clips_tab": "المقاطع المحفوظة",
+        "archive_tab": "إدارة الأرشيف",
+        "archive_title": "تنظيم الأرشيف",
+        "archive_desc": "نظّم ملفات الوسائط داخل مجموعات وأضف وسومًا لتسهيل إدارتها.",
+        "archive_media": "اختر ملفًا من الأرشيف",
+        "collection": "المجموعة",
+        "collection_placeholder": "مثال: مقابلات إخبارية",
+        "tags": "الوسوم",
+        "tags_help": "اكتب الوسوم مفصولة بفواصل.",
+        "save_archive_metadata": "حفظ بيانات التنظيم",
+        "archive_metadata_saved": "تم حفظ المجموعة والوسوم.",
+        "filter_collection": "تصفية حسب المجموعة",
+        "all_collections": "كل المجموعات",
+        "filter_tags": "تصفية حسب الوسوم",
+        "archive_items": "ملفات الأرشيف",
+        "no_archive_items": "لا توجد ملفات في الأرشيف.",
         "upload_title": "ارفع فيديو أو ملفاً صوتياً",
         "upload_help": "الفيديو: MP4, MKV, MOV, AVI, WEBM | الصوت: MP3, WAV, M4A, AAC, FLAC, OGG — الحد الأقصى 2 GB",
         "choose_video": "اختر ملف فيديو أو صوت",
@@ -168,6 +183,21 @@ TEXT = {
         "transcript_tab": "Transcript",
         "search_tab": "Video Search",
         "clips_tab": "Saved Clips",
+        "archive_tab": "Archive Management",
+        "archive_title": "Organize the Archive",
+        "archive_desc": "Organize media into collections and add tags for easier archive management.",
+        "archive_media": "Select an archive item",
+        "collection": "Collection",
+        "collection_placeholder": "e.g. News Interviews",
+        "tags": "Tags",
+        "tags_help": "Enter tags separated by commas.",
+        "save_archive_metadata": "Save Organization Metadata",
+        "archive_metadata_saved": "Collection and tags saved.",
+        "filter_collection": "Filter by collection",
+        "all_collections": "All collections",
+        "filter_tags": "Filter by tags",
+        "archive_items": "Archive Items",
+        "no_archive_items": "No media items in the archive.",
         "upload_title": "Upload a Video or Audio File",
         "upload_help": "Video: MP4, MKV, MOV, AVI, WEBM | Audio: MP3, WAV, M4A, AAC, FLAC, OGG — Maximum size: 2 GB",
         "choose_video": "Choose a video or audio file",
@@ -502,8 +532,8 @@ with metric_col3:
 # Main sections
 # --------------------------------------------------
 
-tab_upload, tab_transcript, tab_search, tab_clips = st.tabs(
-    [t["upload_tab"], t["transcript_tab"], t["search_tab"], t["clips_tab"]]
+tab_upload, tab_transcript, tab_search, tab_clips, tab_archive = st.tabs(
+    [t["upload_tab"], t["transcript_tab"], t["search_tab"], t["clips_tab"], t["archive_tab"]]
 )
 
 
@@ -1128,6 +1158,91 @@ with tab_clips:
                     )
         else:
             st.info(t["no_clips"])
+
+
+# 5. Archive organization
+# --------------------------------------------------
+
+with tab_archive:
+    st.subheader("🗂️ " + t["archive_title"])
+    st.write(t["archive_desc"])
+
+    catalog = MediaCatalog()
+    archive_records = catalog.get_all()
+
+    if not archive_records:
+        st.info(t["no_archive_items"])
+    else:
+        labels = {
+            f'{item["source_name"]} · {item["media_id"][:12]}': item["media_id"]
+            for item in archive_records
+        }
+        selected_label = st.selectbox(
+            t["archive_media"],
+            list(labels.keys()),
+        )
+        selected_media_id = labels[selected_label]
+        selected_record = catalog.get_by_id(selected_media_id) or {}
+
+        with st.form("archive_metadata_form"):
+            collection_value = st.text_input(
+                t["collection"],
+                value=selected_record.get("collection", ""),
+                placeholder=t["collection_placeholder"],
+            )
+            tags_value = st.text_input(
+                t["tags"],
+                value=", ".join(selected_record.get("tags", [])),
+                help=t["tags_help"],
+            )
+            save_metadata = st.form_submit_button(t["save_archive_metadata"])
+
+        if save_metadata:
+            try:
+                catalog.update_archive_metadata(
+                    selected_media_id,
+                    collection=collection_value,
+                    tags=[
+                        tag.strip()
+                        for tag in tags_value.split(",")
+                        if tag.strip()
+                    ],
+                )
+                st.success(t["archive_metadata_saved"])
+                st.rerun()
+            except Exception as error:
+                st.error(f'{t["save_failed"]}: {error}')
+
+        st.divider()
+        st.markdown(f'### {t["archive_items"]}')
+        collection_options = [t["all_collections"]] + catalog.get_collections()
+        selected_collection = st.selectbox(
+            t["filter_collection"],
+            collection_options,
+        )
+        tag_options = catalog.get_all_tags()
+        selected_tags = st.multiselect(
+            t["filter_tags"],
+            tag_options,
+        )
+        filtered_records = catalog.filter_media(
+            collection=(
+                None if selected_collection == t["all_collections"]
+                else selected_collection
+            ),
+            tags=selected_tags,
+        )
+        st.caption(f'{len(filtered_records)} / {len(archive_records)}')
+        for item in filtered_records:
+            with st.container(border=True):
+                st.markdown(f'**{item["source_name"]}**')
+                st.caption(
+                    f'{item["media_type"]} · {item["status"]} · '
+                    f'{item.get("collection", t["all_collections"])}'
+                )
+                if item.get("tags"):
+                    st.write(" · ".join(item["tags"]))
+                st.caption(item["media_id"])
 
 
 # --------------------------------------------------
