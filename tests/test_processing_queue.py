@@ -207,3 +207,19 @@ def test_expired_job_at_attempt_limit_becomes_failed_not_stuck_queued(tmp_path):
     assert "retry limit reached" in recovered["error"]
     assert queue.claim_next() is None
     queue.close()
+
+def test_queue_lifecycle_is_written_to_audit_log(tmp_path):
+    queue = ProcessingQueue(tmp_path / "queue.db")
+    job = queue.enqueue("batch_import", {"input_directory": "archive"})
+    queue.claim_next()
+    queue.update_progress(job["job_id"], 25)
+    queue.complete(job["job_id"])
+
+    events = queue.audit_log.list_events(
+        entity_type="processing_job", entity_id=job["job_id"]
+    )
+    assert {event["action"] for event in events} == {
+        "job_enqueued", "job_started", "job_completed"
+    }
+    assert all(event["actor"] == "system" for event in events)
+    queue.close()
