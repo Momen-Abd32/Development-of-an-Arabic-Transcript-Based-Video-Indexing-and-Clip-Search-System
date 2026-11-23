@@ -172,3 +172,26 @@ def test_timestamp_mode_rejects_missing_ffmpeg_timestamps(tmp_path, monkeypatch)
             video, output, return_timestamps=True
         )
     assert previous.read_bytes() == b"previous"
+
+
+def test_default_keyframe_limit_covers_longer_recordings(tmp_path, monkeypatch):
+    video = tmp_path / "source.mp4"
+    video.write_bytes(b"video")
+    output = tmp_path / "frames"
+    monkeypatch.setattr(
+        "src.media.keyframe_extractor.shutil.which",
+        lambda name: "ffmpeg",
+    )
+    captured = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        _write_frame(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(
+        "src.media.keyframe_extractor.subprocess.run",
+        fake_run,
+    )
+    KeyframeExtractor.extract(video, output)
+    assert captured["command"][captured["command"].index("-frames:v") + 1] == "300"
