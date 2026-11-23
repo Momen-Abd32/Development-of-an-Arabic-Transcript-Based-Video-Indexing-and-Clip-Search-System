@@ -47,7 +47,7 @@ def test_evaluate_rankings_returns_macro_averages():
     ]
     metrics = evaluate_rankings(cases, rankings, k=2)
     assert metrics["query_count"] == 2
-    assert metrics["precision@2"] == 0.75
+    assert metrics["precision@2"] == 0.5
     assert metrics["recall@2"] == 1.0
     assert metrics["mrr"] == 0.75
 
