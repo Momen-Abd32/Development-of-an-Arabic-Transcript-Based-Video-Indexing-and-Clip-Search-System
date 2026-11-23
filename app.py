@@ -271,6 +271,9 @@ TEXT = {
         "archive_qa_segment": "معرّف المقطع",
         "archive_qa_play": "تشغيل المصدر من هذا التوقيت",
         "archive_qa_semantic_unavailable": "تعذر تشغيل الاسترجاع الدلالي؛ سيستمر البحث النصي.",
+        "archive_qa_matching_media": "عدد الملفات المطابقة للفلاتر",
+        "archive_qa_collection": "المجموعة",
+        "archive_qa_tags": "الوسوم",
         "cross_modal_tab": "البحث الموحّد",
         "cross_modal_title": "بحث موحّد في النصوص واللقطات",
         "cross_modal_desc": "اجمع نتائج التفريغ النصي واللقطات البصرية في قائمة مرتبة واحدة. تُدمج الرتب ولا تُقارن درجات التشابه الخام بين النماذج.",
@@ -440,6 +443,9 @@ TEXT = {
         "archive_qa_segment": "Segment ID",
         "archive_qa_play": "Play source from this timestamp",
         "archive_qa_semantic_unavailable": "Semantic retrieval could not run; transcript search will continue.",
+        "archive_qa_matching_media": "Media items matching filters",
+        "archive_qa_collection": "Collection",
+        "archive_qa_tags": "Tags",
         "clips_tab": "Saved Clips",
         "archive_tab": "Archive Management",
         "dashboard_tab": "Dashboard",
@@ -2134,14 +2140,56 @@ with tab_qa:
             horizontal=True,
             key="archive_qa_scope",
         )
-        qa_records = MediaCatalog().get_all()
+        qa_catalog_manager = MediaCatalog()
+        qa_records = qa_catalog_manager.get_all()
+        with st.expander(t["search_filters"], expanded=False):
+            qa_media_type_label = st.selectbox(
+                t["filter_media_type"],
+                [t["filter_all"], t["filter_video"], t["filter_audio"]],
+                key="archive_qa_media_type",
+            )
+            qa_source_filter = st.text_input(
+                t["filter_source"],
+                key="archive_qa_source_filter",
+            )
+            qa_collections = qa_catalog_manager.get_collections()
+            qa_collection_label = st.selectbox(
+                t["archive_qa_collection"],
+                [t["filter_all"], *qa_collections],
+                key="archive_qa_collection_filter",
+            )
+            qa_available_tags = qa_catalog_manager.get_all_tags()
+            qa_selected_tags = st.multiselect(
+                t["archive_qa_tags"],
+                qa_available_tags,
+                key="archive_qa_tag_filter",
+            )
+
+        qa_type_value = {
+            t["filter_all"]: None,
+            t["filter_video"]: "video",
+            t["filter_audio"]: "audio",
+        }[qa_media_type_label]
+        qa_filtered_records = qa_catalog_manager.filter_media(
+            media_type=qa_type_value,
+            source_contains=qa_source_filter.strip() or None,
+            collection=(
+                qa_collection_label
+                if qa_collection_label != t["filter_all"] else None
+            ),
+            tags=qa_selected_tags,
+        )
         qa_current_media_id = st.session_state.get("video_id")
         if qa_scope == t["current_media"]:
-            qa_media_ids = (
-                [qa_current_media_id] if qa_current_media_id else []
-            )
+            qa_media_ids = [
+                item["media_id"] for item in qa_filtered_records
+                if item["media_id"] == qa_current_media_id
+            ]
         else:
-            qa_media_ids = [item["media_id"] for item in qa_records]
+            qa_media_ids = [item["media_id"] for item in qa_filtered_records]
+        st.caption(
+            f'{t["archive_qa_matching_media"]}: {len(qa_media_ids)}'
+        )
 
         qa_question = st.text_area(
             t["archive_qa_question"],
