@@ -62,7 +62,7 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - **Video keyframes:** Extract sampled JPEG thumbnails with FFmpeg, preserve the actual frame presentation timestamps, safely replace prior generated frames, and preview them in the transcript workspace.
 - **Visual keyframe search:** Index extracted frames in SQLite and search across them using Arabic text descriptions or a reference image with an optional multilingual CLIP model; results include the source media and frame timestamp, with an option to preview the original video at the matched time.
 - **Unified cross-modal search:** Combine exact and fuzzy transcript matches with CLIP keyframe matches in one timestamped result list using Reciprocal Rank Fusion (RRF). The system fuses ranks rather than comparing uncalibrated text and image similarity scores; reference-image queries return visually similar frames.
-- **Evidence-first archive Q&A:** Ask questions over indexed transcripts, scope retrieval by current media or the entire archive, filter by media type, source name, added-date range, collection, and tags, retrieve and rank verbatim transcript passages, cite the media ID, segment ID, speaker, and timestamps, and abstain when no evidence is found. Optional semantic retrieval can supplement exact and fuzzy search.
+- **Evidence-first archive Q&A:** Ask questions over indexed transcripts, scope retrieval by current media or the entire archive, filter by media type, source name, added-date range, collection, and tags, retrieve and rank verbatim transcript passages, cite the media ID, segment ID, speaker, and timestamps, and abstain when no evidence is found. Optional semantic retrieval and local Ollama multi-passage answer generation can supplement exact and fuzzy search.
 - **Timestamped review notes:** Create, edit, delete, and play back notes attached to a media item and timestamp. Note changes are recorded in the append-only audit history.
 - **Arabic text normalization:** Normalize common Arabic character variations, remove diacritics and tatweel, and standardize whitespace to improve search consistency.
 - **Exact full-text search:** Find transcript segments using SQLite FTS5.
@@ -336,6 +336,7 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   │
 │   ├── search/
 │   │   ├── archive_qa.py
+│   │   ├── local_answer_provider.py
 │   │   ├── cross_modal_evaluation.py
 │   │   ├── cross_modal_search.py
 │   │   ├── evaluation.py
@@ -356,6 +357,7 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 ├── tests/
 │   ├── test_archive_metrics.py
 │   ├── test_archive_qa.py
+│   ├── test_local_answer_provider.py
 │   ├── test_auth_manager.py
 │   ├── test_archive_backup.py
 │   ├── test_archive_backup_cli.py
@@ -691,7 +693,13 @@ The Streamlit application includes an **Ask the Archive** workspace. It searches
 
 The initial answer is deliberately **extractive**, not generative: it quotes the highest-ranked original transcript segment verbatim and attaches a citation containing the media ID, segment ID, and start/end timestamps. Additional ranked passages are shown as evidence, with source playback links when the original media file is available. If no transcript evidence is retrieved, the system abstains instead of inventing an answer.
 
-This first slice does not yet synthesize multi-passage answers, answer directly from visual frames, or establish that a quoted passage logically proves a conclusion. Users should review the cited source context. It is not a replacement for a human editorial decision.
+The default mode is extractive and requires no local language model. For optional multi-passage answer generation, install and start [Ollama](https://ollama.com), then pull a local model such as:
+
+```bash
+ollama pull qwen2.5:3b
+```
+
+Enable **Generate a multi-passage answer with local Ollama** in the Q&A workspace and enter the installed model name if it differs. The adapter connects only to the loopback Ollama service at `127.0.0.1:11434`; it does not send transcript evidence to a remote model endpoint. Every generated claim must cite media and segment IDs present in the retrieved evidence, otherwise the UI falls back to the verbatim extractive quote. This validates citation membership, not logical entailment: users must still review the cited context. Visual-only question answering is not implemented.
 
 ## Search Retrieval Evaluation
 
