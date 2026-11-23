@@ -247,7 +247,9 @@ class AuthManager:
     def authenticate(self, username: str, password: str) -> dict | None:
         if not isinstance(username, str) or not isinstance(password, str):
             return None
-        normalized = username.strip().lower()[:64]
+        normalized = username.strip().lower()
+        username_valid = bool(self.USERNAME_PATTERN.fullmatch(normalized))
+        attempt_key = (normalized[:64] or "<invalid>")
         now = datetime.now(timezone.utc)
         cutoff = (now - timedelta(minutes=self.lockout_minutes)).isoformat()
         attempts = self.connection.execute(
@@ -255,19 +257,22 @@ class AuthManager:
             SELECT COUNT(*) FROM auth_login_attempts
             WHERE username = ? AND succeeded = 0 AND attempted_at >= ?
             """,
-            (normalized, cutoff),
+            (attempt_key, cutoff),
         ).fetchone()[0]
         if attempts >= self.max_failed_attempts:
             raise AuthRateLimitError(
                 f"Too many failed login attempts. Try again in {self.lockout_minutes} minutes."
             )
 
-        row = self.connection.execute(
-            "SELECT * FROM archive_users WHERE username = ?",
-            (normalized,),
-        ).fetchone()
+        row = None
+        if username_valid:
+            row = self.connection.execute(
+                "SELECT * FROM archive_users WHERE username = ?",
+                (normalized,),
+            ).fetchone()
         salt = row["password_salt"] if row else b"archive-auth-dummy-salt"
         iterations = row["password_iterations"] if row else self.iterations
+        password_valid = len(password) <= self.PASSWORD_MAX_LENGTH
         candidate = hashlib.pbkdf2_hmac(
             "sha256",
             password[:self.PASSWORD_MAX_LENGTH].encode("utf-8"),
@@ -275,7 +280,9 @@ class AuthManager:
             iterations,
         )
         valid = bool(
-            row
+            username_valid
+            and password_valid
+            and row
             and row["is_active"]
             and hmac.compare_digest(candidate, row["password_hash"])
         )
@@ -284,7 +291,7 @@ class AuthManager:
             INSERT INTO auth_login_attempts (username, attempted_at, succeeded)
             VALUES (?, ?, ?)
             """,
-            (normalized or "<invalid>", now.isoformat(), int(valid)),
+            (attempt_key, now.isoformat(), int(valid)),
         )
         self.connection.execute(
             "DELETE FROM auth_login_attempts WHERE attempted_at < ?",
@@ -295,7 +302,7 @@ class AuthManager:
 
         self.connection.execute(
             "DELETE FROM auth_login_attempts WHERE username = ?",
-            (normalized,),
+            (attempt_key,),
         )
         return self._public_user(row)
 
@@ -417,6 +424,8 @@ class AuthManager:
         new_password: str,
     ) -> dict:
         username = self._normalize_username(username)
+        if not isinstance(current_password, str) or len(current_password) > self.PASSWORD_MAX_LENGTH:
+            raise ValueError("Current password is invalid.")
         new_password = self._validate_password(new_password)
         row = self.connection.execute(
             "SELECT * FROM archive_users WHERE username = ? AND is_active = 1",
