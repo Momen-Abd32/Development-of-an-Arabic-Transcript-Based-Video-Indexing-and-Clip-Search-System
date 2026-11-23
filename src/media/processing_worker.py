@@ -29,19 +29,19 @@ class ProcessingWorker:
         self.processor_factory = processor_factory
         self.lease_seconds = lease_seconds
         self.heartbeat_interval = interval
-        self._stop_event = threading.Event()
+        self._shutdown_event = threading.Event()
 
     def close(self) -> None:
         if self._owns_queue:
             self.queue.close()
 
     def stop(self) -> None:
-        self._stop_event.set()
+        self._shutdown_event.set()
 
-    def _heartbeat_loop(self, job_id: str) -> None:
+    def _heartbeat_loop(self, job_id: str, stop_event: threading.Event) -> None:
         heartbeat_queue = ProcessingQueue(self.queue.database_path)
         try:
-            while not self._stop_event.wait(self.heartbeat_interval):
+            while not stop_event.wait(self.heartbeat_interval):
                 if not heartbeat_queue.heartbeat(job_id):
                     return
         finally:
@@ -53,10 +53,10 @@ class ProcessingWorker:
         if job is None:
             return None
 
-        self._stop_event.clear()
+        heartbeat_stop = threading.Event()
         heartbeat_thread = threading.Thread(
             target=self._heartbeat_loop,
-            args=(job["job_id"],),
+            args=(job["job_id"], heartbeat_stop),
             daemon=True,
         )
         heartbeat_thread.start()
@@ -87,14 +87,14 @@ class ProcessingWorker:
             final_job = self.queue.fail(job["job_id"], str(error))
             return {"job": final_job, "results": [], "error": str(error)}
         finally:
-            self._stop_event.set()
+            heartbeat_stop.set()
             heartbeat_thread.join(timeout=self.heartbeat_interval + 1)
 
     def run_forever(self, poll_seconds: float = 5) -> None:
         if isinstance(poll_seconds, bool) or not isinstance(poll_seconds, (int, float)) or poll_seconds <= 0:
             raise ValueError("Polling interval must be a positive number.")
-        self._stop_event.clear()
-        while not self._stop_event.is_set():
+        self._shutdown_event.clear()
+        while not self._shutdown_event.is_set():
             result = self.run_once()
             if result is None:
-                self._stop_event.wait(poll_seconds)
+                self._shutdown_event.wait(poll_seconds)
