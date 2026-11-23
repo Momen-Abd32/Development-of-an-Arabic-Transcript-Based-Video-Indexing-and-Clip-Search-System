@@ -1174,7 +1174,7 @@ with tab_archive:
         st.info(t["no_archive_items"])
     else:
         labels = {
-            f'{item["source_name"]} · {item["media_id"][:12]}': item["media_id"]
+            f'{item["source_name"]} · {item["media_id"]}': item["media_id"]
             for item in archive_records
         }
         selected_label = st.selectbox(
