@@ -291,6 +291,69 @@ def test_existing_queue_database_is_migrated_for_cancel_requests(tmp_path):
         for row in queue.connection.execute("PRAGMA table_info(processing_jobs)")
     }
     assert "cancel_requested" in columns
+    assert {"stage", "current_file", "stage_progress"}.issubset(columns)
     queued = queue.enqueue("batch_import", {})
     assert queued["cancel_requested"] == 0
+    assert queued["stage"] == "queued"
+    assert queued["current_file"] is None
+    assert queued["stage_progress"] == 0
+    queue.close()
+
+
+
+def test_processing_stage_updates_are_persisted_and_validated(tmp_path):
+    queue = ProcessingQueue(tmp_path / "queue.db")
+    job = queue.enqueue("batch_import", {})
+    with pytest.raises(ValueError, match="running jobs"):
+        queue.update_stage(job["job_id"], "transcribing")
+
+    queue.claim_next()
+    updated = queue.update_stage(
+        job["job_id"],
+        "transcribing",
+        current_file="/archive/interview.mp4",
+        stage_progress=62.5,
+    )
+    assert updated["stage"] == "transcribing"
+    assert updated["current_file"] == "/archive/interview.mp4"
+    assert updated["stage_progress"] == 62.5
+
+    with pytest.raises(ValueError, match="non-empty"):
+        queue.update_stage(job["job_id"], " ")
+    with pytest.raises(ValueError, match="non-empty string or None"):
+        queue.update_stage(job["job_id"], "transcribing", current_file=" ")
+    for invalid in (-1, 101, float("nan"), float("inf"), True):
+        with pytest.raises(ValueError, match="Stage progress"):
+            queue.update_stage(job["job_id"], "transcribing", stage_progress=invalid)
+
+    queue.complete(job["job_id"])
+    completed = queue.get(job["job_id"])
+    assert completed["stage"] == "completed"
+    assert completed["stage_progress"] == 100
+    assert completed["current_file"] is None
+    queue.close()
+
+
+def test_retry_and_recovery_reset_stage_state(tmp_path):
+    path = tmp_path / "queue.db"
+    queue = ProcessingQueue(path)
+    job = queue.enqueue("batch_import", {})
+    queue.claim_next()
+    queue.update_stage(job["job_id"], "transcribing", "/archive/a.mp4", 55)
+    failed = queue.fail(job["job_id"], "temporary error")
+    assert failed["status"] == "queued"
+    assert failed["stage"] == "retry_wait"
+    assert failed["stage_progress"] == 0
+
+    queue.claim_next()
+    queue.update_stage(job["job_id"], "indexing_transcript", "/archive/a.mp4", 90)
+    queue.connection.execute(
+        "UPDATE processing_jobs SET locked_at = '2000-01-01T00:00:00+00:00' WHERE job_id = ?",
+        (job["job_id"],),
+    )
+    assert queue.recover_stale_jobs(60) == 1
+    recovered = queue.get(job["job_id"])
+    assert recovered["stage"] == "queued"
+    assert recovered["current_file"] is None
+    assert recovered["stage_progress"] == 0
     queue.close()
