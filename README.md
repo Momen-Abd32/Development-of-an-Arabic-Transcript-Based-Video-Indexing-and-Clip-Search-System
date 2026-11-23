@@ -45,6 +45,7 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - **Durable processing queue:** Persist folder-import jobs in a separate SQLite database, track overall progress, the current file and processing stage, and stage start/completion indicators; retry failures, cancel queued jobs immediately, request cooperative cancellation of active jobs between files, and recover interrupted jobs after restart.
 - **Independent background worker:** Run the persistent processing queue as a separate CLI process with polling, worker heartbeats, and expired-lease recovery.
 - **Archive dashboard:** Summarize media counts, stored file size, transcript totals, processing and queue states, missing source files, database integrity, and runtime dependency availability.
+- **Archive backup and restore:** Create checksummed snapshots of data and exports, use SQLite's online backup API for live databases, verify every file before restore, and restore only into a new directory without overwriting existing data.
 - **Media catalog:** Persist each media file's type, original filename, stored path, and processing status.
 - **Archive collections and tags:** Organize media with optional collection names and deduplicated tags; filter the archive by collection and selected tags.
 - **Archive-wide search:** Search transcript segments across all imported media or limit the search to the currently selected file.
@@ -219,7 +220,7 @@ flowchart TB
 
 The application uses a combination of local files and SQLite. The main runtime locations are:
 
-The processing queue uses a separate SQLite database so job state can be persisted without modifying transcript or FTS tables. The Streamlit interface currently runs a queued batch synchronously when requested; a continuously running background worker is a later operational step.
+The processing queue uses a separate SQLite database so job state can be persisted without modifying transcript or FTS tables. The Streamlit interface can run a queued batch synchronously, and a separate heartbeat-based worker can process jobs continuously.
 
 | Location | Stored data |
 |---|---|
@@ -235,6 +236,7 @@ The processing queue uses a separate SQLite database so job state can be persist
 | `data/database/clips.json` | Metadata for saved video clips |
 | `exports/clips/` | Extracted MP4 video clips |
 | `exports/` | Transcript and clip-list CSV exports |
+| `exports/backups/` | Checksummed ZIP snapshots of archive data and exports |
 
 ### Clip metadata
 
@@ -315,6 +317,7 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   │   └── text_processor.py
 │   │
 │   ├── media/
+│   │   ├── archive_backup.py
 │   │   ├── archive_notes.py
 │   │   ├── audio_extractor.py
 │   │   ├── archive_metrics.py
@@ -345,6 +348,8 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 ├── tests/
 │   ├── test_archive_metrics.py
 │   ├── test_archive_qa.py
+│   ├── test_archive_backup.py
+│   ├── test_archive_backup_cli.py
 │   ├── test_archive_notes.py
 │   ├── test_folder_watcher.py
 │   ├── test_folder_watcher_cli.py
@@ -381,6 +386,7 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
     ├── evaluate_cross_modal_search.py
     ├── evaluate_visual_search.py
     ├── import_media_dataset.py
+    ├── manage_archive_backup.py
     ├── run_processing_worker.py
     ├── watch_media_folders.py
     └── test_transcription.py
@@ -582,6 +588,30 @@ The worker claims jobs transactionally, reports per-file progress, retries faile
 The application stores an append-only audit trail in `data/database/processing_queue.db`. It records media registration and metadata/status changes, plus processing-job enqueue, start, retry scheduling, failure, cancellation, manual retry, and completion events. Each event includes a UTC timestamp, actor (defaults to `system` until authentication is introduced), entity identity, and JSON before/after details where applicable.
 
 Use the `AuditLog` service to query recent events or filter by entity type, entity ID, and actor. The audit history is local to this application instance; it is not yet a tamper-proof compliance log or a substitute for authenticated user identity.
+
+## Archive Backup and Restore
+
+Create a backup from the repository root:
+
+```bash
+python scripts/manage_archive_backup.py create --output exports/backups/archive-snapshot.zip
+```
+
+Verify the manifest and SHA-256 checksums before relying on a backup:
+
+```bash
+python scripts/manage_archive_backup.py verify --backup exports/backups/archive-snapshot.zip
+```
+
+Restore into a **new directory that does not already exist**:
+
+```bash
+python scripts/manage_archive_backup.py restore --backup exports/backups/archive-snapshot.zip --target ../archive-restore
+```
+
+Backups include files under `data/` and `exports/`. SQLite database files are captured through SQLite's online backup API so committed WAL data is included consistently. Temporary files, SQLite WAL/SHM sidecars, symlinks, and previous backups under `exports/backups/` are excluded. The manifest records each included file's size and SHA-256 digest; verification rejects path traversal, missing files, unexpected entries, and checksum mismatches.
+
+Restore does not overwrite the live application directory. After checking the restored contents, stop the app and background workers before copying the restored `data/` and `exports/` directories into the application root. Source code, environment variables, secrets, and model caches are not included.
 
 ## Running Tests
 
