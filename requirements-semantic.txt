@@ -1,0 +1,3 @@
+# Optional dependencies for multilingual semantic and hybrid search.
+# Install after requirements.txt: pip install -r requirements-semantic.txt
+sentence-transformers==5.2.0
