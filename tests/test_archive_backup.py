@@ -278,3 +278,19 @@ def test_verifier_rejects_boolean_format_version(tmp_path):
 
     with pytest.raises(ValueError, match="manifest"):
         ArchiveBackup.verify_backup(backup)
+
+
+
+def test_backup_rejects_symlinked_data_root(tmp_path):
+    base = tmp_path / "application"
+    base.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("secret", encoding="utf-8")
+    try:
+        (base / "data").symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("Directory symlink creation is not available on this platform.")
+
+    with pytest.raises(ValueError, match="symbolic link"):
+        ArchiveBackup(base).create_backup(base / "backup.zip")
