@@ -6,6 +6,7 @@ from pathlib import Path
 import streamlit as st
 
 from src.media.audio_extractor import AudioExtractor
+from src.media.audit_log import AuditLog
 from src.media.media_catalog import MediaCatalog
 from src.media.keyframe_extractor import KeyframeExtractor
 from src.media.processing_queue import ProcessingQueue
@@ -71,6 +72,13 @@ TEXT = {
         "clips_tab": "المقاطع المحفوظة",
         "archive_tab": "إدارة الأرشيف",
         "dashboard_tab": "لوحة المعلومات",
+        "audit_tab": "سجل الأحداث",
+        "audit_title": "سجل تغييرات الأرشيف والمعالجة",
+        "audit_actor": "المنفّذ",
+        "audit_entity": "نوع العنصر",
+        "audit_all": "الكل",
+        "audit_empty": "لا توجد أحداث مسجلة بعد.",
+        "audit_details": "تفاصيل التغيير",
         "dashboard_title": "حالة الأرشيف والنظام",
         "dashboard_refresh": "تحديث المؤشرات",
         "dashboard_media": "إجمالي الوسائط",
@@ -228,6 +236,13 @@ TEXT = {
         "clips_tab": "Saved Clips",
         "archive_tab": "Archive Management",
         "dashboard_tab": "Dashboard",
+        "audit_tab": "Audit History",
+        "audit_title": "Archive and Processing Audit History",
+        "audit_actor": "Actor",
+        "audit_entity": "Entity Type",
+        "audit_all": "All",
+        "audit_empty": "No audit events have been recorded yet.",
+        "audit_details": "Event Details",
         "dashboard_title": "Archive and System Health",
         "dashboard_refresh": "Refresh Metrics",
         "dashboard_media": "Total Media",
@@ -615,10 +630,11 @@ with metric_col3:
 # Main sections
 # --------------------------------------------------
 
-tab_upload, tab_transcript, tab_search, tab_clips, tab_archive, tab_queue, tab_dashboard = st.tabs(
+tab_upload, tab_transcript, tab_search, tab_clips, tab_archive, tab_queue, tab_dashboard, tab_audit = st.tabs(
     [
         t["upload_tab"], t["transcript_tab"], t["search_tab"],
-        t["clips_tab"], t["archive_tab"], t["queue_tab"], t["dashboard_tab"],
+        t["clips_tab"], t["archive_tab"], t["queue_tab"],
+        t["dashboard_tab"], t["audit_tab"],
     ]
 )
 
@@ -1524,6 +1540,44 @@ with tab_dashboard:
         st.error(f'{t["dashboard_title"]}: {error}')
     finally:
         metrics.close()
+
+
+# 8. Audit history
+# --------------------------------------------------
+
+with tab_audit:
+    st.subheader("🧾 " + t["audit_title"])
+    actor_filter = st.text_input(t["audit_actor"], key="audit_actor_filter")
+    entity_filter = st.selectbox(
+        t["audit_entity"],
+        [t["audit_all"], "media", "processing_job"],
+        key="audit_entity_filter",
+    )
+    audit_log = AuditLog()
+    try:
+        events = audit_log.list_events(
+            limit=200,
+            entity_type=None if entity_filter == t["audit_all"] else entity_filter,
+            actor=actor_filter.strip() or None,
+        )
+        if not events:
+            st.info(t["audit_empty"])
+        for event in events:
+            with st.container(border=True):
+                st.markdown(
+                    f'**{event["action"]}** · {event["entity_type"]} · '
+                    f'{event["entity_id"][:16]}'
+                )
+                st.caption(
+                    f'{event["occurred_at"]} UTC · {t["audit_actor"]}: '
+                    f'{event["actor"]}'
+                )
+                with st.expander(t["audit_details"]):
+                    st.json(event["details"])
+    except Exception as error:
+        st.error(f'{t["audit_title"]}: {error}')
+    finally:
+        audit_log.close()
 
 
 # --------------------------------------------------
