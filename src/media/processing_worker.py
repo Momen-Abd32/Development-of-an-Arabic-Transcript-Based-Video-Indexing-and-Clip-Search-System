@@ -10,6 +10,10 @@ from src.media.batch_processor import MediaBatchProcessor
 from src.media.processing_queue import ProcessingQueue
 
 
+class ProcessingCancelled(Exception):
+    """Raised between media files when a running job is cancelled."""
+
+
 class ProcessingWorker:
     def __init__(
         self,
@@ -64,14 +68,22 @@ class ProcessingWorker:
         try:
             payload = job["payload"]
             processor = self.processor_factory()
+            def report_progress(completed: int, total: int) -> None:
+                self.queue.update_progress(
+                    job["job_id"],
+                    100 * completed / max(total, 1),
+                )
+                if self.queue.is_cancel_requested(job["job_id"]):
+                    raise ProcessingCancelled("Cancellation requested by user.")
+
             results = processor.process_directory(
                 payload["input_directory"],
                 recursive=payload.get("recursive", True),
-                progress_callback=lambda completed, total: self.queue.update_progress(
-                    job["job_id"],
-                    100 * completed / max(total, 1),
-                ),
+                progress_callback=report_progress,
             )
+            if self.queue.is_cancel_requested(job["job_id"]):
+                final_job = self.queue.cancel_running(job["job_id"])
+                return {"job": final_job, "results": results}
             failures = [item for item in results if item.get("status") == "failed"]
             if failures:
                 detail = "; ".join(
@@ -83,7 +95,13 @@ class ProcessingWorker:
             else:
                 final_job = self.queue.complete(job["job_id"])
             return {"job": final_job, "results": results}
+        except ProcessingCancelled:
+            final_job = self.queue.cancel_running(job["job_id"])
+            return {"job": final_job, "results": []}
         except Exception as error:
+            if self.queue.is_cancel_requested(job["job_id"]):
+                final_job = self.queue.cancel_running(job["job_id"])
+                return {"job": final_job, "results": [], "error": str(error)}
             final_job = self.queue.fail(job["job_id"], str(error))
             return {"job": final_job, "results": [], "error": str(error)}
         finally:
