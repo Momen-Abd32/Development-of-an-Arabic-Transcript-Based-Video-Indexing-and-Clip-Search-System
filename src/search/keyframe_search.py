@@ -81,14 +81,31 @@ class KeyframeSearchIndex:
             raise TypeError("Frame paths must be a list or tuple.")
 
         records = []
+        previous_timestamp = -1.0
         for index, value in enumerate(frame_paths, start=1):
-            path = Path(value)
+            if isinstance(value, tuple):
+                if len(value) != 2:
+                    raise ValueError("Timestamped keyframes must contain (path, timestamp).")
+                path = Path(value[0])
+                timestamp = value[1]
+                if (
+                    isinstance(timestamp, bool)
+                    or not isinstance(timestamp, (int, float))
+                    or not math.isfinite(timestamp)
+                    or timestamp < 0
+                    or timestamp <= previous_timestamp
+                ):
+                    raise ValueError("Keyframe timestamps must be finite, non-negative, and increasing.")
+                previous_timestamp = float(timestamp)
+            else:
+                path = Path(value)
+                timestamp = (index - 1) * float(interval_seconds)
             if not path.is_file():
                 raise FileNotFoundError(f"Keyframe image not found: {path}")
             records.append((
                 media_id,
                 index,
-                round((index - 1) * float(interval_seconds), 3),
+                round(float(timestamp), 3),
                 str(path.resolve()),
             ))
 
@@ -132,6 +149,20 @@ class KeyframeSearchIndex:
         except Exception:
             self.connection.rollback()
             raise
+
+    def get_media_keyframes(self, media_id: str) -> list[dict]:
+        if not isinstance(media_id, str) or not media_id.strip():
+            raise ValueError("Media ID cannot be empty.")
+        return [
+            dict(row)
+            for row in self.connection.execute(
+                """
+                SELECT id, media_id, frame_index, timestamp_seconds, image_path
+                FROM keyframes WHERE media_id = ? ORDER BY frame_index
+                """,
+                (media_id,),
+            ).fetchall()
+        ]
 
     def index_media(
         self,
