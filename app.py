@@ -900,6 +900,7 @@ with tab_transcript:
                     finally:
                         indexer.close()
                     st.session_state.segments = annotated_segments
+                    st.session_state.search_results = []
                     st.success(t["diarize_speakers"])
                     st.rerun()
             except Exception as error:
