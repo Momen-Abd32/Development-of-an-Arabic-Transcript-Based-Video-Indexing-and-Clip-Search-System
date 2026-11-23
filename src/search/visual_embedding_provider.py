@@ -15,8 +15,15 @@ class SentenceTransformerVisualProvider:
                 "Visual search requires sentence-transformers. "
                 "Install requirements-visual.txt first."
             ) from error
-        self.model_name = model_name
-        self._model = SentenceTransformer(model_name)
+        self.model_name = (
+            "clip-ViT-B-32+clip-ViT-B-32-multilingual-v1"
+            if model_name == "clip-ViT-B-32-multilingual-v1"
+            else model_name
+        )
+        # The multilingual checkpoint is a text encoder aligned to the
+        # original CLIP image encoder; it does not encode images itself.
+        self._image_model = SentenceTransformer("clip-ViT-B-32")
+        self._text_model = SentenceTransformer(model_name)
 
     @staticmethod
     def _as_vectors(encoded):
@@ -29,7 +36,7 @@ class SentenceTransformerVisualProvider:
     def embed_text(self, text: str) -> list[float]:
         if not isinstance(text, str) or not text.strip():
             raise ValueError("Visual text query cannot be empty.")
-        encoded = self._model.encode([text], convert_to_numpy=True, normalize_embeddings=True)
+        encoded = self._text_model.encode([text], convert_to_numpy=True, normalize_embeddings=True)
         return self._as_vectors(encoded)[0]
 
     def embed_images(self, image_paths: list[Path]) -> list[list[float]]:
@@ -45,7 +52,7 @@ class SentenceTransformerVisualProvider:
             for path in image_paths:
                 with Image.open(path) as image:
                     images.append(image.convert("RGB"))
-            encoded = self._model.encode(
+            encoded = self._image_model.encode(
                 images,
                 convert_to_numpy=True,
                 normalize_embeddings=True,
