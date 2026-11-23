@@ -39,7 +39,7 @@ class SentenceTransformerVisualProvider:
         if not isinstance(image_paths, list) or not image_paths:
             raise ValueError("At least one image path is required.")
         try:
-            from PIL import Image
+            from PIL import Image, ImageOps
         except ImportError as error:
             raise RuntimeError("Pillow is required for visual search.") from error
 
@@ -47,7 +47,7 @@ class SentenceTransformerVisualProvider:
         try:
             for path in image_paths:
                 with Image.open(path) as image:
-                    images.append(image.convert("RGB"))
+                    images.append(ImageOps.exif_transpose(image).convert("RGB"))
             encoded = self._image_model.encode(
                 images,
                 convert_to_numpy=True,
