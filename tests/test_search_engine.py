@@ -29,7 +29,7 @@ def search_engine(tmp_path):
     )
 
     engine.db.connection.execute(
-        "UPDATE segments SET speaker = 'SPEAKER_00' WHERE id IN (1, 3)"
+        "UPDATE segments SET speaker = 'SPEAKER_00' WHERE id = 1"
     )
     engine.db.connection.commit()
 
