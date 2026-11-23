@@ -1261,6 +1261,8 @@ with tab_search:
                         media_type = st.session_state.media_type
 
                     st.caption(f'{t["media_source"]}: {source_name}')
+                    if result.get("speaker"):
+                        st.caption(f'{t["speaker"]}: {result["speaker"]}')
                     st.markdown(f'**{t["text"]}:** {result["original_text"]}')
                     st.markdown(
                         f'**{t["time"]}:** {result["start"]}s – {result["end"]}s'
