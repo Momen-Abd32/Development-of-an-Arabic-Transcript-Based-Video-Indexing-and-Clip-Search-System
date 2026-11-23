@@ -1452,7 +1452,17 @@ with tab_visual:
                         item["image_path"] for item in existing_frames
                     ]
                     current_paths = [str(path.resolve()) for path in frames]
-                    if existing_paths != current_paths:
+                    if existing_paths == current_paths:
+                        timestamped_metadata = [
+                            (Path(item["image_path"]), item["timestamp_seconds"])
+                            for item in existing_frames
+                        ]
+                        # Re-hash the image files so externally changed frames
+                        # invalidate their stale visual embeddings.
+                        visual_index.replace_media_keyframes(
+                            record["media_id"], timestamped_metadata
+                        )
+                    else:
                         if not source_path.is_file():
                             raise FileNotFoundError(
                                 f'Original video is missing: {source_path}'
