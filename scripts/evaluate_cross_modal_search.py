@@ -49,9 +49,10 @@ def main() -> int:
     cases = load_dataset(args.dataset)
     provider = SentenceTransformerVisualProvider()
     engine = SearchEngine(args.database)
-    visual_index = KeyframeSearchIndex(args.database)
-    cross_modal = CrossModalSearch(engine, visual_index)
+    visual_index = None
     try:
+        visual_index = KeyframeSearchIndex(args.database)
+        cross_modal = CrossModalSearch(engine, visual_index)
         rankings = [
             cross_modal.search_text(
                 case["query"],
@@ -62,7 +63,8 @@ def main() -> int:
             for case in cases
         ]
     finally:
-        visual_index.close()
+        if visual_index is not None:
+            visual_index.close()
         engine.close()
 
     report = {
