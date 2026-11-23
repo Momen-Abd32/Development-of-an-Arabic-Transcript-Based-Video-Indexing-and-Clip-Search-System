@@ -37,6 +37,23 @@ class DatabaseManager:
             ON segments(video_id)
         """)
 
+        # Optional semantic vectors are stored separately so legacy transcript
+        # and FTS5 data remain untouched when semantic search is not installed.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS segment_embeddings (
+                segment_id INTEGER NOT NULL,
+                video_id TEXT NOT NULL,
+                model_name TEXT NOT NULL,
+                embedding_json TEXT NOT NULL,
+                PRIMARY KEY (segment_id, model_name)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_segment_embeddings_model
+            ON segment_embeddings(model_name, video_id)
+        """)
+
         cursor.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS segments_fts
             USING fts5(
