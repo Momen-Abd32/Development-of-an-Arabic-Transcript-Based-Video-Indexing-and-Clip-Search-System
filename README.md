@@ -502,6 +502,12 @@ python scripts/run_processing_worker.py --poll-seconds 10 --lease-seconds 900
 
 The worker claims jobs transactionally, reports per-file progress, retries failed batches according to each job's attempt limit, and renews its lease while working. Pending jobs can be cancelled from the UI. Active processing is not yet cooperatively cancellable; stop the worker with Ctrl+C to let the current file finish before shutdown.
 
+## Audit History
+
+The application stores an append-only audit trail in `data/database/processing_queue.db`. It records media registration and metadata/status changes, plus processing-job enqueue, start, retry scheduling, failure, cancellation, manual retry, and completion events. Each event includes a UTC timestamp, actor (defaults to `system` until authentication is introduced), entity identity, and JSON before/after details where applicable.
+
+Use the `AuditLog` service to query recent events or filter by entity type, entity ID, and actor. The audit history is local to this application instance; it is not yet a tamper-proof compliance log or a substitute for authenticated user identity.
+
 ## Running Tests
 
 Run the complete automated test suite from the repository root:
