@@ -115,7 +115,7 @@ def test_user_role_changes_and_last_admin_protection(auth):
     auth.create_user("editor_one", PASSWORD, role="editor")
 
     with pytest.raises(ValueError, match="own account"):
-        auth.update_user_role("admin_one", "editor", actor="admin_one")
+        auth.update_user_role("admin_one", "editor", actor="admin_two")
 
     changed = auth.update_user_role(
         "editor_one",
