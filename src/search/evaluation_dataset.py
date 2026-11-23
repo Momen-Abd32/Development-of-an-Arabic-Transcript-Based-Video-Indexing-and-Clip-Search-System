@@ -38,6 +38,7 @@ class EvaluationDatasetStore:
                 or not isinstance(case.get("query"), str)
                 or not case["query"].strip()
                 or not isinstance(case.get("relevant_segments"), list)
+                or not case["relevant_segments"]
             ):
                 raise ValueError(f"Invalid evaluation query at index {index}.")
             for segment in case["relevant_segments"]:
@@ -60,12 +61,22 @@ class EvaluationDatasetStore:
             or not isinstance(end, (int, float))
         ):
             raise TypeError("Relevant segment timestamps must be numbers.")
-        if not math.isfinite(start) or not math.isfinite(end) or start < 0 or end <= start:
+        try:
+            start_value = float(start)
+            end_value = float(end)
+        except (OverflowError, ValueError) as error:
+            raise ValueError("Relevant segment timestamps must be finite and valid.") from error
+        if (
+            not math.isfinite(start_value)
+            or not math.isfinite(end_value)
+            or start_value < 0
+            or end_value <= start_value
+        ):
             raise ValueError("Relevant segment timestamps must be finite and valid.")
         return {
             "media_id": media_id.strip(),
-            "start": float(start),
-            "end": float(end),
+            "start": start_value,
+            "end": end_value,
         }
 
     @staticmethod
