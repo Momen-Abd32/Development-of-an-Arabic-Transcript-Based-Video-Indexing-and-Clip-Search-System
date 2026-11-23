@@ -112,6 +112,7 @@ TEXT = {
         "queue_recover": "استعادة المهام التي انتهت مهلة تشغيلها (15 دقيقة)",
         "queue_recovered": "عدد المهام المستعادة",
         "queue_cancel": "إلغاء",
+        "queue_cancel_requested": "طلب إلغاء المهمة الجارية",
         "queue_retry": "إعادة المحاولة",
         "queue_attempts": "المحاولات",
         "queue_progress": "التقدم",
@@ -276,6 +277,7 @@ TEXT = {
         "queue_recover": "Recover jobs with an expired worker lease (15 minutes)",
         "queue_recovered": "Jobs recovered",
         "queue_cancel": "Cancel",
+        "queue_cancel_requested": "Request cancellation",
         "queue_retry": "Retry",
         "queue_attempts": "Attempts",
         "queue_progress": "Progress",
@@ -1398,17 +1400,25 @@ with tab_queue:
                 payload = job["payload"]
                 processor = MediaBatchProcessor()
                 progress_bar = st.progress(0.05)
+                def update_job_progress(done, total):
+                    queue.update_progress(
+                        job["job_id"],
+                        5 + (90 * done / max(total, 1)),
+                    )
+                    progress_bar.progress(done / max(total, 1))
+                    if queue.is_cancel_requested(job["job_id"]):
+                        raise RuntimeError("Processing cancellation requested.")
+
                 results = processor.process_directory(
                     payload["input_directory"],
                     recursive=payload.get("recursive", True),
-                    progress_callback=lambda done, total: (
-                        queue.update_progress(
-                            job["job_id"],
-                            5 + (90 * done / max(total, 1)),
-                        ),
-                        progress_bar.progress(done / max(total, 1)),
-                    ),
+                    progress_callback=update_job_progress,
                 )
+                if queue.is_cancel_requested(job["job_id"]):
+                    cancelled_job = queue.cancel_running(job["job_id"])
+                    st.warning(t["queue_cancel_requested"])
+                    queue.close()
+                    st.rerun()
                 failures = [item for item in results if item["status"] == "failed"]
                 if failures:
                     detail = "; ".join(
@@ -1428,12 +1438,16 @@ with tab_queue:
                     st.json(results)
             except Exception as error:
                 try:
-                    failed_job = queue.fail(job["job_id"], str(error))
-                    st.error(f'{t["queue_failed"]}: {error}')
-                    st.caption(
-                        f'{t["queue_attempts"]}: {failed_job["attempts"]}/'
-                        f'{failed_job["max_attempts"]}'
-                    )
+                    if queue.is_cancel_requested(job["job_id"]):
+                        cancelled_job = queue.cancel_running(job["job_id"])
+                        st.warning(t["queue_cancel_requested"])
+                    else:
+                        failed_job = queue.fail(job["job_id"], str(error))
+                        st.error(f'{t["queue_failed"]}: {error}')
+                        st.caption(
+                            f'{t["queue_attempts"]}: {failed_job["attempts"]}/'
+                            f'{failed_job["max_attempts"]}'
+                        )
                 except Exception:
                     st.error(f'{t["queue_failed"]}: {error}')
             queue.close()
@@ -1461,6 +1475,12 @@ with tab_queue:
             if job["status"] == "queued":
                 with action_columns[0]:
                     if st.button(t["queue_cancel"], key=f'cancel_{job["job_id"]}'):
+                        queue.cancel(job["job_id"])
+                        queue.close()
+                        st.rerun()
+            elif job["status"] == "running":
+                with action_columns[0]:
+                    if st.button(t["queue_cancel_requested"], key=f'request_cancel_{job["job_id"]}'):
                         queue.cancel(job["job_id"])
                         queue.close()
                         st.rerun()
