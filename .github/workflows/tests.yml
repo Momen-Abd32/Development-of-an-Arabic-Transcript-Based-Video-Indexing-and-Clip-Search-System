@@ -40,6 +40,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Compile application and source modules
+        run: python -m compileall -q app.py src scripts
+
       - name: Run test suite
         env:
           HF_HUB_DISABLE_TELEMETRY: "1"
