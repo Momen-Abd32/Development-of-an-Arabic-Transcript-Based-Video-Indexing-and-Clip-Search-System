@@ -9,7 +9,7 @@ def _segment_key(segment: dict) -> tuple[str, float, float]:
         media_id = segment["video_id"] if "video_id" in segment else segment["media_id"]
         start = float(segment["start"])
         end = float(segment["end"])
-    except (KeyError, TypeError, ValueError) as error:
+    except (KeyError, TypeError, ValueError, OverflowError) as error:
         raise ValueError(
             "Relevant segments require media_id/video_id, start, and end."
         ) from error
