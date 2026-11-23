@@ -24,6 +24,7 @@ from src.indexing.indexer import TranscriptIndexer
 from src.search.search_engine import SearchEngine, UNSPECIFIED_SPEAKER
 from src.search.cross_modal_search import CrossModalSearch
 from src.search.archive_qa import ArchiveQA
+from src.search.evaluation_dataset import EvaluationDatasetStore
 from src.search.local_answer_provider import OllamaAnswerProvider
 from src.search.keyframe_search import KeyframeSearchIndex
 from src.search.visual_embedding_provider import SentenceTransformerVisualProvider
@@ -259,6 +260,18 @@ TEXT = {
         "archive_notes_play": "تشغيل المصدر من التوقيت",
         "archive_notes_created": "تاريخ الإضافة",
         "archive_qa_tab": "اسأل الأرشيف",
+        "evaluation_tab": "تقييم البحث",
+        "evaluation_title": "بناء مجموعة تقييم يدوية لنتائج البحث",
+        "evaluation_desc": "ابحث عن مقاطع ثم علّم النتائج ذات الصلة يدوياً. تُحفظ الأحكام في ملف مستقل لاستخدامها في حساب Precision وRecall وMRR.",
+        "evaluation_query": "استعلام التقييم",
+        "evaluation_mode": "طريقة الاسترجاع",
+        "evaluation_search": "اعرض المقاطع لتقييمها",
+        "evaluation_relevant": "هذه النتيجة ذات صلة",
+        "evaluation_notes": "ملاحظات المراجع (اختياري)",
+        "evaluation_save": "حفظ الأحكام اليدوية",
+        "evaluation_saved": "تم حفظ الأحكام في data/evaluation/search_queries.json",
+        "evaluation_select_relevant": "حدد نتيجة واحدة ذات صلة على الأقل قبل الحفظ.",
+        "evaluation_dataset_count": "عدد الاستعلامات المحكّمة المحفوظة",
         "archive_qa_title": "اسأل الأرشيف واستعرض الأدلة",
         "archive_qa_desc": "اكتب سؤالاً للبحث في التفريغات النصية. الإجابة المعروضة اقتباس حرفي من أفضل مقطع، مع رابط إلى مصدره وتوقيته؛ لن يخمّن النظام عند غياب الأدلة.",
         "archive_qa_question": "ما الذي تريد معرفته من الأرشيف؟",
@@ -419,6 +432,18 @@ TEXT = {
         "transcript_tab": "Transcript",
         "search_tab": "Video Search",
         "archive_qa_tab": "Ask the Archive",
+        "evaluation_tab": "Search Evaluation",
+        "evaluation_title": "Build a Human-Judged Search Evaluation Set",
+        "evaluation_desc": "Search for transcript segments and manually mark relevant results. Judgments are saved separately for Precision, Recall, and MRR evaluation.",
+        "evaluation_query": "Evaluation query",
+        "evaluation_mode": "Retrieval mode",
+        "evaluation_search": "Find segments to judge",
+        "evaluation_relevant": "This result is relevant",
+        "evaluation_notes": "Reviewer notes (optional)",
+        "evaluation_save": "Save human judgments",
+        "evaluation_saved": "Judgments saved to data/evaluation/search_queries.json",
+        "evaluation_select_relevant": "Select at least one relevant result before saving.",
+        "evaluation_dataset_count": "Saved judged queries",
         "archive_notes_tab": "Review Notes",
         "archive_notes_title": "Timestamped Notes and Comments",
         "archive_notes_desc": "Add a note to a media item at a specific timestamp, then review, edit, or delete notes. Changes are recorded in the audit history.",
@@ -861,12 +886,12 @@ else:
 ROLE_PERMISSIONS = {
     "administrator": {
         "upload", "transcript", "search", "visual", "cross_modal",
-        "qa", "notes", "clips", "archive", "queue", "dashboard",
+        "qa", "evaluation", "notes", "clips", "archive", "queue", "dashboard",
         "audit", "users",
     },
     "editor": {
         "upload", "transcript", "search", "visual", "cross_modal",
-        "qa", "notes", "clips", "archive", "queue", "dashboard", "audit",
+        "qa", "evaluation", "notes", "clips", "archive", "queue", "dashboard", "audit",
     },
     "search_only": {"search", "visual", "cross_modal", "qa", "dashboard"},
 }
@@ -1061,12 +1086,13 @@ with metric_col3:
 # Main sections
 # --------------------------------------------------
 
-tab_upload, tab_transcript, tab_search, tab_visual, tab_cross_modal, tab_qa, tab_notes, tab_clips, tab_archive, tab_queue, tab_dashboard, tab_audit, tab_users = st.tabs(
+tab_upload, tab_transcript, tab_search, tab_visual, tab_cross_modal, tab_qa, tab_evaluation, tab_notes, tab_clips, tab_archive, tab_queue, tab_dashboard, tab_audit, tab_users = st.tabs(
     [
         t["upload_tab"], t["transcript_tab"], t["search_tab"],
         t["visual_search_tab"], t["cross_modal_tab"], t["archive_qa_tab"],
-        t["archive_notes_tab"], t["clips_tab"], t["archive_tab"], t["queue_tab"],
-        t["dashboard_tab"], t["audit_tab"], t["user_management_tab"],
+        t["evaluation_tab"], t["archive_notes_tab"], t["clips_tab"],
+        t["archive_tab"], t["queue_tab"], t["dashboard_tab"], t["audit_tab"],
+        t["user_management_tab"],
     ]
 )
 
@@ -2400,7 +2426,132 @@ with tab_qa:
                 st.info(t["archive_qa_abstain"])
 
 
-    # 7. Timestamped review notes
+    # 7. Human-judged search evaluation
+# --------------------------------------------------
+
+with tab_evaluation:
+    if not has_permission("evaluation"):
+        st.info(t["access_denied"])
+    else:
+        st.subheader("📊 " + t["evaluation_title"])
+        st.caption(t["evaluation_desc"])
+        evaluation_store = EvaluationDatasetStore()
+        try:
+            evaluation_dataset = evaluation_store.load()
+            st.metric(
+                t["evaluation_dataset_count"],
+                len(evaluation_dataset["queries"]),
+            )
+        except Exception as error:
+            evaluation_dataset = {"queries": []}
+            st.error(f'{t["search_failed"]}: {error}')
+
+        evaluation_query = st.text_input(
+            t["evaluation_query"],
+            key="evaluation_query_input",
+        )
+        evaluation_mode_label = st.selectbox(
+            t["evaluation_mode"],
+            [t["exact"], t["fuzzy"]],
+            key="evaluation_mode",
+        )
+        evaluation_context = (
+            evaluation_query.strip(),
+            evaluation_mode_label,
+        )
+        if st.session_state.get("evaluation_context") != evaluation_context:
+            st.session_state.evaluation_results = None
+            st.session_state.evaluation_context = evaluation_context
+
+        if st.button(
+            t["evaluation_search"],
+            type="primary",
+            key="evaluation_search_button",
+        ):
+            if not evaluation_query.strip():
+                st.warning(t["empty_query"])
+            else:
+                evaluation_engine = None
+                try:
+                    evaluation_engine = SearchEngine()
+                    if evaluation_mode_label == t["fuzzy"]:
+                        found_results = evaluation_engine.fuzzy_search(
+                            evaluation_query, limit=10
+                        )
+                    else:
+                        found_results = evaluation_engine.exact_search(
+                            evaluation_query, limit=10
+                        )
+                    st.session_state.evaluation_results = found_results
+                    st.session_state.evaluation_result_query = evaluation_query.strip()
+                except Exception as error:
+                    st.error(f'{t["search_failed"]}: {error}')
+                finally:
+                    if evaluation_engine is not None:
+                        evaluation_engine.close()
+
+        evaluation_results = st.session_state.get("evaluation_results")
+        if evaluation_results is not None:
+            evaluation_catalog = {
+                item["media_id"]: item for item in MediaCatalog().get_all()
+            }
+            evaluation_notes = st.text_area(
+                t["evaluation_notes"],
+                key="evaluation_reviewer_notes",
+            )
+            marked_results = []
+            for result_index, result in enumerate(evaluation_results):
+                media_id = result["video_id"]
+                start = float(result["start"])
+                end = float(result["end"])
+                source_record = evaluation_catalog.get(media_id)
+                source_name = (
+                    source_record["source_name"] if source_record else media_id[:12]
+                )
+                result_key = hashlib.sha256(
+                    (
+                        st.session_state.get("evaluation_result_query", "")
+                        + media_id + f"{start:.3f}:{end:.3f}"
+                    ).encode("utf-8")
+                ).hexdigest()[:16]
+                with st.container(border=True):
+                    is_relevant = st.checkbox(
+                        t["evaluation_relevant"],
+                        key=f"evaluation_relevant_{result_key}",
+                    )
+                    st.markdown(
+                        f'**{result_index + 1}. {source_name}** · '
+                        f'{t["start"]}: {start:.2f}s · {t["end"]}: {end:.2f}s'
+                    )
+                    if result.get("speaker"):
+                        st.caption(f'{t["speaker"]}: {result["speaker"]}')
+                    st.write(result["original_text"])
+                    if is_relevant:
+                        marked_results.append({
+                            "media_id": media_id,
+                            "start": start,
+                            "end": end,
+                        })
+
+            if st.button(
+                t["evaluation_save"],
+                key="evaluation_save_button",
+            ):
+                try:
+                    if not marked_results:
+                        st.warning(t["evaluation_select_relevant"])
+                    else:
+                        evaluation_store.add_judgment(
+                            st.session_state.get("evaluation_result_query", ""),
+                            marked_results,
+                            notes=evaluation_notes,
+                        )
+                        st.success(t["evaluation_saved"])
+                except Exception as error:
+                    st.error(f'{t["search_failed"]}: {error}')
+
+
+    # 8. Timestamped review notes
 # --------------------------------------------------
 
 with tab_notes:
