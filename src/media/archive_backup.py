@@ -110,6 +110,8 @@ class ArchiveBackup:
                     root = self.base_directory / root_name
                     if not root.exists():
                         continue
+                    if root.is_symlink():
+                        raise ValueError(f"Backup root cannot be a symbolic link: {root}")
                     if not root.is_dir():
                         raise ValueError(f"Backup root is not a directory: {root}")
 
