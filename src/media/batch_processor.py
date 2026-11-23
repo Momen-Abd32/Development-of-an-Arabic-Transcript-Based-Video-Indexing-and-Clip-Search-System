@@ -3,6 +3,7 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
+from typing import Callable
 
 from src.indexing.indexer import TranscriptIndexer
 from src.media.audio_extractor import AudioExtractor
@@ -110,6 +111,7 @@ class MediaBatchProcessor:
         self,
         input_directory: str,
         recursive: bool = True,
+        progress_callback: Callable[[int, int], None] | None = None,
     ) -> list[dict]:
         """Process supported files independently and return one result per file."""
         input_path = Path(input_directory)
@@ -133,6 +135,12 @@ class MediaBatchProcessor:
         )
 
         results = []
+
+        def record_result(result: dict) -> None:
+            results.append(result)
+            if progress_callback is not None:
+                progress_callback(len(results), len(media_files))
+
         engine = None
         seen_hashes = set()
 
@@ -148,7 +156,7 @@ class MediaBatchProcessor:
                 media_id = self._calculate_sha256(source)
 
                 if media_id in seen_hashes:
-                    results.append({
+                    record_result({
                         "source": str(source),
                         "media_id": media_id,
                         "media_type": media_type,
@@ -182,7 +190,7 @@ class MediaBatchProcessor:
                     self._index(media_id, segments)
                     self.catalog.update_status(media_id, "transcribed")
                     seen_hashes.add(media_id)
-                    results.append({
+                    record_result({
                         "source": str(source),
                         "media_id": media_id,
                         "media_type": media_type,
@@ -207,7 +215,7 @@ class MediaBatchProcessor:
                 self.catalog.update_status(media_id, "transcribed")
                 seen_hashes.add(media_id)
 
-                results.append({
+                record_result({
                     "source": str(source),
                     "media_id": media_id,
                     "media_type": media_type,
@@ -226,7 +234,7 @@ class MediaBatchProcessor:
                     except Exception:
                         pass
 
-                results.append({
+                record_result({
                     "source": str(source),
                     "media_id": media_id,
                     "media_type": media_type,
