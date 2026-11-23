@@ -242,3 +242,17 @@ def test_hybrid_search_applies_all_filters(search_engine):
     assert results
     assert all(item["video_id"] == "video1" for item in results)
     assert all(item["speaker"] == "SPEAKER_00" for item in results)
+
+
+def test_hybrid_search_returns_empty_when_current_media_is_excluded(search_engine):
+    assert search_engine.hybrid_search(
+        "البرمجة",
+        FakeEmbeddingProvider(),
+        video_id="video1",
+        media_ids=["video2"],
+    ) == []
+    assert search_engine.hybrid_search(
+        "البرمجة",
+        FakeEmbeddingProvider(),
+        media_ids=[],
+    ) == []
