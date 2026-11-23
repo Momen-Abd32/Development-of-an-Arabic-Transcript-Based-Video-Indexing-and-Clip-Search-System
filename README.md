@@ -55,7 +55,8 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - **Timestamp-based transcript playback:** Start video or audio preview from a selected transcript segment.
 - **Optional speaker diarization:** Attach speaker labels to transcript segments using pyannote.audio when model access is configured.
 - **Extractive transcript insights:** Select representative original transcript sentences and rank frequent Arabic/Latin keywords; results are stored separately from the verbatim transcript and never rewrite dialect.
-- **Video keyframes:** Extract sampled JPEG thumbnails with FFmpeg, safely replace prior generated frames, and preview them in the transcript workspace.
+- **Video keyframes:** Extract sampled JPEG thumbnails with FFmpeg, preserve the actual frame presentation timestamps, safely replace prior generated frames, and preview them in the transcript workspace.
+- **Visual keyframe search:** Index extracted frames in SQLite and search across them using Arabic text descriptions or a reference image with an optional multilingual CLIP model; results include the source media and frame timestamp.
 - **Arabic text normalization:** Normalize common Arabic character variations, remove diacritics and tatweel, and standardize whitespace to improve search consistency.
 - **Exact full-text search:** Find transcript segments using SQLite FTS5.
 - **Fuzzy search:** Find approximate matches using RapidFuzz.
@@ -97,7 +98,7 @@ The Streamlit application upload limit is configured to **2 GB per file**. Actua
 | SQLite | Persistent transcript-segment storage |
 | SQLite FTS5 | Full-text transcript search |
 | RapidFuzz | Approximate text matching |
-| sentence-transformers (optional) | Multilingual semantic embeddings |
+| sentence-transformers (optional) | Multilingual semantic and CLIP-compatible visual embeddings |\n| Pillow (optional) | Load reference and indexed keyframe images for visual search |
 | JiWER | WER and CER evaluation |
 | Pytest | Automated testing |
 
@@ -421,6 +422,18 @@ pip install -r requirements-semantic.txt
 
 In the Search tab, choose **Hybrid Semantic Search**, then select **Build / Refresh Semantic Index**. The first use downloads the configured multilingual embedding model. Model download and embedding generation require additional disk space, memory, and processing time.
 
+### Optional: enable visual keyframe search
+
+Visual search requires extracted video keyframes and the optional multilingual CLIP-compatible model:
+
+```bash
+pip install -r requirements-visual.txt
+```
+
+Open the Search tab, expand **Visual Video Search**, and choose **Build / Refresh Visual Keyframe Index**. The first run downloads the multilingual CLIP model and indexes existing keyframes. You can then search with an Arabic scene description or upload a reference image. Results show the matched frame, source video, and its FFmpeg presentation timestamp. Videos without extracted keyframes are skipped; extract keyframes from the Transcript tab first.
+
+Visual embeddings are stored separately in SQLite. Exact transcript search and other archive workflows do not require the visual dependencies. The checked-in tests use a deterministic fake provider and do not download or validate the real model against Dukkan Media content.
+
 ### Optional: enable speaker diarization
 
 Speaker diarization requires the optional dependencies, a Hugging Face access token, and acceptance/access to the selected pyannote model:
@@ -583,9 +596,10 @@ Uploaded videos, original audio files, normalized audio, transcript JSON files, 
 - Transcription quality depends on audio clarity, accents, background noise, and the selected speech-recognition model.
 - The default `tiny` model favors lower resource usage; it may not provide the highest transcription accuracy.
 - Fuzzy search compares transcript segments and can require more processing as the indexed transcript collection grows.
-- Semantic and hybrid search are optional and require installing `requirements-semantic.txt` and explicitly building the semantic index. Embeddings are stored in a separate SQLite table; existing FTS5 and RapidFuzz indexes remain available.
+- Semantic and hybrid transcript search are optional and require installing `requirements-semantic.txt` and explicitly building the semantic index. Visual keyframe search separately requires `requirements-visual.txt`, extracted keyframes, and a built visual index. Both embedding stores are separate from the existing FTS5 and RapidFuzz indexes.
 - Speaker diarization is optional, requires a Hugging Face token and access to the gated pyannote model, and has not yet been evaluated on Dukkan Media recordings.
-- The initial semantic-search implementation ranks stored embeddings in application code. Very large archives will need a dedicated vector index and retrieval-performance evaluation.
+- The initial semantic and visual search implementations rank stored embeddings in application code. Very large archives will need a dedicated vector index and retrieval-performance evaluation.
+- Visual search uses multilingual CLIP embeddings, but its retrieval quality has not yet been measured against a human-judged Dukkan Media visual-search dataset. Frame timestamps are sampled from FFmpeg presentation timestamps.
 - The application currently uses local file storage and a local SQLite database; it is not designed as a multi-user hosted service.
 - Batch import currently reads local or mounted folders. Direct cloud-provider APIs, remote URL ingestion, and continuous folder monitoring are not implemented yet.
 - The SQLite segment table retains the legacy `video_id` column name; for audio records, it stores the SHA-256 media identifier as well.
