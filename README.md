@@ -50,6 +50,8 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - **Arabic text normalization:** Normalize common Arabic character variations, remove diacritics and tatweel, and standardize whitespace to improve search consistency.
 - **Exact full-text search:** Find transcript segments using SQLite FTS5.
 - **Fuzzy search:** Find approximate matches using RapidFuzz.
+- **Optional semantic search:** Search transcript meaning with multilingual sentence embeddings; the optional model is loaded only when requested.
+- **Hybrid search:** Fuse FTS5, RapidFuzz, and semantic rankings using Reciprocal Rank Fusion (RRF).
 - **Timestamped results:** Display matching transcript text with its position in the source video or audio recording.
 - **Clip extraction:** Extract a selected time range from the source video as an MP4 clip.
 - **Saved clip management:** Store clip metadata and view saved clips associated with a video.
@@ -86,6 +88,7 @@ The Streamlit application upload limit is configured to **2 GB per file**. Actua
 | SQLite | Persistent transcript-segment storage |
 | SQLite FTS5 | Full-text transcript search |
 | RapidFuzz | Approximate text matching |
+| sentence-transformers (optional) | Multilingual semantic embeddings |
 | JiWER | WER and CER evaluation |
 | Pytest | Automated testing |
 
@@ -380,6 +383,16 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
+### Optional: enable semantic and hybrid search
+
+Semantic search is optional; exact FTS5 and RapidFuzz search continue to work without it. Install the optional model dependency when you want to build a semantic index:
+
+```bash
+pip install -r requirements-semantic.txt
+```
+
+In the Search tab, choose **Hybrid Semantic Search**, then select **Build / Refresh Semantic Index**. The first use downloads the configured multilingual embedding model. Model download and embedding generation require additional disk space, memory, and processing time.
+
 ### 5. Install and verify FFmpeg
 
 Install FFmpeg using the instructions for your operating system, then ensure that the FFmpeg executable is available through the system `PATH`.
@@ -491,6 +504,8 @@ Uploaded videos, original audio files, normalized audio, transcript JSON files, 
 - Transcription quality depends on audio clarity, accents, background noise, and the selected speech-recognition model.
 - The default `tiny` model favors lower resource usage; it may not provide the highest transcription accuracy.
 - Fuzzy search compares transcript segments and can require more processing as the indexed transcript collection grows.
+- Semantic and hybrid search are optional and require installing `requirements-semantic.txt` and explicitly building the semantic index. Embeddings are stored in a separate SQLite table; existing FTS5 and RapidFuzz indexes remain available.
+- The initial semantic-search implementation ranks stored embeddings in application code. Very large archives will need a dedicated vector index and retrieval-performance evaluation.
 - The application currently uses local file storage and a local SQLite database; it is not designed as a multi-user hosted service.
 - Batch import currently reads local or mounted folders. Direct cloud-provider APIs, remote URL ingestion, and continuous folder monitoring are not implemented yet.
 - The SQLite segment table retains the legacy `video_id` column name; for audio records, it stores the SHA-256 media identifier as well.
@@ -498,17 +513,9 @@ Uploaded videos, original audio files, normalized audio, transcript JSON files, 
 - Active application session state is not automatically reconstructed after a process restart.
 - WER and CER require reference transcripts and are not standalone measures of application quality.
 
-## Future Work
+## Product Expansion Roadmap
 
-Potential areas for further development include:
-
-- Adding direct cloud-storage integrations, supported remote media URL ingestion, and scheduled folder monitoring.
-- Improving Arabic transcription accuracy and evaluating it on a representative Arabic speech dataset.
-- Supporting configurable speech-recognition models and hardware acceleration.
-- Improving search ranking and performance for larger transcript collections.
-- Adding reliable video and transcript session recovery after application restarts.
-- Expanding evaluation with documented datasets and reproducible experiments.
-- Improving clip organization and transcript navigation.
+See [`docs/IMPLEMENTATION_ROADMAP.md`](docs/IMPLEMENTATION_ROADMAP.md) for the full four-phase plan covering hybrid Arabic search, speaker diarization, summaries and topics, synchronized transcript playback, thumbnails/keyframes, collections and tags, resilient processing queues, dashboards, audit history, role-based access, modular ingestion adapters, visual search, evidence-grounded archive Q&A, and timestamped collaboration notes.
 
 ## License
 
