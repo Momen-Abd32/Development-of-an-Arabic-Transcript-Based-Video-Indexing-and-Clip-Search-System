@@ -1,0 +1,250 @@
+"""Persistent metadata and optional CLIP embeddings for video keyframes."""
+from __future__ import annotations
+
+import json
+import math
+import sqlite3
+from pathlib import Path
+from typing import Sequence
+
+
+class KeyframeSearchIndex:
+    """Store timestamped keyframes and search them with a multimodal provider."""
+
+    def __init__(self, database_path: str = "data/database/videos.db"):
+        self.database_path = Path(database_path)
+        self.database_path.parent.mkdir(parents=True, exist_ok=True)
+        self.connection = sqlite3.connect(self.database_path, timeout=10)
+        self.connection.row_factory = sqlite3.Row
+        self.connection.execute("PRAGMA busy_timeout = 10000")
+        self.connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS keyframes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                media_id TEXT NOT NULL,
+                frame_index INTEGER NOT NULL,
+                timestamp_seconds REAL NOT NULL,
+                image_path TEXT NOT NULL,
+                UNIQUE(media_id, frame_index)
+            )
+            """
+        )
+        self.connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS keyframe_embeddings (
+                keyframe_id INTEGER NOT NULL,
+                model_name TEXT NOT NULL,
+                embedding_json TEXT NOT NULL,
+                PRIMARY KEY(keyframe_id, model_name),
+                FOREIGN KEY(keyframe_id) REFERENCES keyframes(id)
+                    ON DELETE CASCADE
+            )
+            """
+        )
+        self.connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_keyframes_media_time "
+            "ON keyframes(media_id, timestamp_seconds)"
+        )
+        self.connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_keyframe_embeddings_model "
+            "ON keyframe_embeddings(model_name, keyframe_id)"
+        )
+        self.connection.commit()
+
+    @staticmethod
+    def _validate_vector(vector: Sequence[float]) -> list[float]:
+        if not isinstance(vector, (list, tuple)) or not vector:
+            raise ValueError("Visual embedding must be a non-empty vector.")
+        values = []
+        for value in vector:
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise TypeError("Visual embedding values must be numeric.")
+            number = float(value)
+            if not math.isfinite(number):
+                raise ValueError("Visual embedding values must be finite.")
+            values.append(number)
+        return values
+
+    def replace_media_keyframes(
+        self,
+        media_id: str,
+        frame_paths: Sequence[str | Path],
+        interval_seconds: float = 30,
+    ) -> int:
+        if not isinstance(media_id, str) or not media_id.strip():
+            raise ValueError("Media ID cannot be empty.")
+        if isinstance(interval_seconds, bool) or not isinstance(interval_seconds, (int, float)):
+            raise TypeError("Frame interval must be numeric.")
+        if not math.isfinite(interval_seconds) or interval_seconds <= 0:
+            raise ValueError("Frame interval must be positive and finite.")
+        if not isinstance(frame_paths, (list, tuple)):
+            raise TypeError("Frame paths must be a list or tuple.")
+
+        records = []
+        for index, value in enumerate(frame_paths, start=1):
+            path = Path(value)
+            if not path.is_file():
+                raise FileNotFoundError(f"Keyframe image not found: {path}")
+            records.append((
+                media_id,
+                index,
+                round((index - 1) * float(interval_seconds), 3),
+                str(path.resolve()),
+            ))
+
+        try:
+            old_ids = [
+                row["id"]
+                for row in self.connection.execute(
+                    "SELECT id FROM keyframes WHERE media_id = ?", (media_id,)
+                )
+            ]
+            if old_ids:
+                placeholders = ",".join("?" for _ in old_ids)
+                self.connection.execute(
+                    f"DELETE FROM keyframe_embeddings WHERE keyframe_id IN ({placeholders})",
+                    old_ids,
+                )
+            self.connection.execute("DELETE FROM keyframes WHERE media_id = ?", (media_id,))
+            self.connection.executemany(
+                """
+                INSERT INTO keyframes
+                    (media_id, frame_index, timestamp_seconds, image_path)
+                VALUES (?, ?, ?, ?)
+                """,
+                records,
+            )
+            self.connection.commit()
+            return len(records)
+        except Exception:
+            self.connection.rollback()
+            raise
+
+    def index_media(
+        self,
+        media_id: str,
+        provider,
+        batch_size: int = 16,
+    ) -> int:
+        if not isinstance(media_id, str) or not media_id.strip():
+            raise ValueError("Media ID cannot be empty.")
+        if isinstance(batch_size, bool) or not isinstance(batch_size, int) or batch_size <= 0:
+            raise ValueError("Batch size must be a positive integer.")
+
+        rows = self.connection.execute(
+            "SELECT id, image_path FROM keyframes WHERE media_id = ? ORDER BY frame_index",
+            (media_id,),
+        ).fetchall()
+        if not rows:
+            return 0
+
+        try:
+            self.connection.execute(
+                """
+                DELETE FROM keyframe_embeddings
+                WHERE model_name = ? AND keyframe_id IN (
+                    SELECT id FROM keyframes WHERE media_id = ?
+                )
+                """,
+                (provider.model_name, media_id),
+            )
+            existing = self.connection.execute(
+                "SELECT embedding_json FROM keyframe_embeddings WHERE model_name = ? LIMIT 1",
+                (provider.model_name,),
+            ).fetchone()
+            expected_dimension = (
+                len(self._validate_vector(json.loads(existing["embedding_json"])))
+                if existing else None
+            )
+
+            for offset in range(0, len(rows), batch_size):
+                batch = rows[offset:offset + batch_size]
+                images = [Path(row["image_path"]) for row in batch]
+                if any(not image.is_file() for image in images):
+                    missing = next(image for image in images if not image.is_file())
+                    raise FileNotFoundError(f"Keyframe image not found: {missing}")
+                vectors = provider.embed_images(images)
+                if len(vectors) != len(batch):
+                    raise ValueError("Visual provider returned an unexpected vector count.")
+                records = []
+                for row, vector in zip(batch, vectors):
+                    values = self._validate_vector(vector)
+                    if expected_dimension is None:
+                        expected_dimension = len(values)
+                    elif len(values) != expected_dimension:
+                        raise ValueError("Visual embedding dimensions are inconsistent.")
+                    records.append((
+                        row["id"], provider.model_name,
+                        json.dumps(values, separators=(",", ":")),
+                    ))
+                self.connection.executemany(
+                    """
+                    INSERT INTO keyframe_embeddings
+                        (keyframe_id, model_name, embedding_json)
+                    VALUES (?, ?, ?)
+                    """,
+                    records,
+                )
+            self.connection.commit()
+            return len(rows)
+        except Exception:
+            self.connection.rollback()
+            raise
+
+    @staticmethod
+    def _cosine_similarity(left: Sequence[float], right: Sequence[float]) -> float:
+        if len(left) != len(right):
+            raise ValueError("Query and stored visual embedding dimensions do not match.")
+        dot = sum(a * b for a, b in zip(left, right))
+        left_norm = math.sqrt(sum(value * value for value in left))
+        right_norm = math.sqrt(sum(value * value for value in right))
+        if left_norm == 0 or right_norm == 0:
+            return 0.0
+        return dot / (left_norm * right_norm)
+
+    def _search(self, query_vector, provider, limit: int, media_ids=None):
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+            raise ValueError("Limit must be a positive integer.")
+        vector = self._validate_vector(query_vector)
+        sql = """
+            SELECT k.id, k.media_id, k.frame_index, k.timestamp_seconds,
+                   k.image_path, e.embedding_json
+            FROM keyframe_embeddings e
+            JOIN keyframes k ON k.id = e.keyframe_id
+            WHERE e.model_name = ?
+        """
+        params = [provider.model_name]
+        if media_ids is not None:
+            if not media_ids:
+                return []
+            sql += " AND k.media_id IN (" + ",".join("?" for _ in media_ids) + ")"
+            params.extend(media_ids)
+
+        ranked = []
+        for row in self.connection.execute(sql, params):
+            stored = self._validate_vector(json.loads(row["embedding_json"]))
+            score = self._cosine_similarity(vector, stored)
+            ranked.append((score, -row["id"], {
+                "keyframe_id": row["id"],
+                "media_id": row["media_id"],
+                "frame_index": row["frame_index"],
+                "timestamp_seconds": row["timestamp_seconds"],
+                "image_path": row["image_path"],
+                "visual_score": round(score, 6),
+            }))
+        ranked.sort(key=lambda item: (-item[0], -item[1]))
+        return [item[2] for item in ranked[:limit]]
+
+    def search_text(self, query: str, provider, limit: int = 20, media_ids=None):
+        if not isinstance(query, str) or not query.strip():
+            return []
+        return self._search(provider.embed_text(query), provider, limit, media_ids)
+
+    def search_image(self, image_path: str | Path, provider, limit: int = 20, media_ids=None):
+        path = Path(image_path)
+        if not path.is_file():
+            raise FileNotFoundError(f"Reference image not found: {path}")
+        return self._search(provider.embed_images([path])[0], provider, limit, media_ids)
+
+    def close(self):
+        self.connection.close()
