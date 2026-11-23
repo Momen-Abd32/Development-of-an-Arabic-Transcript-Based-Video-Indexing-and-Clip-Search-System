@@ -84,6 +84,8 @@ TEXT = {
         "transcript_title": "مراجعة وتعديل النص",
         "transcript_desc": "راجع المقاطع النصية وعدّل الكلمات عند الحاجة، ثم احفظ التغييرات لإعادة فهرستها.",
         "segment": "المقطع",
+        "play_segment": "تشغيل من هذا التوقيت",
+        "selected_segment": "معاينة من التوقيت المحدد",
         "start": "البداية",
         "end": "النهاية",
         "save_changes": "حفظ تعديلات النص",
@@ -170,6 +172,8 @@ TEXT = {
         "transcript_title": "Review and Edit Transcript",
         "transcript_desc": "Review transcript segments, edit words when needed, and save changes to rebuild the search index.",
         "segment": "Segment",
+        "play_segment": "Play from this timestamp",
+        "selected_segment": "Preview from selected timestamp",
         "start": "Start",
         "end": "End",
         "save_changes": "Save Transcript Changes",
@@ -691,6 +695,11 @@ with tab_transcript:
                 with time_col:
                     st.caption(f'{t["start"]}: {segment["start"]}s')
                     st.caption(f'{t["end"]}: {segment["end"]}s')
+                    if st.button(
+                        t["play_segment"],
+                        key=f"play_segment_{video_id}_{index}",
+                    ):
+                        st.session_state.transcript_seek = float(segment["start"])
                 with text_col:
                     edited_text = st.text_input(
                         f'{t["segment"]} {index + 1}',
@@ -703,6 +712,16 @@ with tab_transcript:
                     "end": segment["end"],
                     "text": edited_text,
                 })
+
+        if st.session_state.get("transcript_seek") is not None:
+            seek_time = max(0, int(st.session_state.transcript_seek))
+            st.markdown(f'#### {t["selected_segment"]} · {seek_time}s')
+            media_path = st.session_state.get("media_path")
+            if media_path and Path(media_path).is_file():
+                if st.session_state.get("media_type") == "video":
+                    st.video(media_path, start_time=seek_time)
+                else:
+                    st.audio(media_path, start_time=seek_time)
 
         if st.button(t["save_changes"], type="primary"):
             try:
