@@ -41,6 +41,7 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - **Standalone audio upload and playback:** Upload audio recordings without requiring a video container.
 - **Audio preparation:** Use FFmpeg to normalize audio from video or standalone audio files to mono 16 kHz WAV for transcription.
 - **Batch media import:** Recursively scan a local folder and process supported audio and video files one by one.
+- **Durable processing queue:** Persist folder-import jobs in a separate SQLite database, track per-file progress, retry failures, cancel pending jobs, and recover interrupted jobs after restart.
 - **Media catalog:** Persist each media file's type, original filename, stored path, and processing status.
 - **Archive collections and tags:** Organize media with optional collection names and deduplicated tags; filter the archive by collection and selected tags.
 - **Archive-wide search:** Search transcript segments across all imported media or limit the search to the currently selected file.
@@ -207,6 +208,8 @@ flowchart TB
 
 The application uses a combination of local files and SQLite. The main runtime locations are:
 
+The processing queue uses a separate SQLite database so job state can be persisted without modifying transcript or FTS tables. The Streamlit interface currently runs a queued batch synchronously when requested; a continuously running background worker is a later operational step.
+
 | Location | Stored data |
 |---|---|
 | `data/videos/` | Uploaded or batch-imported source video files |
@@ -216,6 +219,7 @@ The application uses a combination of local files and SQLite. The main runtime l
 | `data/insights/` | Optional extractive summaries, keywords, and source-segment references |
 | `data/keyframes/` | Generated JPEG keyframes grouped by media identifier |
 | `data/database/videos.db` | Transcript segments and the FTS5 search index |
+| `data/database/processing_queue.db` | Durable processing job state, attempts, progress, and errors |
 | `data/database/media_catalog.json` | Media identifiers, original filenames, source paths, types, and processing status |
 | `data/database/clips.json` | Metadata for saved video clips |
 | `exports/clips/` | Extracted MP4 video clips |
