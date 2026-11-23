@@ -1,6 +1,7 @@
 """Persistent metadata and optional CLIP embeddings for video keyframes."""
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import sqlite3
@@ -26,10 +27,19 @@ class KeyframeSearchIndex:
                 frame_index INTEGER NOT NULL,
                 timestamp_seconds REAL NOT NULL,
                 image_path TEXT NOT NULL,
+                image_sha256 TEXT NOT NULL,
                 UNIQUE(media_id, frame_index)
             )
             """
         )
+        keyframe_columns = {
+            row["name"]
+            for row in self.connection.execute("PRAGMA table_info(keyframes)")
+        }
+        if "image_sha256" not in keyframe_columns:
+            self.connection.execute(
+                "ALTER TABLE keyframes ADD COLUMN image_sha256 TEXT NOT NULL DEFAULT ''"
+            )
         self.connection.execute(
             """
             CREATE TABLE IF NOT EXISTS keyframe_embeddings (
@@ -51,6 +61,14 @@ class KeyframeSearchIndex:
             "ON keyframe_embeddings(model_name, keyframe_id)"
         )
         self.connection.commit()
+
+    @staticmethod
+    def _file_sha256(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as file:
+            for chunk in iter(lambda: file.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
 
     @staticmethod
     def _validate_vector(vector: Sequence[float]) -> list[float]:
@@ -110,17 +128,18 @@ class KeyframeSearchIndex:
                 index,
                 round(float(timestamp), 3),
                 str(path.resolve()),
+                self._file_sha256(path),
             ))
 
         current = self.connection.execute(
             """
-            SELECT media_id, frame_index, timestamp_seconds, image_path
+            SELECT media_id, frame_index, timestamp_seconds, image_path, image_sha256
             FROM keyframes WHERE media_id = ? ORDER BY frame_index
             """,
             (media_id,),
         ).fetchall()
         if [
-            (row["media_id"], row["frame_index"], row["timestamp_seconds"], row["image_path"])
+            (row["media_id"], row["frame_index"], row["timestamp_seconds"], row["image_path"], row["image_sha256"])
             for row in current
         ] == records:
             return len(records)
@@ -142,8 +161,8 @@ class KeyframeSearchIndex:
             self.connection.executemany(
                 """
                 INSERT INTO keyframes
-                    (media_id, frame_index, timestamp_seconds, image_path)
-                VALUES (?, ?, ?, ?)
+                    (media_id, frame_index, timestamp_seconds, image_path, image_sha256)
+                VALUES (?, ?, ?, ?, ?)
                 """,
                 records,
             )
@@ -160,7 +179,7 @@ class KeyframeSearchIndex:
             dict(row)
             for row in self.connection.execute(
                 """
-                SELECT id, media_id, frame_index, timestamp_seconds, image_path
+                SELECT id, media_id, frame_index, timestamp_seconds, image_path, image_sha256
                 FROM keyframes WHERE media_id = ? ORDER BY frame_index
                 """,
                 (media_id,),
