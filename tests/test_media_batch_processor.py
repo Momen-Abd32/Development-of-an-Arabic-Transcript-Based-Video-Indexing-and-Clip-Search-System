@@ -326,3 +326,75 @@ def test_store_source_rejects_changed_file_during_copy(tmp_path, monkeypatch):
 
     assert not destination.exists()
     assert not list(destination.parent.glob(".*.tmp"))
+
+
+
+def test_process_files_uses_the_same_import_pipeline_without_directory_scanning(
+    tmp_path,
+    monkeypatch,
+):
+    source = tmp_path / "watch" / "new_audio.mp3"
+    source.parent.mkdir()
+    source.write_bytes(b"watched audio bytes")
+
+    def fake_prepare(source_path, output_path):
+        output = Path(output_path)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"normalized")
+        return output
+
+    class FakeEngine:
+        def __init__(self, **kwargs):
+            pass
+
+        def transcribe(self, audio_path):
+            return [{"start": 1.0, "end": 2.0, "text": "تسجيل جديد"}]
+
+    FakeIndexer.indexed = []
+    monkeypatch.setattr(
+        "src.media.batch_processor.AudioExtractor.prepare",
+        fake_prepare,
+    )
+    monkeypatch.setattr(
+        "src.media.batch_processor.FasterWhisperEngine",
+        FakeEngine,
+    )
+    monkeypatch.setattr(
+        "src.media.batch_processor.TranscriptIndexer",
+        FakeIndexer,
+    )
+
+    processor = MediaBatchProcessor(
+        video_dir=str(tmp_path / "videos"),
+        audio_source_dir=str(tmp_path / "audio_sources"),
+        audio_dir=str(tmp_path / "audio"),
+        transcript_dir=str(tmp_path / "transcripts"),
+        database_path=str(tmp_path / "database.db"),
+        catalog_path=str(tmp_path / "catalog.json"),
+    )
+    stages = []
+    results = processor.process_files(
+        [source],
+        stage_callback=lambda stage, current_file, progress: stages.append(
+            (stage, current_file, progress)
+        ),
+    )
+
+    assert len(results) == 1
+    assert results[0]["status"] == "processed"
+    assert results[0]["media_type"] == "audio"
+    assert FakeIndexer.indexed
+    assert stages[0] == ("ready", None, 100)
+    assert stages[-1] == ("file_completed", str(source), 100)
+
+
+def test_process_files_rejects_invalid_inputs(tmp_path):
+    processor = MediaBatchProcessor()
+    import pytest
+
+    with pytest.raises(TypeError):
+        processor.process_files("not-a-list")
+    with pytest.raises(TypeError):
+        processor.process_files([None])
+    with pytest.raises(ValueError, match="Unsupported"):
+        processor.process_files([tmp_path / "file.txt"])
