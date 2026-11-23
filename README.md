@@ -42,6 +42,7 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - **Audio preparation:** Use FFmpeg to normalize audio from video or standalone audio files to mono 16 kHz WAV for transcription.
 - **Batch media import:** Recursively scan a local folder and process supported audio and video files one by one.
 - **Watched-folder ingestion:** Poll one or more local folders or mounted NAS shares, wait until new files remain unchanged across consecutive scans, and enqueue only new or changed files for background processing.
+- **Remote direct-media URL ingestion:** Download media over HTTPS only from exact operator-allowlisted hosts, validate redirects and public DNS answers, enforce size/time limits, then enqueue the file through the same processing pipeline.
 - **Durable processing queue:** Persist folder-import jobs in a separate SQLite database, track overall progress, the current file and processing stage, and stage start/completion indicators; retry failures, cancel queued jobs immediately, request cooperative cancellation of active jobs between files, and recover interrupted jobs after restart.
 - **Independent background worker:** Run the persistent processing queue as a separate CLI process with polling, worker heartbeats, and expired-lease recovery.
 - **Archive dashboard:** Summarize media counts, stored file size, transcript totals, processing and queue states, missing source files, database integrity, and runtime dependency availability.
@@ -226,6 +227,7 @@ The processing queue uses a separate SQLite database so job state can be persist
 |---|---|
 | `data/videos/` | Uploaded or batch-imported source video files |
 | `data/audio/originals/` | Original standalone audio files |
+| `data/incoming/remote/` | Direct media files downloaded from allowlisted HTTPS URLs before processing |
 | `data/audio/` | Normalized WAV audio files prepared for transcription |
 | `data/transcripts/` | Transcript JSON files |
 | `data/insights/` | Optional extractive summaries, keywords, and source-segment references |
@@ -325,6 +327,7 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   │   ├── archive_metrics.py
 │   │   ├── batch_processor.py
 │   │   ├── folder_watcher.py
+│   │   ├── url_ingestion.py
 │   │   ├── keyframe_extractor.py
 │   │   ├── media_catalog.py
 │   │   ├── processing_queue.py
@@ -355,6 +358,8 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   ├── test_archive_notes.py
 │   ├── test_folder_watcher.py
 │   ├── test_folder_watcher_cli.py
+│   ├── test_url_ingestion.py
+│   ├── test_url_ingestion_cli.py
 │   ├── test_audio_extractor.py
 │   ├── test_media_batch_processor.py
 │   ├── test_media_catalog.py
@@ -390,6 +395,7 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
     ├── import_media_dataset.py
     ├── manage_archive_backup.py
     ├── run_processing_worker.py
+    ├── import_media_url.py
     ├── watch_media_folders.py
     └── test_transcription.py
 ```
@@ -554,7 +560,7 @@ The importer stores source videos in `data/videos/`, original audio files in `da
 
 Each file is processed independently. A failure for one file is reported without stopping the rest of the batch. Identical content is processed once per batch, and an existing valid transcript is reused and re-indexed. The first new file that requires transcription initializes the Whisper model, which is then reused for the remaining files in that run.
 
-A USB drive or network share can be used by passing its mounted folder path. Continuous polling-based folder watching is available for local and mounted folders. Direct cloud-provider APIs and remote URL downloading are not implemented yet.
+A USB drive or network share can be used by passing its mounted folder path. Continuous polling-based folder watching is available for local and mounted folders. Direct cloud-provider APIs and authenticated streaming-platform/playlist downloads are not implemented yet; URL ingestion supports direct media files from explicitly allowlisted HTTPS hosts.
 
 ## Watched Folder Ingestion
 
@@ -567,6 +573,20 @@ python scripts/watch_media_folders.py --folder "D:\DukkanMedia\Incoming"
 Multiple folders can be supplied by repeating `--folder`. Useful options include `--poll-seconds 10`, `--stable-scans 3`, and `--non-recursive`. A file is queued only after its size and modification timestamp remain unchanged for the configured number of consecutive scans. The watcher persists file signatures in the processing queue database and creates explicit file-import jobs, so new files do not require rescanning and re-indexing the entire folder.
 
 Run the watcher and the background worker in separate processes. The watcher only discovers stable files and enqueues work; the worker performs the normal SHA-256 validation, audio preparation, transcription, and indexing pipeline. If a file changes after being queued, the next stable scan detects its new signature and queues it again.
+
+## Remote Direct-Media URL Ingestion
+
+For a direct downloadable audio/video file, explicitly allowlist the exact host and enqueue the downloaded file:
+
+```bash
+python scripts/import_media_url.py \
+  --url "https://media.example.com/archive/interview.mp4" \
+  --allowed-host media.example.com
+```
+
+Repeat `--url` for multiple files and `--allowed-host` for each trusted host. The adapter accepts HTTPS on port 443 only, rejects embedded credentials and non-allowlisted hosts, manually validates every redirect, rejects DNS answers that are not globally routable, disables environment proxies, checks media content types, and enforces a configurable download-size limit (`--max-bytes`) and timeout (`--timeout-seconds`). Downloaded files are stored under `data/incoming/remote/` and queued as explicit file-import jobs; run the background worker separately to transcribe and index them.
+
+Only allowlist domains controlled by the archive operator. DNS addresses are checked before each request but are not pinned at the socket layer, so use a trusted host allowlist and network egress controls for deployments exposed to untrusted users. This adapter downloads direct media files only; it does not scrape YouTube or authenticated streaming pages, playlists, or links that require browser cookies or custom authorization headers.
 
 ## Background Processing Worker
 
