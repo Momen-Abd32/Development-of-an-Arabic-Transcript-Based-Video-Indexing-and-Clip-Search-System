@@ -30,6 +30,8 @@ class FakeResponse:
         if include_length:
             self.headers["Content-Length"] = str(len(body))
         for key, value in (headers or {}).items():
+            if key in self.headers:
+                del self.headers[key]
             self.headers[key] = value
         self.closed = False
 
