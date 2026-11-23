@@ -265,6 +265,7 @@ TEXT = {
         "evaluation_desc": "ابحث عن مقاطع ثم علّم النتائج ذات الصلة يدوياً. تُحفظ الأحكام في ملف مستقل لاستخدامها في حساب Precision وRecall وMRR.",
         "evaluation_query": "استعلام التقييم",
         "evaluation_mode": "طريقة الاسترجاع",
+        "evaluation_build_semantic": "بناء / تحديث الفهرس الدلالي لكل الأرشيف قبل البحث الهجين",
         "evaluation_search": "اعرض المقاطع لتقييمها",
         "evaluation_relevant": "هذه النتيجة ذات صلة",
         "evaluation_play": "تشغيل المصدر عند هذا التوقيت",
@@ -438,6 +439,7 @@ TEXT = {
         "evaluation_desc": "Search for transcript segments and manually mark relevant results. Judgments are saved separately for Precision, Recall, and MRR evaluation.",
         "evaluation_query": "Evaluation query",
         "evaluation_mode": "Retrieval mode",
+        "evaluation_build_semantic": "Build / refresh the archive-wide semantic index before hybrid search",
         "evaluation_search": "Find segments to judge",
         "evaluation_relevant": "This result is relevant",
         "evaluation_play": "Play source at this timestamp",
@@ -2454,12 +2456,21 @@ with tab_evaluation:
         )
         evaluation_mode_label = st.selectbox(
             t["evaluation_mode"],
-            [t["exact"], t["fuzzy"]],
+            [t["exact"], t["fuzzy"], t["hybrid"]],
             key="evaluation_mode",
+        )
+        evaluation_build_semantic = (
+            st.checkbox(
+                t["evaluation_build_semantic"],
+                value=False,
+                key="evaluation_build_semantic",
+            )
+            if evaluation_mode_label == t["hybrid"] else False
         )
         evaluation_context = (
             evaluation_query.strip(),
             evaluation_mode_label,
+            evaluation_build_semantic,
         )
         if st.session_state.get("evaluation_context") != evaluation_context:
             st.session_state.evaluation_results = None
@@ -2476,7 +2487,26 @@ with tab_evaluation:
                 evaluation_engine = None
                 try:
                     evaluation_engine = SearchEngine()
-                    if evaluation_mode_label == t["fuzzy"]:
+                    if evaluation_mode_label == t["hybrid"]:
+                        evaluation_provider = SentenceTransformerProvider()
+                        if evaluation_build_semantic:
+                            media_ids = [
+                                row["video_id"]
+                                for row in evaluation_engine.db.connection.execute(
+                                    "SELECT DISTINCT video_id FROM segments ORDER BY video_id"
+                                ).fetchall()
+                            ]
+                            with st.spinner(t["build_semantic_index"]):
+                                for media_id in media_ids:
+                                    evaluation_engine.index_semantic_media(
+                                        media_id, evaluation_provider
+                                    )
+                        found_results = evaluation_engine.hybrid_search(
+                            evaluation_query,
+                            evaluation_provider,
+                            limit=10,
+                        )
+                    elif evaluation_mode_label == t["fuzzy"]:
                         found_results = evaluation_engine.fuzzy_search(
                             evaluation_query, limit=10
                         )
