@@ -60,8 +60,15 @@ def test_batch_processor_handles_audio_and_video(tmp_path, monkeypatch):
         database_path=str(tmp_path / "database.db"),
         catalog_path=str(tmp_path / "media_catalog.json"),
     )
-    results = processor.process_directory(str(input_dir))
+    progress_updates = []
+    results = processor.process_directory(
+        str(input_dir),
+        progress_callback=lambda completed, total: progress_updates.append(
+            (completed, total)
+        ),
+    )
 
+    assert progress_updates == [(1, 2), (2, 2)]
     assert [item["status"] for item in results] == ["processed", "processed"]
     assert {item["media_type"] for item in results} == {"audio", "video"}
     assert all(item["segments"] == 1 for item in results)
