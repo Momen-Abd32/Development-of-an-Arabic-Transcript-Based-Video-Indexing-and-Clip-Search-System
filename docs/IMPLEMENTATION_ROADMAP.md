@@ -50,9 +50,10 @@ Evolve the existing Arabic media archiving, transcription, indexing, and clip-se
 The current feature branch contains initial foundations for multilingual semantic embeddings, hybrid lexical/fuzzy/semantic ranking, optional speaker diarization, transcript timestamp playback, and extractive transcript summaries with keyword frequencies. These are partial vertical slices, not completion of their roadmap phases.
 
 - Semantic ranking currently scans stored embeddings in application code; a scalable vector index and retrieval evaluation remain future work.
-- Search filters for media metadata, collections, tags, date, and speaker remain outstanding.
+- Search filters for media metadata, date, and speaker remain outstanding. Archive-level collection/tag management and archive listing filters are implemented as a first slice; applying these filters directly to transcript search remains outstanding.
 - Transcript insights currently select original transcript sentences and rank term frequencies. They are not abstractive AI summaries or a full topic-modeling system.
 - Video keyframe extraction now produces sampled JPEGs and previews them in the transcript workspace; timestamp-aware visual search and keyframe indexing are still outstanding.
+- Media catalog records now support optional collection names and normalized tags, with backward-compatible JSON loading, archive management UI, and collection/tag filtering of the archive list.
 - Speaker diarization requires optional pyannote dependencies, model access, and validation against representative Arabic recordings.
 - All newly added tests still require execution in a configured environment before these slices can be marked verified.
 
