@@ -3,6 +3,7 @@ import heapq
 from rapidfuzz import fuzz
 from src.database.database_manager import DatabaseManager
 from src.indexing.text_processor import ArabicTextProcessor
+from src.search.semantic_search import SemanticSearchIndex
 
 
 class SearchEngine:
@@ -124,6 +125,85 @@ class SearchEngine:
             reverse=True,
         )
         return [item[2] for item in best_results]
+
+    def semantic_search(
+        self,
+        query: str,
+        provider,
+        limit: int = 20,
+        video_id: str | None = None,
+    ) -> list[dict]:
+        """Search the optional semantic index without changing lexical search."""
+        semantic_index = SemanticSearchIndex(str(self.db.database_path))
+        try:
+            return semantic_index.search(
+                query,
+                provider,
+                limit=limit,
+                media_id=video_id,
+            )
+        finally:
+            semantic_index.close()
+
+    def index_semantic_media(self, video_id: str, provider) -> int:
+        """Build or refresh embeddings for one already-indexed media item."""
+        semantic_index = SemanticSearchIndex(str(self.db.database_path))
+        try:
+            return semantic_index.index_media(video_id, provider)
+        finally:
+            semantic_index.close()
+
+    def hybrid_search(
+        self,
+        query: str,
+        provider,
+        limit: int = 20,
+        video_id: str | None = None,
+        fuzzy_threshold: int = 75,
+        rrf_k: int = 60,
+    ) -> list[dict]:
+        """Fuse FTS5, RapidFuzz, and semantic rankings using RRF."""
+        self._validate_limit(limit)
+        if isinstance(rrf_k, bool) or not isinstance(rrf_k, int) or rrf_k <= 0:
+            raise ValueError("RRF k must be a positive integer.")
+
+        lexical = self.exact_search(query, limit=limit * 3, video_id=video_id)
+        fuzzy = self.fuzzy_search(
+            query,
+            threshold=fuzzy_threshold,
+            limit=limit * 3,
+            video_id=video_id,
+        )
+        semantic = self.semantic_search(
+            query,
+            provider,
+            limit=limit * 3,
+            video_id=video_id,
+        )
+
+        fused = {}
+        for results in (lexical, fuzzy, semantic):
+            for rank, result in enumerate(results, start=1):
+                key = (result["video_id"], result["id"])
+                entry = fused.setdefault(key, dict(result))
+                entry["hybrid_score"] = entry.get("hybrid_score", 0.0) + (
+                    1.0 / (rrf_k + rank)
+                )
+                if "semantic_score" in result:
+                    entry["semantic_score"] = result["semantic_score"]
+                if "similarity" in result:
+                    entry["similarity"] = result["similarity"]
+
+        ranked = sorted(
+            fused.values(),
+            key=lambda result: (
+                -result["hybrid_score"],
+                result["video_id"],
+                result["start"],
+                result["id"],
+            ),
+        )
+        return ranked[:limit]
 
     def close(self):
         self.db.close()
