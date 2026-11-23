@@ -6,6 +6,9 @@ from src.indexing.text_processor import ArabicTextProcessor
 from src.search.semantic_search import SemanticSearchIndex
 
 
+UNSPECIFIED_SPEAKER = "__UNSPECIFIED_SPEAKER__"
+
+
 class SearchEngine:
 
     def __init__(self, database_path="data/database/videos.db"):
@@ -56,7 +59,9 @@ class SearchEngine:
             placeholders = ",".join("?" for _ in media_ids)
             sql += f" AND segments.video_id IN ({placeholders})"
             params.extend(media_ids)
-        if speaker is not None:
+        if speaker == UNSPECIFIED_SPEAKER:
+            sql += " AND (segments.speaker IS NULL OR TRIM(segments.speaker) = '')"
+        elif speaker is not None:
             sql += " AND segments.speaker = ?"
             params.append(speaker)
 
@@ -106,7 +111,9 @@ class SearchEngine:
         if media_ids is not None:
             conditions.append("video_id IN (" + ",".join("?" for _ in media_ids) + ")")
             params.extend(media_ids)
-        if speaker is not None:
+        if speaker == UNSPECIFIED_SPEAKER:
+            conditions.append("(speaker IS NULL OR TRIM(speaker) = '')")
+        elif speaker is not None:
             conditions.append("speaker = ?")
             params.append(speaker)
         if conditions:
