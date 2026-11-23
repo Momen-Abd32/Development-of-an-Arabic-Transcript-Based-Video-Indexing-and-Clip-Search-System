@@ -280,7 +280,8 @@ flowchart TB
     Saved clip metadata"]
 
     APP --> EXPORT["exports/"]
-    EXPORT --> BACKUPS["exports/backups/\nVerified ZIP snapshots"]
+    EXPORT --> BACKUPS["exports/backups/
+    Verified ZIP snapshots"]
     EXPORT --> CLIPS["exports/clips/
     Extracted MP4 clips"]
     EXPORT --> CSV["Transcript and clip-list
