@@ -41,13 +41,13 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - **Standalone audio upload and playback:** Upload audio recordings without requiring a video container.
 - **Audio preparation:** Use FFmpeg to normalize audio from video or standalone audio files to mono 16 kHz WAV for transcription.
 - **Batch media import:** Recursively scan a local folder and process supported audio and video files one by one.
-- **Durable processing queue:** Persist folder-import jobs in a separate SQLite database, track per-file progress, retry failures, cancel pending jobs, and recover interrupted jobs after restart.
+- **Durable processing queue:** Persist folder-import jobs in a separate SQLite database, track per-file progress, retry failures, cancel queued jobs immediately, request cooperative cancellation of active jobs between files, and recover interrupted jobs after restart.
 - **Independent background worker:** Run the persistent processing queue as a separate CLI process with polling, worker heartbeats, and expired-lease recovery.
 - **Archive dashboard:** Summarize media counts, stored file size, transcript totals, processing and queue states, missing source files, database integrity, and runtime dependency availability.
-- **Durable processing queue:** Persist folder-import jobs in a separate SQLite database, track per-file progress, retry failures, cancel pending jobs, and recover interrupted jobs after restart.
 - **Media catalog:** Persist each media file's type, original filename, stored path, and processing status.
 - **Archive collections and tags:** Organize media with optional collection names and deduplicated tags; filter the archive by collection and selected tags.
 - **Archive-wide search:** Search transcript segments across all imported media or limit the search to the currently selected file.
+- **Search filters:** Narrow exact, fuzzy, and hybrid results by media type, source filename, added-date range, collection, tags, and speaker (including segments without a speaker label).
 - **Duplicate detection:** Identify identical files using SHA-256 and avoid processing duplicate content within the same batch.
 - **Transcript reuse:** Reuse existing transcript JSON files and rebuild their search index instead of transcribing the same media again.
 - **Arabic speech recognition:** Generate timestamped transcript segments with Faster-Whisper.
@@ -110,7 +110,7 @@ The Streamlit application upload limit is configured to **2 GB per file**. Actua
 5. The transcript is saved as JSON under `data/transcripts/`, and the media catalog records the source filename, type, path, and processing status.
 6. Arabic text is normalized and transcript segments are indexed in SQLite.
 7. The user can review or edit the transcript for the currently selected media file.
-8. The user searches either the selected file or the entire indexed archive using exact or fuzzy search.
+8. The user searches either the selected file or the entire indexed archive using exact, fuzzy, or hybrid search, with optional media, source, date, collection, tag, and speaker filters.
 9. Search results show the source media, matching text, and timestamps, with a preview of the original file.
 10. The user can extract a selected video segment as an MP4 clip.
 11. Transcript data and clip metadata can be exported as CSV files.
@@ -150,6 +150,7 @@ data/database/videos.db
 | `end` | REAL | Segment end time in seconds |
 | `original_text` | TEXT | Transcript text |
 | `normalized_text` | TEXT | Normalized text used for indexing and search |
+| `speaker` | TEXT, nullable | Optional diarization label assigned to the transcript segment |
 
 ### Full-text search: `segments_fts`
 
