@@ -239,3 +239,25 @@ def test_cancel_request_is_persisted_after_reopening_queue(tmp_path):
     reopened = ProcessingQueue(path)
     assert reopened.is_cancel_requested(job["job_id"]) is True
     reopened.close()
+
+def test_expired_worker_finishes_pending_cancellation_instead_of_requeueing(tmp_path):
+    queue = ProcessingQueue(tmp_path / "queue.db")
+    job = queue.enqueue("batch_import", {}, max_attempts=3)
+    queue.claim_next()
+    queue.cancel(job["job_id"])
+    queue.connection.execute(
+        "UPDATE processing_jobs SET locked_at = '2000-01-01T00:00:00+00:00' WHERE job_id = ?",
+        (job["job_id"],),
+    )
+
+    assert queue.recover_stale_jobs(60) == 1
+    recovered = queue.get(job["job_id"])
+    assert recovered["status"] == "cancelled"
+    assert recovered["finished_at"] is not None
+    assert "cancellation completed" in recovered["error"].lower()
+    assert queue.claim_next() is None
+    events = queue.audit_log.list_events(
+        entity_type="processing_job", entity_id=job["job_id"]
+    )
+    assert "job_cancelled" in {event["action"] for event in events}
+    queue.close()
