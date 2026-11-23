@@ -1431,7 +1431,7 @@ with tab_visual:
                 frame_dir = Path("data/keyframes") / record["media_id"]
                 frames = sorted(frame_dir.glob("keyframe_*.jpg"))
                 source_path = Path(record["stored_path"])
-                if not frames or not source_path.is_file():
+                if not frames:
                     if not source_path.is_file():
                         skipped += 1
                         progress.progress(position / max(len(visual_media_records), 1))
@@ -1444,7 +1444,6 @@ with tab_visual:
                     visual_index.replace_media_keyframes(
                         record["media_id"], timestamped_frames
                     )
-                    frames = [item[0] for item in timestamped_frames]
                 else:
                     existing_frames = visual_index.get_media_keyframes(
                         record["media_id"]
@@ -1454,6 +1453,10 @@ with tab_visual:
                     ]
                     current_paths = [str(path.resolve()) for path in frames]
                     if existing_paths != current_paths:
+                        if not source_path.is_file():
+                            raise FileNotFoundError(
+                                f'Original video is missing: {source_path}'
+                            )
                         timestamped_frames = KeyframeExtractor.extract(
                             source_path,
                             frame_dir,
