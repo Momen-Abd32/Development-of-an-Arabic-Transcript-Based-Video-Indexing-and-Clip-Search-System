@@ -42,9 +42,11 @@ def test_failed_job_retries_until_attempt_limit_then_can_be_manually_retried(tmp
     job = queue.enqueue("batch_import", {"input_directory": "archive"}, 2)
 
     first = queue.claim_next()
+    queue.update_progress(job["job_id"], 60)
     failed_once = queue.fail(job["job_id"], "temporary error")
     assert failed_once["status"] == "queued"
     assert failed_once["attempts"] == 1
+    assert failed_once["progress"] == 0
 
     second = queue.claim_next()
     assert second["attempts"] == 2
