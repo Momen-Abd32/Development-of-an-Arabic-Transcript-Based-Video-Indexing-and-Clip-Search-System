@@ -139,6 +139,16 @@ class ProcessingQueue:
             ).fetchall()
         return [self._to_dict(row) for row in rows]
 
+    def count_by_status(self) -> dict[str, int]:
+        rows = self.connection.execute(
+            """
+            SELECT status, COUNT(*) AS total
+            FROM processing_jobs
+            GROUP BY status
+            """
+        ).fetchall()
+        return {row["status"]: row["total"] for row in rows}
+
     def recover_stale_jobs(self, lease_seconds: int = 900) -> int:
         if (
             isinstance(lease_seconds, bool)
