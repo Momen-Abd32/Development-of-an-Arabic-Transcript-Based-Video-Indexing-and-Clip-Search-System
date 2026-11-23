@@ -68,7 +68,7 @@ class KeyframeSearchIndex:
     def replace_media_keyframes(
         self,
         media_id: str,
-        frame_paths: Sequence[str | Path],
+        frame_paths: Sequence[str | Path | tuple[str | Path, float]],
         interval_seconds: float = 30,
     ) -> int:
         if not isinstance(media_id, str) or not media_id.strip():
@@ -79,6 +79,8 @@ class KeyframeSearchIndex:
             raise ValueError("Frame interval must be positive and finite.")
         if not isinstance(frame_paths, (list, tuple)):
             raise TypeError("Frame paths must be a list or tuple.")
+        if not frame_paths:
+            raise ValueError("At least one keyframe is required.")
 
         records = []
         previous_timestamp = -1.0
