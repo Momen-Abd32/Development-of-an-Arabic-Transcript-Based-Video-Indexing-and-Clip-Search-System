@@ -349,12 +349,15 @@ class ProcessingQueue:
             not isinstance(current_file, str) or not current_file.strip()
         ):
             raise ValueError("Current file must be a non-empty string or None.")
-        if (
-            isinstance(stage_progress, bool)
-            or not isinstance(stage_progress, (int, float))
-            or not math.isfinite(stage_progress)
-            or not 0 <= stage_progress <= 100
+        if isinstance(stage_progress, bool) or not isinstance(
+            stage_progress, (int, float)
         ):
+            raise ValueError("Stage progress must be between 0 and 100.")
+        try:
+            stage_value = float(stage_progress)
+        except (OverflowError, ValueError) as error:
+            raise ValueError("Stage progress must be between 0 and 100.") from error
+        if not math.isfinite(stage_value) or not 0 <= stage_value <= 100:
             raise ValueError("Stage progress must be between 0 and 100.")
         now = _timestamp()
         cursor = self.connection.execute(
@@ -367,7 +370,7 @@ class ProcessingQueue:
             (
                 stage.strip(),
                 current_file.strip() if current_file is not None else None,
-                float(stage_progress),
+                stage_value,
                 now,
                 now,
                 job_id,
