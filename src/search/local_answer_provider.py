@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import math
 from urllib.parse import urlparse
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 
 class OllamaAnswerProvider:
@@ -106,7 +106,7 @@ class OllamaAnswerProvider:
             def redirect_request(self, request, file_pointer, code, message, headers, new_url):
                 raise ValueError("Ollama endpoint redirects are not allowed.")
 
-        opener = build_opener(RejectRedirects)
+        opener = build_opener(ProxyHandler({}), RejectRedirects)
         with opener.open(request, timeout=self.timeout) as response:
             response_data = json.loads(response.read().decode("utf-8"))
         message = response_data.get("message", {})
