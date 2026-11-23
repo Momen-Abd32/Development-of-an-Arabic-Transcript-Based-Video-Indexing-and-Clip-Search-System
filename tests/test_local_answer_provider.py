@@ -40,7 +40,11 @@ def test_ollama_provider_posts_question_and_bounded_evidence_to_loopback(monkeyp
         def open(self, request, timeout):
             return fake_urlopen(request, timeout)
 
-    monkeypatch.setattr(provider_module, "build_opener", lambda handler: FakeOpener())
+    def fake_build_opener(*handlers):
+        captured["handlers"] = handlers
+        return FakeOpener()
+
+    monkeypatch.setattr(provider_module, "build_opener", fake_build_opener)
     provider = OllamaAnswerProvider(model="qwen2.5:3b", timeout=45)
     result = provider.generate_answer(
         "إلى أين وصلت الشحنة؟",
@@ -62,6 +66,8 @@ def test_ollama_provider_posts_question_and_bounded_evidence_to_loopback(monkeyp
     assert captured["payload"]["stream"] is False
     assert captured["payload"]["format"] == "json"
     assert captured["payload"]["messages"][1]["content"].find("وصلت الشحنة") >= 0
+    assert isinstance(captured["handlers"][0], provider_module.ProxyHandler)
+    assert captured["handlers"][0].proxies == {}
 
 
 @pytest.mark.parametrize(
@@ -102,7 +108,7 @@ def test_ollama_provider_blocks_redirects(monkeypatch):
             raise ValueError("Ollama endpoint redirects are not allowed.")
 
     monkeypatch.setattr(
-        provider_module, "build_opener", lambda handler: RedirectingOpener()
+        provider_module, "build_opener", lambda *handlers: RedirectingOpener()
     )
     provider = OllamaAnswerProvider()
     with pytest.raises(ValueError, match="redirects are not allowed"):
