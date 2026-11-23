@@ -148,6 +148,43 @@ class MediaBatchProcessor:
             key=lambda path: str(path).lower(),
         )
 
+        return self.process_files(
+            media_files,
+            progress_callback=progress_callback,
+            stage_callback=stage_callback,
+        )
+
+    def process_files(
+        self,
+        files: list[str | Path],
+        progress_callback: Callable[[int, int], None] | None = None,
+        stage_callback: Callable[[str, str | None, float], None] | None = None,
+    ) -> list[dict]:
+        """Process an explicit set of media files through the shared import pipeline."""
+        if not isinstance(files, (list, tuple)):
+            raise TypeError("Files must be supplied as a list or tuple of paths.")
+        media_files = []
+        for file_path in files:
+            if not isinstance(file_path, (str, Path)):
+                raise TypeError("Each media file path must be a string or Path.")
+            path = Path(file_path)
+            if path.suffix.lower() not in SUPPORTED_EXTENSIONS:
+                raise ValueError(f"Unsupported media file extension: {path.suffix}")
+            media_files.append(path)
+        media_files.sort(key=lambda path: str(path).lower())
+
+        def report_stage(
+            stage: str,
+            current_file: Path | None = None,
+            stage_progress: float = 0,
+        ) -> None:
+            if stage_callback is not None:
+                stage_callback(
+                    stage,
+                    str(current_file) if current_file is not None else None,
+                    stage_progress,
+                )
+
         results = []
         report_stage("ready", None, 100)
 
