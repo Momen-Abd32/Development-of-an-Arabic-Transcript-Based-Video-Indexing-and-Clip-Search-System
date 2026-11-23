@@ -304,3 +304,28 @@ def test_catalog_rejects_invalid_persisted_collection_and_tags(
     with pytest.raises(ValueError, match=message):
         catalog.get_all()
     assert path.read_text(encoding="utf-8") == original
+
+
+def test_archive_metadata_changes_are_audited(tmp_path):
+    from src.media.audit_log import AuditLog
+
+    catalog = MediaCatalog(
+        tmp_path / "catalog.json",
+        audit_database_path=tmp_path / "audit.db",
+    )
+    media_id = "a" * 64
+    catalog.register_media(media_id, "video", "interview.mp4", "/archive/interview.mp4")
+    catalog.update_archive_metadata(
+        media_id, collection="News", tags=["Arabic", "Politics"], actor="editor"
+    )
+
+    audit = AuditLog(tmp_path / "audit.db")
+    events = audit.list_events(entity_type="media", entity_id=media_id)
+    metadata_event = next(
+        event for event in events if event["action"] == "media_metadata_updated"
+    )
+    assert metadata_event["actor"] == "editor"
+    assert metadata_event["details"]["before"].get("collection") is None
+    assert metadata_event["details"]["after"]["collection"] == "News"
+    assert metadata_event["details"]["after"]["tags"] == ["Arabic", "Politics"]
+    audit.close()
