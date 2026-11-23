@@ -267,6 +267,7 @@ TEXT = {
         "evaluation_mode": "طريقة الاسترجاع",
         "evaluation_search": "اعرض المقاطع لتقييمها",
         "evaluation_relevant": "هذه النتيجة ذات صلة",
+        "evaluation_play": "تشغيل المصدر عند هذا التوقيت",
         "evaluation_notes": "ملاحظات المراجع (اختياري)",
         "evaluation_save": "حفظ الأحكام اليدوية",
         "evaluation_saved": "تم حفظ الأحكام في data/evaluation/search_queries.json",
@@ -439,6 +440,7 @@ TEXT = {
         "evaluation_mode": "Retrieval mode",
         "evaluation_search": "Find segments to judge",
         "evaluation_relevant": "This result is relevant",
+        "evaluation_play": "Play source at this timestamp",
         "evaluation_notes": "Reviewer notes (optional)",
         "evaluation_save": "Save human judgments",
         "evaluation_saved": "Judgments saved to data/evaluation/search_queries.json",
@@ -2526,6 +2528,18 @@ with tab_evaluation:
                     if result.get("speaker"):
                         st.caption(f'{t["speaker"]}: {result["speaker"]}')
                     st.write(result["original_text"])
+                    source_path = (
+                        Path(source_record["stored_path"])
+                        if source_record else None
+                    )
+                    if source_path and source_path.is_file() and st.button(
+                        t["evaluation_play"],
+                        key=f"evaluation_play_{result_key}",
+                    ):
+                        if source_record["media_type"] == "video":
+                            st.video(str(source_path), start_time=int(start))
+                        else:
+                            st.audio(str(source_path), start_time=int(start))
                     if is_relevant:
                         marked_results.append({
                             "media_id": media_id,
