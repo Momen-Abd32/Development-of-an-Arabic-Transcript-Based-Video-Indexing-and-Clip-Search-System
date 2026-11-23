@@ -151,6 +151,10 @@ def test_verifier_rejects_checksum_mismatch(tmp_path):
         "/data/file.txt",
         "C:\\data\\file.txt",
         "secrets/passwords.txt",
+        "data/drive:stream.txt",
+        "data/CON.txt",
+        "data/file.",
+        "data//nested.txt",
     ],
 )
 def test_verifier_rejects_unsafe_manifest_paths(tmp_path, unsafe_path):
@@ -224,4 +228,40 @@ def test_verifier_rejects_duplicate_manifest_paths(tmp_path):
         }))
 
     with pytest.raises(ValueError, match="duplicate"):
+        ArchiveBackup.verify_backup(backup)
+
+
+
+def test_verifier_rejects_symbolic_link_entries(tmp_path):
+    backup = tmp_path / "symlink.zip"
+    with zipfile.ZipFile(backup, "w") as archive:
+        info = zipfile.ZipInfo("data/link.txt")
+        info.create_system = 3
+        info.external_attr = (0o120777 << 16)
+        archive.writestr(info, b"target")
+        manifest = {
+            "format_version": 1,
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "files": [{
+                "path": "data/link.txt",
+                "size_bytes": 6,
+                "sha256": hashlib.sha256(b"target").hexdigest(),
+            }],
+        }
+        archive.writestr("manifest.json", json.dumps(manifest))
+
+    with pytest.raises(ValueError, match="Symbolic links"):
+        ArchiveBackup.verify_backup(backup)
+
+
+def test_verifier_rejects_boolean_format_version(tmp_path):
+    backup = tmp_path / "bad-version.zip"
+    with zipfile.ZipFile(backup, "w") as archive:
+        archive.writestr("manifest.json", json.dumps({
+            "format_version": True,
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "files": [],
+        }))
+
+    with pytest.raises(ValueError, match="manifest"):
         ArchiveBackup.verify_backup(backup)
