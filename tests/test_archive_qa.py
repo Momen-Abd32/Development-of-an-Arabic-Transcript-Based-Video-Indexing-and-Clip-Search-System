@@ -222,3 +222,87 @@ def test_archive_qa_does_not_cite_invalid_transcript_evidence(overrides):
 
     assert result["status"] == "insufficient_evidence"
     assert result["evidence"] == []
+
+
+class FakeAnswerProvider:
+    def __init__(self, result=None, error=None):
+        self.result = result
+        self.error = error
+        self.calls = []
+
+    def generate_answer(self, question, evidence):
+        self.calls.append((question, evidence))
+        if self.error:
+            raise self.error
+        return self.result
+
+
+def test_archive_qa_accepts_generated_claims_only_with_retrieved_citations():
+    engine = FakeSearchEngine(exact=[segment(12, "وصلت الشحنة إلى عمّان.", start=30)])
+    provider = FakeAnswerProvider({
+        "abstain": False,
+        "claims": [{
+            "text": "وصلت الشحنة إلى عمّان.",
+            "citations": [{"media_id": "media-a", "segment_id": 12}],
+        }],
+    })
+
+    result = ArchiveQA(engine).ask("إلى أين وصلت الشحنة؟", answer_provider=provider)
+
+    assert result["answer_type"] == "cited_generated_claims"
+    assert result["answer"] == "وصلت الشحنة إلى عمّان."
+    assert result["answer_citations"] == [{
+        "media_id": "media-a",
+        "segment_id": 12,
+        "start": 0.0,
+        "end": 3.0,
+    }]
+    assert result["claims"][0]["citations"] == result["answer_citations"]
+    assert provider.calls[0][0] == "إلى أين وصلت الشحنة؟"
+
+
+@pytest.mark.parametrize(
+    "generated",
+    [
+        {"abstain": False, "claims": [{"text": "إجابة مخترعة", "citations": [
+            {"media_id": "not-in-archive", "segment_id": 999}
+        ]}]},
+        {"abstain": False, "claims": [{"text": "بلا مصدر", "citations": []}]},
+        {"abstain": False, "claims": [{"text": "", "citations": [
+            {"media_id": "media-a", "segment_id": 1}
+        ]}]},
+        {"abstain": True, "claims": []},
+    ],
+)
+def test_archive_qa_falls_back_to_verbatim_evidence_for_invalid_or_abstaining_model(
+    generated,
+):
+    engine = FakeSearchEngine(exact=[segment(1, "المعلومة المسجلة في التفريغ.", start=8)])
+    provider = FakeAnswerProvider(generated)
+
+    result = ArchiveQA(engine).ask("ما المعلومة؟", answer_provider=provider)
+
+    assert result["answer_type"] == "extractive_quote"
+    assert result["answer"] == "المعلومة المسجلة في التفريغ."
+    assert result["answer_citations"][0]["segment_id"] == 1
+    assert result["warnings"]
+
+
+def test_archive_qa_falls_back_when_local_answer_provider_fails():
+    engine = FakeSearchEngine(exact=[segment(7, "بدأ الاجتماع عند التاسعة.", start=9)])
+    provider = FakeAnswerProvider(error=ConnectionError("Ollama is offline"))
+
+    result = ArchiveQA(engine).ask("متى بدأ الاجتماع؟", answer_provider=provider)
+
+    assert result["answer_type"] == "extractive_quote"
+    assert result["answer"] == "بدأ الاجتماع عند التاسعة."
+    assert "Ollama is offline" in result["warnings"][0]
+
+
+def test_archive_qa_does_not_call_answer_provider_without_evidence():
+    provider = FakeAnswerProvider({"abstain": False, "claims": []})
+
+    result = ArchiveQA(FakeSearchEngine()).ask("سؤال", answer_provider=provider)
+
+    assert result["status"] == "insufficient_evidence"
+    assert provider.calls == []
