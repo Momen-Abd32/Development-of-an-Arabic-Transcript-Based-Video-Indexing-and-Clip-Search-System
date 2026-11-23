@@ -12,6 +12,7 @@ from src.transcription.transcript_manager import TranscriptManager
 from src.transcription.transcript_exporter import TranscriptExporter
 from src.indexing.indexer import TranscriptIndexer
 from src.search.search_engine import SearchEngine
+from src.search.embedding_provider import SentenceTransformerProvider
 from src.clips.clip_manager import ClipManager
 from src.clips.clip_metadata import ClipMetadata
 from src.clips.clip_exporter import ClipExporter
@@ -98,6 +99,10 @@ TEXT = {
         "search_type": "نوع البحث",
         "exact": "بحث دقيق",
         "fuzzy": "بحث تقريبي",
+        "hybrid": "بحث هجين ذكي",
+        "build_semantic_index": "بناء/تحديث فهرس البحث الدلالي",
+        "semantic_index_done": "تم تحديث فهرس البحث الدلالي. عدد المقاطع",
+        "semantic_index_hint": "البحث الهجين يحتاج بناء الفهرس الدلالي أولاً. يتطلب تثبيت sentence-transformers وتنزيل النموذج عند أول استخدام.",
         "search_button": "بحث",
         "empty_query": "اكتب كلمة أو عبارة قبل بدء البحث.",
         "search_failed": "فشل البحث",
@@ -180,6 +185,10 @@ TEXT = {
         "search_type": "Search type",
         "exact": "Exact Search",
         "fuzzy": "Fuzzy Search",
+        "hybrid": "Hybrid Semantic Search",
+        "build_semantic_index": "Build / Refresh Semantic Index",
+        "semantic_index_done": "Semantic index updated. Number of segments",
+        "semantic_index_hint": "Hybrid search requires building the semantic index first. Install sentence-transformers; the model downloads on first use.",
         "search_button": "Search",
         "empty_query": "Enter a word or phrase before searching.",
         "search_failed": "Search failed",
@@ -775,10 +784,33 @@ with tab_search:
         )
         search_type = st.radio(
             t["search_type"],
-            [t["exact"], t["fuzzy"]],
+            [t["exact"], t["fuzzy"], t["hybrid"]],
             horizontal=True,
             key=f"search_type_{scope_key}",
         )
+
+        if search_type == t["hybrid"]:
+            st.caption(t["semantic_index_hint"])
+
+        if search_type == t["hybrid"] and st.button(t["build_semantic_index"]):
+            search_engine = None
+            try:
+                provider = SentenceTransformerProvider()
+                catalog_records = MediaCatalog().get_all()
+                search_engine = SearchEngine()
+                total_indexed = 0
+                progress = st.progress(0.0)
+                for position, record in enumerate(catalog_records, start=1):
+                    total_indexed += search_engine.index_semantic_media(
+                        record["media_id"], provider
+                    )
+                    progress.progress(position / max(len(catalog_records), 1))
+                st.success(f'{t["semantic_index_done"]}: {total_indexed}')
+            except Exception as error:
+                st.error(f'{t["search_failed"]}: {error}')
+            finally:
+                if search_engine is not None:
+                    search_engine.close()
 
         if st.button(t["search_button"], type="primary"):
             if not query.strip():
@@ -795,9 +827,16 @@ with tab_search:
                             query,
                             video_id=media_filter,
                         )
-                    else:
+                    elif search_type == t["fuzzy"]:
                         results = search_engine.fuzzy_search(
                             query,
+                            video_id=media_filter,
+                        )
+                    else:
+                        provider = SentenceTransformerProvider()
+                        results = search_engine.hybrid_search(
+                            query,
+                            provider,
                             video_id=media_filter,
                         )
 
