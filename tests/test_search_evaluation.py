@@ -66,3 +66,12 @@ def test_evaluator_rejects_missing_relevance_judgments():
 def test_evaluator_requires_one_ranking_per_query():
     with pytest.raises(ValueError, match="exactly one ranking"):
         evaluate_rankings([{"query": "x", "relevant_segments": [segment("a", 0, 1)]}], [])
+
+
+def test_transcript_metrics_reject_overflowing_timestamps():
+    with pytest.raises(ValueError, match="Relevant segments"):
+        precision_at_k(
+            [],
+            [segment("media-a", 10**400, 10**401)],
+            k=1,
+        )
