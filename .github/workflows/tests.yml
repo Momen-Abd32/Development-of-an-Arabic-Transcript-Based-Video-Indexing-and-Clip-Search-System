@@ -16,6 +16,8 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
     timeout-minutes: 20
     steps:
       - name: Check out repository
