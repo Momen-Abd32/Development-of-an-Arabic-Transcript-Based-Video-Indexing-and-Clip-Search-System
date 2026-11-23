@@ -57,6 +57,7 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - **Extractive transcript insights:** Select representative original transcript sentences and rank frequent Arabic/Latin keywords; results are stored separately from the verbatim transcript and never rewrite dialect.
 - **Video keyframes:** Extract sampled JPEG thumbnails with FFmpeg, preserve the actual frame presentation timestamps, safely replace prior generated frames, and preview them in the transcript workspace.
 - **Visual keyframe search:** Index extracted frames in SQLite and search across them using Arabic text descriptions or a reference image with an optional multilingual CLIP model; results include the source media and frame timestamp, with an option to preview the original video at the matched time.
+- **Unified cross-modal search:** Combine exact and fuzzy transcript matches with CLIP keyframe matches in one timestamped result list using Reciprocal Rank Fusion (RRF). The system fuses ranks rather than comparing uncalibrated text and image similarity scores; reference-image queries return visually similar frames.
 - **Arabic text normalization:** Normalize common Arabic character variations, remove diacritics and tatweel, and standardize whitespace to improve search consistency.
 - **Exact full-text search:** Find transcript segments using SQLite FTS5.
 - **Fuzzy search:** Find approximate matches using RapidFuzz.
@@ -114,6 +115,7 @@ The Streamlit application upload limit is configured to **2 GB per file**. Actua
 7. The user can review or edit the transcript for the currently selected media file.
 8. The user searches either the selected file or the entire indexed archive using exact, fuzzy, or hybrid search, with optional media, source, date, collection, tag, and speaker filters.
 9. Search results show the source media, matching text, and timestamps, with a preview of the original file.
+9a. The unified search workspace can fuse transcript and visual keyframe rankings, or retrieve visually similar frames from a reference image.
 10. The user can extract a selected video segment as an MP4 clip.
 11. Transcript data and clip metadata can be exported as CSV files.
 12. The processing queue persists folder-import jobs and the dashboard summarizes archive and runtime health.
