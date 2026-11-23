@@ -107,7 +107,7 @@ def test_follows_redirect_only_after_validating_redirect_destination(tmp_path):
         302,
         "Found",
         redirect_headers,
-        None,
+        BytesIO(),
     )
     response = FakeResponse(b"redirected media")
     opener = FakeOpener([redirect, response])
