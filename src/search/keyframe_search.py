@@ -92,6 +92,19 @@ class KeyframeSearchIndex:
                 str(path.resolve()),
             ))
 
+        current = self.connection.execute(
+            """
+            SELECT media_id, frame_index, timestamp_seconds, image_path
+            FROM keyframes WHERE media_id = ? ORDER BY frame_index
+            """,
+            (media_id,),
+        ).fetchall()
+        if [
+            (row["media_id"], row["frame_index"], row["timestamp_seconds"], row["image_path"])
+            for row in current
+        ] == records:
+            return len(records)
+
         try:
             old_ids = [
                 row["id"]
