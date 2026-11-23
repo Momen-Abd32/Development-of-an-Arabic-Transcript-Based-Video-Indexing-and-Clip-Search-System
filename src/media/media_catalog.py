@@ -5,6 +5,8 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+from src.media.audit_log import AuditLog
+
 
 class MediaCatalog:
     """Persist metadata that maps media identifiers to source files."""
@@ -12,8 +14,33 @@ class MediaCatalog:
     VALID_TYPES = {"audio", "video"}
     VALID_STATUSES = {"uploaded", "processing", "transcribed", "failed"}
 
-    def __init__(self, catalog_path="data/database/media_catalog.json"):
+    def __init__(
+        self,
+        catalog_path="data/database/media_catalog.json",
+        audit_database_path="data/database/processing_queue.db",
+    ):
         self.catalog_path = Path(catalog_path)
+        self.audit_database_path = Path(audit_database_path)
+
+    def _record_audit(
+        self,
+        action: str,
+        media_id: str,
+        before: dict | None,
+        after: dict,
+        actor: str = "system",
+    ) -> None:
+        audit = AuditLog(self.audit_database_path)
+        try:
+            audit.record(
+                action=action,
+                entity_type="media",
+                entity_id=media_id,
+                actor=actor,
+                details={"before": before, "after": after},
+            )
+        finally:
+            audit.close()
 
     def _load(self) -> list[dict]:
         if not self.catalog_path.exists():
@@ -150,6 +177,7 @@ class MediaCatalog:
         source_name: str,
         stored_path: str,
         status: str = "uploaded",
+        actor: str = "system",
     ) -> dict:
         self._validate_media(
             media_id,
@@ -165,6 +193,7 @@ class MediaCatalog:
             None,
         )
 
+        previous = dict(existing) if existing is not None else None
         if existing is not None:
             existing.update({
                 "media_type": media_type,
@@ -186,6 +215,13 @@ class MediaCatalog:
             items.append(record)
 
         self._save(items)
+        self._record_audit(
+            "media_registered" if existing is None else "media_record_updated",
+            media_id,
+            previous,
+            dict(record),
+            actor,
+        )
         return dict(record)
 
     def update_status(
@@ -193,6 +229,7 @@ class MediaCatalog:
         media_id: str,
         status: str,
         error: str | None = None,
+        actor: str = "system",
     ) -> dict:
         if not isinstance(media_id, str) or not media_id.strip():
             raise ValueError("Media ID cannot be empty.")
@@ -211,6 +248,7 @@ class MediaCatalog:
         if record is None:
             raise KeyError(f"Media not found in catalog: {media_id}")
 
+        before = dict(record)
         record["status"] = status
         if error:
             record["error"] = error
@@ -218,6 +256,7 @@ class MediaCatalog:
             record.pop("error", None)
 
         self._save(items)
+        self._record_audit("media_status_updated", media_id, before, dict(record), actor)
         return dict(record)
 
     def get_by_id(self, media_id: str) -> dict | None:
@@ -255,6 +294,7 @@ class MediaCatalog:
         media_id: str,
         collection: str | None = None,
         tags: list[str] | None = None,
+        actor: str = "system",
     ) -> dict:
         """Update optional collection and tags without changing legacy fields."""
         if not isinstance(media_id, str) or not media_id.strip():
@@ -273,6 +313,7 @@ class MediaCatalog:
         if record is None:
             raise KeyError(f"Media not found in catalog: {media_id}")
 
+        before = dict(record)
         if collection is None:
             record.pop("collection", None)
         else:
@@ -283,6 +324,9 @@ class MediaCatalog:
             record["tags"] = normalized_tags
 
         self._save(items)
+        self._record_audit(
+            "media_metadata_updated", media_id, before, dict(record), actor
+        )
         return dict(record)
 
     def get_collections(self) -> list[str]:
