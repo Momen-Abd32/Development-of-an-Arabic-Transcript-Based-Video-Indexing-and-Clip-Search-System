@@ -206,3 +206,19 @@ def test_empty_segments_remove_previous_index(tmp_path):
     assert remaining == 0
 
     indexer.close()
+
+
+def test_indexer_persists_speaker_labels(tmp_path):
+    indexer = TranscriptIndexer(str(tmp_path / "speaker.db"))
+    indexer.index_segments(
+        "video_1",
+        [
+            {"start": 0, "end": 1, "text": "مرحبا", "speaker": "SPEAKER_00"},
+            {"start": 1, "end": 2, "text": "أهلا"},
+        ],
+    )
+    rows = indexer.db.connection.execute(
+        "SELECT speaker FROM segments ORDER BY start"
+    ).fetchall()
+    assert [row["speaker"] for row in rows] == ["SPEAKER_00", None]
+    indexer.close()
