@@ -73,7 +73,7 @@ def test_batch_processor_handles_audio_and_video(tmp_path, monkeypatch):
     )
 
     assert progress_updates == [(1, 2), (2, 2)]
-    assert stage_updates[0][0] == "scanning"
+    assert stage_updates[0] == ("scanning", None, 0)
     assert stage_updates[1] == ("ready", None, 100)
     assert "verifying_source" in [item[0] for item in stage_updates]
     assert "extracting_audio" in [item[0] for item in stage_updates]
