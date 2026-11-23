@@ -68,7 +68,10 @@ class KeyframeExtractor:
                 "-q:v", "2",
                 str(pattern),
             ]
-            result = subprocess.run(command, capture_output=True, text=True)
+            result = subprocess.run(
+                command, capture_output=True, text=True,
+                encoding="utf-8", errors="replace",
+            )
             if result.returncode != 0:
                 raise RuntimeError(
                     f"Keyframe extraction failed:\n{result.stderr.strip()}"
