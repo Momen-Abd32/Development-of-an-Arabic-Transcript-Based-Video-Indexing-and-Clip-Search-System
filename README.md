@@ -231,7 +231,7 @@ The processing queue uses a separate SQLite database so job state can be persist
 | `data/insights/` | Optional extractive summaries, keywords, and source-segment references |
 | `data/keyframes/` | Generated JPEG keyframes grouped by media identifier |
 | `data/database/videos.db` | Transcript segments and the FTS5 search index |
-| `data/database/processing_queue.db` | Durable processing job state, attempts, progress, and errors |
+| `data/database/processing_queue.db` | Durable job state, processing stages, watcher signatures, timestamped notes, and audit events |
 | `data/database/media_catalog.json` | Media identifiers, original filenames, source paths, types, and processing status |
 | `data/database/clips.json` | Metadata for saved video clips |
 | `exports/clips/` | Extracted MP4 video clips |
@@ -280,6 +280,7 @@ flowchart TB
     Saved clip metadata"]
 
     APP --> EXPORT["exports/"]
+    EXPORT --> BACKUPS["exports/backups/\nVerified ZIP snapshots"]
     EXPORT --> CLIPS["exports/clips/
     Extracted MP4 clips"]
     EXPORT --> CSV["Transcript and clip-list
@@ -585,7 +586,7 @@ The worker claims jobs transactionally, reports per-file progress, retries faile
 
 ## Audit History
 
-The application stores an append-only audit trail in `data/database/processing_queue.db`. It records media registration and metadata/status changes, plus processing-job enqueue, start, retry scheduling, failure, cancellation, manual retry, and completion events. Each event includes a UTC timestamp, actor (defaults to `system` until authentication is introduced), entity identity, and JSON before/after details where applicable.
+The application stores an append-only audit trail in `data/database/processing_queue.db`. It records media registration and metadata/status changes, timestamped note creation/updates/deletions, plus processing-job enqueue, start, retry scheduling, failure, cancellation, manual retry, and completion events. Each event includes a UTC timestamp, actor (defaults to `system` until authentication is introduced), entity identity, and JSON before/after details where applicable.
 
 Use the `AuditLog` service to query recent events or filter by entity type, entity ID, and actor. The audit history is local to this application instance; it is not yet a tamper-proof compliance log or a substitute for authenticated user identity.
 
