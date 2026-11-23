@@ -138,3 +138,59 @@ def test_worker_stops_between_files_when_active_job_is_cancelled(tmp_path):
     assert "job_cancellation_requested" in {event["action"] for event in events}
     assert "job_cancelled" in {event["action"] for event in events}
     queue.close()
+
+
+
+class StageAwareProcessor:
+    def process_directory(
+        self,
+        input_directory,
+        recursive=True,
+        progress_callback=None,
+        stage_callback=None,
+    ):
+        if stage_callback:
+            stage_callback("extracting_audio", "archive/interview.mp4", 35)
+            stage_callback("transcribing", "archive/interview.mp4", 60)
+            stage_callback("indexing_transcript", "archive/interview.mp4", 90)
+        if progress_callback:
+            progress_callback(1, 1)
+        return [{"source": "interview.mp4", "status": "processed", "segments": 4}]
+
+
+def test_worker_persists_stage_callback_updates_without_breaking_old_processors(tmp_path):
+    queue = ProcessingQueue(tmp_path / "queue.db")
+    job = queue.enqueue(
+        "batch_import",
+        {"input_directory": "archive"},
+    )
+    updates = []
+    original_update_stage = queue.update_stage
+
+    def track_stage(job_id, stage, current_file=None, stage_progress=0):
+        updates.append((stage, current_file, stage_progress))
+        return original_update_stage(
+            job_id,
+            stage,
+            current_file=current_file,
+            stage_progress=stage_progress,
+        )
+
+    queue.update_stage = track_stage
+    worker = ProcessingWorker(
+        queue=queue,
+        processor_factory=StageAwareProcessor,
+        lease_seconds=3,
+        heartbeat_interval=1,
+    )
+
+    result = worker.run_once()
+
+    assert result["job"]["status"] == "completed"
+    assert updates == [
+        ("extracting_audio", "archive/interview.mp4", 35),
+        ("transcribing", "archive/interview.mp4", 60),
+        ("indexing_transcript", "archive/interview.mp4", 90),
+    ]
+    assert result["job"]["stage"] == "completed"
+    queue.close()
