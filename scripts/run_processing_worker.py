@@ -1,5 +1,6 @@
 import argparse
 import json
+import signal
 import sys
 from pathlib import Path
 
@@ -49,7 +50,9 @@ def main():
             result = worker.run_once()
             print(json.dumps(result, ensure_ascii=False, indent=2))
         else:
-            print("Processing worker started. Press Ctrl+C to stop.")
+            print("Processing worker started. Press Ctrl+C to stop after the current job.")
+            signal.signal(signal.SIGINT, lambda signum, frame: worker.stop())
+            signal.signal(signal.SIGTERM, lambda signum, frame: worker.stop())
             worker.run_forever(poll_seconds=args.poll_seconds)
     except KeyboardInterrupt:
         worker.stop()
