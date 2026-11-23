@@ -203,8 +203,6 @@ class ExplicitFileProcessor:
         files,
         progress_callback=None,
     ):
-        if progress_callback:
-            progress_callback(1, len(files))
         return [
             {"source": path, "status": "processed", "segments": 2}
             for path in files
