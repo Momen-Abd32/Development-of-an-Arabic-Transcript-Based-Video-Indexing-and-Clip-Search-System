@@ -25,7 +25,7 @@ def _result_key(result: dict) -> tuple:
                 raise ValueError("Boolean timestamps are invalid.")
             start = float(raw_start)
             end = float(raw_end)
-        except (KeyError, TypeError, ValueError) as error:
+        except (KeyError, TypeError, ValueError, OverflowError) as error:
             raise ValueError("Transcript relevance requires numeric start and end timestamps.") from error
         if not math.isfinite(start) or not math.isfinite(end) or start < 0 or end <= start:
             raise ValueError("Transcript relevance timestamps must satisfy finite 0 <= start < end.")
