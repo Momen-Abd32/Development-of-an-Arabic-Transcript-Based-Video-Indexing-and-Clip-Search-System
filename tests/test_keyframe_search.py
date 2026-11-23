@@ -157,3 +157,17 @@ def test_unchanged_keyframe_metadata_keeps_existing_embeddings(visual_index, tmp
     ) == 1
     results = visual_index.search_text("سيارة", provider)
     assert len(results) == 1
+
+
+def test_keyframe_embedding_rows_cascade_when_frame_is_deleted(visual_index, tmp_path):
+    frame = tmp_path / "frame.jpg"
+    frame.write_bytes(b"frame")
+    visual_index.replace_media_keyframes("media-a", [frame])
+    visual_index.index_media("media-a", FakeVisualProvider())
+    visual_index.connection.execute(
+        "DELETE FROM keyframes WHERE media_id = ?", ("media-a",)
+    )
+    visual_index.connection.commit()
+    assert visual_index.connection.execute(
+        "SELECT COUNT(*) FROM keyframe_embeddings"
+    ).fetchone()[0] == 0
