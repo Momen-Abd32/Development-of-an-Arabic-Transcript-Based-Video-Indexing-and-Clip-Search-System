@@ -10,7 +10,7 @@ import tempfile
 import uuid
 import zipfile
 from datetime import datetime, timezone
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 
 class ArchiveBackup:
@@ -37,9 +37,24 @@ class ArchiveBackup:
         if not isinstance(value, str) or not value or "\\" in value:
             raise ValueError("Backup contains an invalid archive path.")
         path = PurePosixPath(value)
+        windows_path = PureWindowsPath(value)
+        windows_reserved = {
+            "CON", "PRN", "AUX", "NUL",
+            *(f"COM{number}" for number in range(1, 10)),
+            *(f"LPT{number}" for number in range(1, 10)),
+        }
         if (
             path.is_absolute()
+            or path.as_posix() != value
+            or windows_path.is_absolute()
+            or bool(windows_path.drive)
             or any(part in {"", ".", ".."} for part in path.parts)
+            or any(
+                ":" in part
+                or part.endswith((" ", "."))
+                or part.split(".", 1)[0].upper() in windows_reserved
+                for part in path.parts
+            )
             or not (value.startswith("data/") or value.startswith("exports/"))
         ):
             raise ValueError("Backup contains a path outside data/ or exports/.")
@@ -173,7 +188,11 @@ class ArchiveBackup:
 
             if (
                 not isinstance(manifest, dict)
+                or isinstance(manifest.get("format_version"), bool)
+                or not isinstance(manifest.get("format_version"), int)
                 or manifest.get("format_version") != cls.FORMAT_VERSION
+                or not isinstance(manifest.get("created_at"), str)
+                or not manifest.get("created_at").strip()
                 or not isinstance(manifest.get("files"), list)
             ):
                 raise ValueError("Unsupported or invalid backup manifest.")
@@ -208,6 +227,8 @@ class ArchiveBackup:
                 mode = (info.external_attr >> 16) & 0o170000
                 if mode == 0o120000:
                     raise ValueError("Symbolic links are not allowed in backups.")
+                if info.is_dir():
+                    raise ValueError("Directory entries are not allowed in backup manifests.")
                 if info.file_size != expected_size:
                     raise ValueError(f"Backup file size mismatch: {relative}")
 
