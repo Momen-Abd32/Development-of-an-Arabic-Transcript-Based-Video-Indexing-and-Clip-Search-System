@@ -1412,6 +1412,13 @@ with tab_visual:
         if visual_scope == t["current_media"] and current_video_id
         else None
     )
+    visual_context = (
+        visual_scope,
+        current_video_id if visual_scope == t["current_media"] else None,
+    )
+    if st.session_state.get("visual_search_context") != visual_context:
+        st.session_state.visual_search_results = None
+        st.session_state.visual_search_context = visual_context
     visual_query = st.text_input(
         t["visual_search_query"],
         key="visual_search_query_standalone",
@@ -1523,7 +1530,6 @@ with tab_visual:
                         media_ids=visual_media_filter,
                     )
                 st.session_state.visual_search_results = visual_results
-                st.session_state.visual_search_scope = visual_scope
             except Exception as error:
                 st.error(f'{t["visual_search_failed"]}: {error}')
             finally:
@@ -1532,9 +1538,6 @@ with tab_visual:
                 if visual_index is not None:
                     visual_index.close()
 
-    if st.session_state.get("visual_search_scope") != visual_scope:
-        st.session_state.visual_search_results = None
-        st.session_state.visual_search_scope = visual_scope
     visual_results = st.session_state.get("visual_search_results")
     if visual_results:
         st.markdown(f'#### {t["visual_results"]} ({len(visual_results)})')
