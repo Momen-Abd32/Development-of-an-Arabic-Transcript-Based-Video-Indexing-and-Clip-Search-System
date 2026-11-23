@@ -42,6 +42,8 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - **Audio preparation:** Use FFmpeg to normalize audio from video or standalone audio files to mono 16 kHz WAV for transcription.
 - **Batch media import:** Recursively scan a local folder and process supported audio and video files one by one.
 - **Durable processing queue:** Persist folder-import jobs in a separate SQLite database, track per-file progress, retry failures, cancel pending jobs, and recover interrupted jobs after restart.
+- **Archive dashboard:** Summarize media counts, stored file size, transcript totals, processing and queue states, missing source files, database integrity, and runtime dependency availability.
+- **Durable processing queue:** Persist folder-import jobs in a separate SQLite database, track per-file progress, retry failures, cancel pending jobs, and recover interrupted jobs after restart.
 - **Media catalog:** Persist each media file's type, original filename, stored path, and processing status.
 - **Archive collections and tags:** Organize media with optional collection names and deduplicated tags; filter the archive by collection and selected tags.
 - **Archive-wide search:** Search transcript segments across all imported media or limit the search to the currently selected file.
@@ -111,6 +113,7 @@ The Streamlit application upload limit is configured to **2 GB per file**. Actua
 9. Search results show the source media, matching text, and timestamps, with a preview of the original file.
 10. The user can extract a selected video segment as an MP4 clip.
 11. Transcript data and clip metadata can be exported as CSV files.
+12. The processing queue persists folder-import jobs and the dashboard summarizes archive and runtime health.
 
 ## Application Architecture
 
@@ -119,6 +122,7 @@ The application separates its main responsibilities into modules under `src/`:
 | Module | Responsibility |
 |---|---|
 | `media` | Prepare normalized audio, extract video keyframes, batch-import media folders, and manage durable processing jobs |
+| `dashboard` | Aggregate archive metrics and read-only runtime health checks |
 | `transcription` | Run speech recognition, validate and manage transcripts, generate optional speaker labels and extractive insights, and export transcript data |
 | `indexing` | Normalize Arabic text and index transcript segments |
 | `search` | Perform exact and fuzzy transcript searches |
