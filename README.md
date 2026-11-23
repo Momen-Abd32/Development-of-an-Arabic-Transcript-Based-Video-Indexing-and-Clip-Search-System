@@ -58,6 +58,7 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - **Video keyframes:** Extract sampled JPEG thumbnails with FFmpeg, preserve the actual frame presentation timestamps, safely replace prior generated frames, and preview them in the transcript workspace.
 - **Visual keyframe search:** Index extracted frames in SQLite and search across them using Arabic text descriptions or a reference image with an optional multilingual CLIP model; results include the source media and frame timestamp, with an option to preview the original video at the matched time.
 - **Unified cross-modal search:** Combine exact and fuzzy transcript matches with CLIP keyframe matches in one timestamped result list using Reciprocal Rank Fusion (RRF). The system fuses ranks rather than comparing uncalibrated text and image similarity scores; reference-image queries return visually similar frames.
+- **Evidence-first archive Q&A:** Ask questions over indexed transcripts, retrieve and rank verbatim transcript passages, cite the media ID, segment ID, speaker, and timestamps, and abstain when no evidence is found. Optional semantic retrieval can supplement exact and fuzzy search.
 - **Arabic text normalization:** Normalize common Arabic character variations, remove diacritics and tatweel, and standardize whitespace to improve search consistency.
 - **Exact full-text search:** Find transcript segments using SQLite FTS5.
 - **Fuzzy search:** Find approximate matches using RapidFuzz.
@@ -321,6 +322,15 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   │   └── processing_worker.py
 │   │
 │   ├── search/
+│   │   ├── archive_qa.py
+│   │   ├── cross_modal_evaluation.py
+│   │   ├── cross_modal_search.py
+│   │   ├── evaluation.py
+│   │   ├── keyframe_search.py
+│   │   ├── search_engine.py
+│   │   ├── semantic_search.py
+│   │   ├── visual_embedding_provider.py
+│   │   └── visual_evaluation.py
 │   │   ├── cross_modal_evaluation.py
 │   │   ├── cross_modal_search.py
 │   │   ├── evaluation.py
@@ -337,6 +347,7 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │
 ├── tests/
 │   ├── test_archive_metrics.py
+│   ├── test_archive_qa.py
 │   ├── test_audio_extractor.py
 │   ├── test_media_batch_processor.py
 │   ├── test_media_catalog.py
@@ -575,6 +586,14 @@ python -m pytest tests -v
 
 The complete test suite should be run after pulling the current development branch. Automated tests help verify individual components and expected behavior; they do not by themselves establish real-world transcription accuracy or replace end-to-end testing with varied video and audio inputs.
 
+## Evidence-First Archive Q&A
+
+The Streamlit application includes an **Ask the Archive** workspace. It searches indexed transcript segments using SQLite FTS5 exact retrieval and RapidFuzz fuzzy retrieval, then fuses the ranked lists with Reciprocal Rank Fusion (RRF). Optional multilingual semantic retrieval can be enabled when the semantic package is installed and the selected archive has a built semantic index.
+
+The initial answer is deliberately **extractive**, not generative: it quotes the highest-ranked original transcript segment verbatim and attaches a citation containing the media ID, segment ID, and start/end timestamps. Additional ranked passages are shown as evidence, with source playback links when the original media file is available. If no transcript evidence is retrieved, the system abstains instead of inventing an answer.
+
+This first slice does not yet synthesize multi-passage answers, answer directly from visual frames, or establish that a quoted passage logically proves a conclusion. Users should review the cited source context. It is not a replacement for a human editorial decision.
+
 ## Search Retrieval Evaluation
 
 The project includes macro-averaged Precision@k, Recall@k, and Mean Reciprocal Rank (MRR) for comparing exact, fuzzy, and hybrid transcript retrieval against human relevance judgments.
@@ -636,6 +655,7 @@ Uploaded videos, original audio files, normalized audio, transcript JSON files, 
 - Semantic and hybrid transcript search are optional and require installing `requirements-semantic.txt` and explicitly building the semantic index. Visual keyframe search separately requires `requirements-visual.txt`, extracted keyframes, and a built visual index. Both embedding stores are separate from the existing FTS5 and RapidFuzz indexes.
 - Speaker diarization is optional, requires a Hugging Face token and access to the gated pyannote model, and has not yet been evaluated on Dukkan Media recordings.
 - The initial semantic and visual search implementations rank stored embeddings in application code. Very large archives will need a dedicated vector index and retrieval-performance evaluation.
+- Archive Q&A currently returns verbatim transcript evidence using exact/fuzzy retrieval and optional semantic ranking. It does not generate abstractive multi-passage answers or reason over visual-only evidence; a quote is a source citation, not proof that a claim is complete or correct.
 - Visual search uses multilingual CLIP embeddings, but its retrieval quality has not yet been measured against a human-judged Dukkan Media visual-search dataset. Keyframes are sampled every 30 seconds and capped at 300 frames per video by default, so very long recordings may need a configurable sampling policy to cover their full duration. Frame timestamps are sampled from FFmpeg presentation timestamps.
 - The application currently uses local file storage and a local SQLite database; it is not designed as a multi-user hosted service.
 - Batch import currently reads local or mounted folders. Direct cloud-provider APIs, remote URL ingestion, and continuous folder monitoring are not implemented yet.
