@@ -194,3 +194,45 @@ def test_worker_persists_stage_callback_updates_without_breaking_old_processors(
     ]
     assert result["job"]["stage"] == "completed"
     queue.close()
+
+
+
+class ExplicitFileProcessor:
+    def process_files(
+        self,
+        files,
+        progress_callback=None,
+        stage_callback=None,
+        recursive=True,
+    ):
+        if stage_callback:
+            stage_callback("verifying_source", files[0], 0)
+            stage_callback("verifying_source", files[0], 100)
+        if progress_callback:
+            progress_callback(1, len(files))
+        return [
+            {"source": path, "status": "processed", "segments": 2}
+            for path in files
+        ]
+
+
+def test_worker_dispatches_explicit_file_import_jobs(tmp_path):
+    queue = ProcessingQueue(tmp_path / "queue.db")
+    job = queue.enqueue(
+        "file_import",
+        {"files": ["archive/one.mp4", "archive/two.mp3"]},
+    )
+    worker = ProcessingWorker(
+        queue=queue,
+        processor_factory=ExplicitFileProcessor,
+        lease_seconds=3,
+        heartbeat_interval=1,
+    )
+
+    result = worker.run_once()
+
+    assert result["job"]["job_id"] == job["job_id"]
+    assert result["job"]["status"] == "completed"
+    assert len(result["results"]) == 2
+    assert result["job"]["stage"] == "completed"
+    queue.close()
