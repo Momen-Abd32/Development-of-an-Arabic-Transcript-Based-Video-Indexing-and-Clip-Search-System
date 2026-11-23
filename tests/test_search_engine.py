@@ -155,6 +155,14 @@ def test_hybrid_search_combines_existing_and_semantic_search(search_engine):
     assert results[0]["video_id"] == "video1"
 
 
+def test_hybrid_search_requires_a_built_semantic_index(search_engine):
+    with pytest.raises(RuntimeError, match="Build or refresh"):
+        search_engine.hybrid_search(
+            "البرمجة",
+            FakeEmbeddingProvider(),
+        )
+
+
 def test_hybrid_search_validates_rrf_constant(search_engine):
     with pytest.raises(ValueError):
         search_engine.hybrid_search(
