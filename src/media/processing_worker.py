@@ -107,10 +107,25 @@ class ProcessingWorker:
             if supports_stage_callback:
                 process_kwargs["stage_callback"] = report_stage
 
-            results = processor.process_directory(
-                payload["input_directory"],
-                **process_kwargs,
-            )
+            if job["job_type"] == "batch_import":
+                results = processor.process_directory(
+                    payload["input_directory"],
+                    **process_kwargs,
+                )
+            elif job["job_type"] == "file_import":
+                process_files = getattr(processor, "process_files", None)
+                if not callable(process_files):
+                    raise TypeError(
+                        "The configured processor does not support file imports."
+                    )
+                results = process_files(
+                    payload["files"],
+                    **process_kwargs,
+                )
+            else:
+                raise ValueError(
+                    f'Unsupported processing job type: {job["job_type"]}'
+                )
             if self.queue.is_cancel_requested(job["job_id"]):
                 final_job = self.queue.cancel_running(job["job_id"])
                 return {"job": final_job, "results": results}
