@@ -10,6 +10,7 @@ from src.media.media_catalog import MediaCatalog
 from src.media.keyframe_extractor import KeyframeExtractor
 from src.media.processing_queue import ProcessingQueue
 from src.media.batch_processor import MediaBatchProcessor
+from src.media.archive_metrics import ArchiveMetrics
 from src.transcription.faster_whisper_engine import FasterWhisperEngine
 from src.transcription.transcript_manager import TranscriptManager
 from src.transcription.speaker_diarizer import PyannoteSpeakerDiarizer
@@ -69,6 +70,26 @@ TEXT = {
         "search_tab": "البحث داخل الفيديو",
         "clips_tab": "المقاطع المحفوظة",
         "archive_tab": "إدارة الأرشيف",
+        "dashboard_tab": "لوحة المعلومات",
+        "dashboard_title": "حالة الأرشيف والنظام",
+        "dashboard_refresh": "تحديث المؤشرات",
+        "dashboard_media": "إجمالي الوسائط",
+        "dashboard_videos": "الفيديوهات",
+        "dashboard_audio": "التسجيلات الصوتية",
+        "dashboard_storage": "حجم الملفات المحفوظة",
+        "dashboard_transcripts": "ملفات التفريغ",
+        "dashboard_missing": "ملفات مصدر مفقودة",
+        "dashboard_status": "حالات المعالجة",
+        "dashboard_queue": "حالات قائمة المهام",
+        "dashboard_health": "صحة النظام",
+        "dashboard_db": "فحص قاعدة البيانات",
+        "dashboard_ffmpeg": "FFmpeg",
+        "dashboard_whisper": "Faster-Whisper",
+        "dashboard_semantic": "البحث الدلالي",
+        "dashboard_diarization": "تمييز المتحدثين",
+        "available": "متاح",
+        "unavailable": "غير متاح",
+        "dashboard_not_initialized": "لم تُنشأ بعد",
         "queue_tab": "قائمة المعالجة",
         "queue_title": "مهام معالجة الوسائط",
         "queue_desc": "أضف مجلدًا إلى قائمة المعالجة الدائمة، ثم نفّذ المهام وأعد المحاولة أو ألغِ المهام المنتظرة.",
@@ -206,6 +227,26 @@ TEXT = {
         "search_tab": "Video Search",
         "clips_tab": "Saved Clips",
         "archive_tab": "Archive Management",
+        "dashboard_tab": "Dashboard",
+        "dashboard_title": "Archive and System Health",
+        "dashboard_refresh": "Refresh Metrics",
+        "dashboard_media": "Total Media",
+        "dashboard_videos": "Videos",
+        "dashboard_audio": "Audio Recordings",
+        "dashboard_storage": "Stored Media Size",
+        "dashboard_transcripts": "Transcript Files",
+        "dashboard_missing": "Missing Source Files",
+        "dashboard_status": "Processing Statuses",
+        "dashboard_queue": "Queue Statuses",
+        "dashboard_health": "System Health",
+        "dashboard_db": "Database Check",
+        "dashboard_ffmpeg": "FFmpeg",
+        "dashboard_whisper": "Faster-Whisper",
+        "dashboard_semantic": "Semantic Search",
+        "dashboard_diarization": "Speaker Diarization",
+        "available": "Available",
+        "unavailable": "Unavailable",
+        "dashboard_not_initialized": "Not initialized",
         "queue_tab": "Processing Queue",
         "queue_title": "Media Processing Jobs",
         "queue_desc": "Add a media folder to the durable queue, then run, retry, or cancel pending jobs.",
@@ -574,8 +615,11 @@ with metric_col3:
 # Main sections
 # --------------------------------------------------
 
-tab_upload, tab_transcript, tab_search, tab_clips, tab_archive, tab_queue = st.tabs(
-    [t["upload_tab"], t["transcript_tab"], t["search_tab"], t["clips_tab"], t["archive_tab"], t["queue_tab"]]
+tab_upload, tab_transcript, tab_search, tab_clips, tab_archive, tab_queue, tab_dashboard = st.tabs(
+    [
+        t["upload_tab"], t["transcript_tab"], t["search_tab"],
+        t["clips_tab"], t["archive_tab"], t["queue_tab"], t["dashboard_tab"],
+    ]
 )
 
 
@@ -1412,6 +1456,74 @@ with tab_queue:
                         st.rerun()
 
     queue.close()
+
+
+# 7. Archive and system dashboard
+# --------------------------------------------------
+
+with tab_dashboard:
+    st.subheader("📊 " + t["dashboard_title"])
+    if st.button(t["dashboard_refresh"]):
+        st.rerun()
+
+    metrics = ArchiveMetrics()
+    try:
+        snapshot = metrics.collect()
+        st.caption(f'{t["dashboard_media"]}: {snapshot["media_total"]}')
+        summary_columns = st.columns(4)
+        summary_columns[0].metric(t["dashboard_media"], snapshot["media_total"])
+        summary_columns[1].metric(t["dashboard_videos"], snapshot["video_total"])
+        summary_columns[2].metric(t["dashboard_audio"], snapshot["audio_total"])
+        summary_columns[3].metric(
+            t["dashboard_storage"],
+            f'{snapshot["storage_bytes"] / (1024 * 1024):.1f} MB',
+        )
+
+        detail_columns = st.columns(3)
+        detail_columns[0].metric(
+            t["dashboard_transcripts"],
+            snapshot["transcript_total"],
+        )
+        detail_columns[1].metric(
+            t["dashboard_missing"],
+            snapshot["missing_files"],
+        )
+        detail_columns[2].metric(
+            t["dashboard_db"],
+            snapshot["database_health"],
+        )
+
+        status_column, queue_column = st.columns(2)
+        with status_column:
+            st.markdown(f'**{t["dashboard_status"]}**')
+            if snapshot["status_counts"]:
+                for status, count in sorted(snapshot["status_counts"].items()):
+                    st.write(f"{status}: {count}")
+            else:
+                st.caption(t["no_archive_items"])
+        with queue_column:
+            st.markdown(f'**{t["dashboard_queue"]}**')
+            if snapshot["queue_counts"]:
+                for status, count in sorted(snapshot["queue_counts"].items()):
+                    st.write(f"{status}: {count}")
+            else:
+                st.caption(t["queue_empty"])
+
+        st.divider()
+        st.markdown(f'**{t["dashboard_health"]}**')
+        health_checks = [
+            (t["dashboard_ffmpeg"], snapshot["ffmpeg_available"]),
+            (t["dashboard_whisper"], snapshot["faster_whisper_available"]),
+            (t["dashboard_semantic"], snapshot["semantic_search_available"]),
+            (t["dashboard_diarization"], snapshot["diarization_available"]),
+        ]
+        for label, available in health_checks:
+            state = t["available"] if available else t["unavailable"]
+            st.write(f"{label}: {state}")
+    except Exception as error:
+        st.error(f'{t["dashboard_title"]}: {error}')
+    finally:
+        metrics.close()
 
 
 # --------------------------------------------------
