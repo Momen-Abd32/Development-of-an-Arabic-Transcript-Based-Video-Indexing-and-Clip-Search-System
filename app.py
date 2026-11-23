@@ -1315,7 +1315,7 @@ with tab_queue:
                 )
                 st.success(t["queue_added"])
                 queue.close()
-        st.rerun()
+                st.rerun()
             except Exception as error:
                 st.error(f'{t["queue_failed"]}: {error}')
 
@@ -1324,7 +1324,7 @@ with tab_queue:
             recovered = queue.recover_interrupted_jobs()
             st.success(f'{t["queue_recovered"]}: {recovered}')
             queue.close()
-        st.rerun()
+            st.rerun()
         except Exception as error:
             st.error(f'{t["queue_failed"]}: {error}')
 
@@ -1366,8 +1366,6 @@ with tab_queue:
                     queue.complete(job["job_id"])
                     st.success(t["queue_completed"])
                     st.json(results)
-                queue.close()
-        st.rerun()
             except Exception as error:
                 try:
                     failed_job = queue.fail(job["job_id"], str(error))
@@ -1378,6 +1376,8 @@ with tab_queue:
                     )
                 except Exception:
                     st.error(f'{t["queue_failed"]}: {error}')
+            queue.close()
+            st.rerun()
 
     st.divider()
     jobs = queue.list_jobs(limit=50)
@@ -1391,7 +1391,10 @@ with tab_queue:
                 f'{t["queue_status"]}: {job["status"]} · '
                 f'{t["queue_attempts"]}: {job["attempts"]}/{job["max_attempts"]}'
             )
-            st.progress(float(job["progress"]) / 100, text=f'{t["queue_progress"]}: {job["progress"]:.0f}%')
+            st.progress(
+                float(job["progress"]) / 100,
+                text=f'{t["queue_progress"]}: {job["progress"]:.0f}%',
+            )
             if job.get("error"):
                 st.error(job["error"])
             action_columns = st.columns(2)
@@ -1400,13 +1403,13 @@ with tab_queue:
                     if st.button(t["queue_cancel"], key=f'cancel_{job["job_id"]}'):
                         queue.cancel(job["job_id"])
                         queue.close()
-        st.rerun()
+                        st.rerun()
             elif job["status"] == "failed":
                 with action_columns[0]:
                     if st.button(t["queue_retry"], key=f'retry_{job["job_id"]}'):
                         queue.retry(job["job_id"])
                         queue.close()
-        st.rerun()
+                        st.rerun()
 
     queue.close()
 
