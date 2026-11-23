@@ -122,6 +122,30 @@ TEXT = {
         "queue_retry": "إعادة المحاولة",
         "queue_attempts": "المحاولات",
         "queue_progress": "التقدم",
+        "queue_stage": "مرحلة المعالجة",
+        "queue_current_file": "الملف الجاري",
+        "queue_stage_progress": "تقدم المرحلة",
+        "queue_stage_starting": "بدء المهمة",
+        "queue_stage_scanning": "فحص المجلد",
+        "queue_stage_ready": "اكتمل فحص المجلد",
+        "queue_stage_verifying_source": "التحقق من الملف",
+        "queue_stage_copying_source": "نسخ الملف إلى الأرشيف",
+        "queue_stage_duplicate_skipped": "تجاوز ملف مكرر",
+        "queue_stage_checking_transcript": "فحص التفريغ المحفوظ",
+        "queue_stage_loading_saved_transcript": "تحميل التفريغ المحفوظ",
+        "queue_stage_extracting_audio": "استخراج الصوت",
+        "queue_stage_loading_model": "تحميل نموذج التفريغ",
+        "queue_stage_transcribing": "تحويل الصوت إلى نص",
+        "queue_stage_saving_transcript": "حفظ التفريغ",
+        "queue_stage_indexing_transcript": "فهرسة النص",
+        "queue_stage_updating_catalog": "تحديث بيانات الأرشيف",
+        "queue_stage_file_completed": "اكتمل الملف",
+        "queue_stage_file_failed": "فشلت معالجة الملف",
+        "queue_stage_retry_wait": "بانتظار إعادة المحاولة",
+        "queue_stage_completed": "اكتملت المهمة",
+        "queue_stage_cancelled": "أُلغيت المهمة",
+        "queue_stage_failed": "فشلت المهمة",
+        "queue_stage_queued": "بانتظار التنفيذ",
         "queue_status": "الحالة",
         "queue_path_required": "أدخل مسار مجلد صحيحًا على جهاز تشغيل التطبيق.",
         "queue_note": "يمكن تنفيذ مهمة يدويًا من الواجهة، أو تشغيل عامل مستقل عبر python scripts/run_processing_worker.py لمعالجة المهام دون إبقاء المتصفح مفتوحًا. يمكن طلب إلغاء المهمة الجارية، وستتوقف بعد اكتمال معالجة الملف الحالي.",
@@ -390,6 +414,30 @@ TEXT = {
         "queue_retry": "Retry",
         "queue_attempts": "Attempts",
         "queue_progress": "Progress",
+        "queue_stage": "Processing stage",
+        "queue_current_file": "Current file",
+        "queue_stage_progress": "Stage progress",
+        "queue_stage_starting": "Starting job",
+        "queue_stage_scanning": "Scanning folder",
+        "queue_stage_ready": "Folder scan complete",
+        "queue_stage_verifying_source": "Verifying source file",
+        "queue_stage_copying_source": "Copying into archive",
+        "queue_stage_duplicate_skipped": "Skipping duplicate file",
+        "queue_stage_checking_transcript": "Checking saved transcript",
+        "queue_stage_loading_saved_transcript": "Loading saved transcript",
+        "queue_stage_extracting_audio": "Extracting audio",
+        "queue_stage_loading_model": "Loading transcription model",
+        "queue_stage_transcribing": "Transcribing audio",
+        "queue_stage_saving_transcript": "Saving transcript",
+        "queue_stage_indexing_transcript": "Indexing transcript",
+        "queue_stage_updating_catalog": "Updating archive catalog",
+        "queue_stage_file_completed": "File completed",
+        "queue_stage_file_failed": "File processing failed",
+        "queue_stage_retry_wait": "Waiting for retry",
+        "queue_stage_completed": "Job completed",
+        "queue_stage_cancelled": "Job cancelled",
+        "queue_stage_failed": "Job failed",
+        "queue_stage_queued": "Queued",
         "queue_status": "Status",
         "queue_path_required": "Enter a valid folder path on the application host.",
         "queue_note": "Run a job manually here, or start an independent worker with python scripts/run_processing_worker.py so processing continues without an open browser. Active jobs can be asked to cancel safely after the current file finishes.",
@@ -2346,10 +2394,19 @@ with tab_queue:
                     if queue.is_cancel_requested(job["job_id"]):
                         raise RuntimeError("Processing cancellation requested.")
 
+                def update_job_stage(stage, current_file, stage_progress):
+                    queue.update_stage(
+                        job["job_id"],
+                        stage,
+                        current_file=current_file,
+                        stage_progress=stage_progress,
+                    )
+
                 results = processor.process_directory(
                     payload["input_directory"],
                     recursive=payload.get("recursive", True),
                     progress_callback=update_job_progress,
+                    stage_callback=update_job_stage,
                 )
                 if queue.is_cancel_requested(job["job_id"]):
                     cancelled_job = queue.cancel_running(job["job_id"])
@@ -2401,6 +2458,20 @@ with tab_queue:
             st.write(
                 f'{t["queue_status"]}: {job["status"]} · '
                 f'{t["queue_attempts"]}: {job["attempts"]}/{job["max_attempts"]}'
+            )
+            stage_label = t.get(
+                f'queue_stage_{job.get("stage", "queued")}',
+                job.get("stage", "queued"),
+            )
+            st.caption(f'{t["queue_stage"]}: {stage_label}')
+            if job.get("current_file"):
+                st.caption(f'{t["queue_current_file"]}: {job["current_file"]}')
+            st.progress(
+                float(job.get("stage_progress", 0)) / 100,
+                text=(
+                    f'{t["queue_stage_progress"]}: '
+                    f'{job.get("stage_progress", 0):.0f}%'
+                ),
             )
             st.progress(
                 float(job["progress"]) / 100,
