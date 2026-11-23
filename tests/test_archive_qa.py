@@ -161,3 +161,40 @@ def test_archive_qa_keeps_lexical_evidence_when_semantic_index_is_unavailable():
     assert result["answer"] == "انعقد الاجتماع يوم الأحد."
     assert len(result["warnings"]) == 1
     assert "No semantic embeddings" in result["warnings"][0]
+
+
+
+def test_archive_qa_integrates_with_sqlite_fts_and_fuzzy_retrieval(tmp_path):
+    from src.search.search_engine import SearchEngine
+
+    engine = SearchEngine(str(tmp_path / "archive_qa_integration.db"))
+    try:
+        engine.db.connection.execute(
+            """
+            INSERT INTO segments (
+                video_id, start, end, original_text, normalized_text, speaker
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "archive-video-001",
+                42.0,
+                46.0,
+                "أعلنت اللجنة نتائج الاجتماع صباح اليوم.",
+                "اعلنت اللجنه نتائج الاجتماع صباح اليوم",
+                "SPEAKER_01",
+            ),
+        )
+        engine.db.connection.commit()
+
+        result = ArchiveQA(engine).ask(
+            "أعلنت اللجنة نتائج الاجتماع صباح اليوم",
+            media_ids=["archive-video-001"],
+        )
+
+        assert result["status"] == "evidence_found"
+        assert result["answer"] == "أعلنت اللجنة نتائج الاجتماع صباح اليوم."
+        assert result["answer_citation"]["media_id"] == "archive-video-001"
+        assert result["answer_citation"]["start"] == 42.0
+        assert "exact" in result["evidence"][0]["retrieved_by"]
+    finally:
+        engine.close()
