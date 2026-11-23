@@ -111,3 +111,56 @@ def test_requires_ffmpeg(tmp_path, monkeypatch):
 
     with pytest.raises(RuntimeError, match="FFmpeg"):
         KeyframeExtractor.extract(video, tmp_path / "frames")
+
+
+def test_extract_returns_ffmpeg_timestamps_when_requested(tmp_path, monkeypatch):
+    video = tmp_path / "source.mp4"
+    video.write_bytes(b"video")
+    output = tmp_path / "keyframes"
+    monkeypatch.setattr(
+        "src.media.keyframe_extractor.shutil.which",
+        lambda name: "ffmpeg",
+    )
+
+    def fake_run(command, **kwargs):
+        _write_frame(command)
+        stderr = (
+            "[Parsed_showinfo] n: 0 pts: 0 pts_time:0.000000 "
+            "pos: 0 fmt:yuv420p\n"
+        )
+        return subprocess.CompletedProcess(command, 0, "", stderr)
+
+    monkeypatch.setattr(
+        "src.media.keyframe_extractor.subprocess.run",
+        fake_run,
+    )
+    frames = KeyframeExtractor.extract(
+        video, output, return_timestamps=True
+    )
+    assert len(frames) == 1
+    assert frames[0][0].is_file()
+    assert frames[0][1] == 0.0
+
+
+def test_timestamp_mode_rejects_missing_ffmpeg_timestamps(tmp_path, monkeypatch):
+    video = tmp_path / "source.mp4"
+    video.write_bytes(b"video")
+    output = tmp_path / "keyframes"
+    monkeypatch.setattr(
+        "src.media.keyframe_extractor.shutil.which",
+        lambda name: "ffmpeg",
+    )
+
+    def fake_run(command, **kwargs):
+        _write_frame(command)
+        return subprocess.CompletedProcess(command, 0, "", "no timestamps")
+
+    monkeypatch.setattr(
+        "src.media.keyframe_extractor.subprocess.run",
+        fake_run,
+    )
+    with pytest.raises(RuntimeError, match="timestamp"):
+        KeyframeExtractor.extract(
+            video, output, return_timestamps=True
+        )
+    assert not output.exists()
