@@ -309,9 +309,12 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   │
 │   ├── media/
 │   │   ├── audio_extractor.py
+│   │   ├── archive_metrics.py
 │   │   ├── batch_processor.py
 │   │   ├── keyframe_extractor.py
-│   │   └── media_catalog.py
+│   │   ├── media_catalog.py
+│   │   ├── processing_queue.py
+│   │   └── processing_worker.py
 │   │
 │   ├── search/
 │   │   └── search_engine.py
@@ -323,9 +326,12 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │       └── transcript_manager.py
 │
 ├── tests/
+│   ├── test_archive_metrics.py
 │   ├── test_audio_extractor.py
 │   ├── test_media_batch_processor.py
 │   ├── test_media_catalog.py
+│   ├── test_processing_queue.py
+│   ├── test_processing_worker.py
 │   ├── test_clip_exporter.py
 │   ├── test_clip_manager.py
 │   ├── test_clip_metadata.py
@@ -338,10 +344,12 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   ├── test_keyframe_extractor.py
 │   ├── test_transcript_insights.py
 │   ├── test_transcript_exporter.py
-│   └── test_transcript_manager.py
+│   ├── test_transcript_manager.py
+│   └── test_speaker_diarizer.py
 │
 └── scripts/
     ├── import_media_dataset.py
+    ├── run_processing_worker.py
     └── test_transcription.py
 ```
 
