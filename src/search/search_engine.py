@@ -21,13 +21,15 @@ class SearchEngine:
         query: str,
         limit: int = 20,
         video_id: str | None = None,
+        media_ids: list[str] | None = None,
+        speaker: str | None = None,
     ) -> list[dict]:
 
         self._validate_limit(limit)
 
         normalized_query = ArabicTextProcessor.normalize(query)
 
-        if not normalized_query:
+        if not normalized_query or media_ids == []:
             return []
 
         safe_query = '"' + normalized_query.replace('"', '""') + '"'
@@ -50,6 +52,13 @@ class SearchEngine:
         if video_id is not None:
             sql += " AND segments.video_id = ?"
             params.append(video_id)
+        if media_ids is not None:
+            placeholders = ",".join("?" for _ in media_ids)
+            sql += f" AND segments.video_id IN ({placeholders})"
+            params.extend(media_ids)
+        if speaker is not None:
+            sql += " AND segments.speaker = ?"
+            params.append(speaker)
 
         sql += " ORDER BY score LIMIT ?"
         params.append(limit)
@@ -64,6 +73,8 @@ class SearchEngine:
         threshold: int = 75,
         limit: int = 20,
         video_id: str | None = None,
+        media_ids: list[str] | None = None,
+        speaker: str | None = None,
     ) -> list[dict]:
 
         self._validate_limit(limit)
@@ -77,20 +88,29 @@ class SearchEngine:
 
         normalized_query = ArabicTextProcessor.normalize(query)
 
-        if not normalized_query:
+        if not normalized_query or media_ids == []:
             return []
 
         sql = """
             SELECT id, video_id, start, end, original_text,
-                   normalized_text
+                   normalized_text, speaker
             FROM segments
         """
 
+        conditions = []
         params = []
 
         if video_id is not None:
-            sql += " WHERE video_id = ?"
+            conditions.append("video_id = ?")
             params.append(video_id)
+        if media_ids is not None:
+            conditions.append("video_id IN (" + ",".join("?" for _ in media_ids) + ")")
+            params.extend(media_ids)
+        if speaker is not None:
+            conditions.append("speaker = ?")
+            params.append(speaker)
+        if conditions:
+            sql += " WHERE " + " AND ".join(conditions)
 
         cursor = self.db.connection.execute(sql, params)
 
@@ -131,6 +151,8 @@ class SearchEngine:
         provider,
         limit: int = 20,
         video_id: str | None = None,
+        media_ids: list[str] | None = None,
+        speaker: str | None = None,
     ) -> list[dict]:
         """Search the optional semantic index without changing lexical search."""
         semantic_index = SemanticSearchIndex(str(self.db.database_path))
@@ -140,6 +162,8 @@ class SearchEngine:
                 provider,
                 limit=limit,
                 media_id=video_id,
+                media_ids=media_ids,
+                speaker=speaker,
             )
         finally:
             semantic_index.close()
@@ -158,6 +182,8 @@ class SearchEngine:
         provider,
         limit: int = 20,
         video_id: str | None = None,
+        media_ids: list[str] | None = None,
+        speaker: str | None = None,
         fuzzy_threshold: int = 75,
         rrf_k: int = 60,
     ) -> list[dict]:
@@ -166,18 +192,22 @@ class SearchEngine:
         if isinstance(rrf_k, bool) or not isinstance(rrf_k, int) or rrf_k <= 0:
             raise ValueError("RRF k must be a positive integer.")
 
-        lexical = self.exact_search(query, limit=limit * 3, video_id=video_id)
+        lexical = self.exact_search(query, limit=limit * 3, video_id=video_id, media_ids=media_ids, speaker=speaker)
         fuzzy = self.fuzzy_search(
             query,
             threshold=fuzzy_threshold,
             limit=limit * 3,
             video_id=video_id,
+            media_ids=media_ids,
+            speaker=speaker,
         )
         semantic = self.semantic_search(
             query,
             provider,
             limit=limit * 3,
             video_id=video_id,
+            media_ids=media_ids,
+            speaker=speaker,
         )
         if not semantic:
             scope = f" for media '{video_id}'" if video_id else " for the archive"
