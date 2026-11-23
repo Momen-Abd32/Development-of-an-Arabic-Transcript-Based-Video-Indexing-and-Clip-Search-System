@@ -261,3 +261,36 @@ def test_expired_worker_finishes_pending_cancellation_instead_of_requeueing(tmp_
     )
     assert "job_cancelled" in {event["action"] for event in events}
     queue.close()
+
+def test_existing_queue_database_is_migrated_for_cancel_requests(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "legacy_queue.db"
+    with sqlite3.connect(path) as connection:
+        connection.execute("""
+            CREATE TABLE processing_jobs (
+                job_id TEXT PRIMARY KEY,
+                job_type TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                status TEXT NOT NULL,
+                progress REAL NOT NULL DEFAULT 0,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                max_attempts INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                started_at TEXT,
+                finished_at TEXT,
+                locked_at TEXT,
+                error TEXT
+            )
+        """)
+
+    queue = ProcessingQueue(path)
+    columns = {
+        row["name"]
+        for row in queue.connection.execute("PRAGMA table_info(processing_jobs)")
+    }
+    assert "cancel_requested" in columns
+    queued = queue.enqueue("batch_import", {})
+    assert queued["cancel_requested"] == 0
+    queue.close()
