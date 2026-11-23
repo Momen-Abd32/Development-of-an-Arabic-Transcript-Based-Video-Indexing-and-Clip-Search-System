@@ -198,3 +198,23 @@ def test_archive_qa_integrates_with_sqlite_fts_and_fuzzy_retrieval(tmp_path):
         assert "exact" in result["evidence"][0]["retrieved_by"]
     finally:
         engine.close()
+
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"start": float("nan")},
+        {"end": float("inf")},
+        {"start": -1.0},
+        {"end": 0.0},
+        {"original_text": ""},
+    ],
+)
+def test_archive_qa_does_not_cite_invalid_transcript_evidence(overrides):
+    invalid = segment(11, "محتوى", start=1.0)
+    invalid.update(overrides)
+    result = ArchiveQA(FakeSearchEngine(exact=[invalid])).ask("سؤال")
+
+    assert result["status"] == "insufficient_evidence"
+    assert result["evidence"] == []
