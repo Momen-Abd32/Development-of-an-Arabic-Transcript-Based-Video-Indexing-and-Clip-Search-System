@@ -1631,6 +1631,11 @@ with tab_cross_modal:
     else:
         cross_media_ids = [item["media_id"] for item in cross_records]
 
+    cross_context = (cross_scope, tuple(cross_media_ids))
+    if st.session_state.get("cross_modal_context") != cross_context:
+        st.session_state.cross_modal_results = None
+        st.session_state.cross_modal_context = cross_context
+
     cross_query = st.text_input(
         t["cross_modal_query"], key="cross_modal_query_input"
     )
@@ -1670,21 +1675,21 @@ with tab_cross_modal:
                         media_ids=cross_media_ids,
                     )
                 else:
-                    cross_provider = (
-                        SentenceTransformerVisualProvider()
-                        if include_visual else None
-                    )
+                    cross_provider = None
+                    if include_visual:
+                        try:
+                            cross_provider = SentenceTransformerVisualProvider()
+                        except RuntimeError as provider_error:
+                            st.warning(
+                                f'{t["cross_modal_visual_note"]} ({provider_error})'
+                            )
                     cross_results = cross_search.search_text(
                         cross_query,
                         media_ids=cross_media_ids,
                         visual_provider=cross_provider,
-                        include_visual=include_visual,
+                        include_visual=include_visual and cross_provider is not None,
                     )
                 st.session_state.cross_modal_results = cross_results
-                st.session_state.cross_modal_context = (
-                    cross_scope, tuple(cross_media_ids), cross_query,
-                    cross_reference.name if cross_reference else None,
-                )
             except Exception as error:
                 st.error(f'{t["search_failed"]}: {error}')
             finally:
