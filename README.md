@@ -98,7 +98,8 @@ The Streamlit application upload limit is configured to **2 GB per file**. Actua
 | SQLite | Persistent transcript-segment storage |
 | SQLite FTS5 | Full-text transcript search |
 | RapidFuzz | Approximate text matching |
-| sentence-transformers (optional) | Multilingual semantic and CLIP-compatible visual embeddings |\n| Pillow (optional) | Load reference and indexed keyframe images for visual search |
+| sentence-transformers (optional) | Multilingual semantic and CLIP-compatible visual embeddings |
+| Pillow (optional) | Load reference and indexed keyframe images for visual search |
 | JiWER | WER and CER evaluation |
 | Pytest | Automated testing |
 
@@ -424,13 +425,13 @@ In the Search tab, choose **Hybrid Semantic Search**, then select **Build / Refr
 
 ### Optional: enable visual keyframe search
 
-Visual search requires extracted video keyframes and the optional multilingual CLIP-compatible model:
+Visual search requires extracted video keyframes and two aligned optional CLIP encoders: the original image encoder and a multilingual text encoder that supports 50+ languages, including Arabic. The provider deliberately uses the image model for frames and the multilingual model for text queries:
 
 ```bash
 pip install -r requirements-visual.txt
 ```
 
-Open the Search tab, expand **Visual Video Search**, and choose **Build / Refresh Visual Keyframe Index**. The first run downloads the multilingual CLIP model and indexes existing keyframes. You can then search with an Arabic scene description or upload a reference image. Results show the matched frame, source video, and its FFmpeg presentation timestamp. Videos without extracted keyframes are skipped; extract keyframes from the Transcript tab first.
+Open the Search tab, expand **Visual Video Search**, and choose **Build / Refresh Visual Keyframe Index**. The first run downloads both CLIP checkpoints and indexes existing keyframes. You can then search with an Arabic scene description or upload a reference image. Results show the matched frame, source video, and its FFmpeg presentation timestamp. Videos without extracted keyframes are skipped; extract keyframes from the Transcript tab first.
 
 Visual embeddings are stored separately in SQLite. Exact transcript search and other archive workflows do not require the visual dependencies. The checked-in tests use a deterministic fake provider and do not download or validate the real model against Dukkan Media content.
 
