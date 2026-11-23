@@ -99,6 +99,8 @@ TEXT = {
         "extractive_note": "هذا ملخص استخراجي مكوّن من جمل أصلية من التفريغ؛ لا يعيد صياغة الكلام أو يحوّل اللهجة إلى الفصحى.",
         "extract_keyframes": "استخراج الصور المصغّرة من الفيديو",
         "keyframes_done": "تم استخراج الصور المصغّرة.",
+        "extracting_keyframes": "جاري استخراج الصور المصغّرة...",
+        "keyframes_failed": "تعذر استخراج الصور المصغّرة",
         "keyframes_title": "الصور المصغّرة / اللقطات الرئيسية",
         "keyframes_video_only": "استخراج اللقطات الرئيسية متاح لملفات الفيديو فقط.",
         "start": "البداية",
@@ -199,6 +201,8 @@ TEXT = {
         "extractive_note": "This summary selects original transcript sentences. It does not rewrite speech or convert dialect into Modern Standard Arabic.",
         "extract_keyframes": "Extract Video Keyframes",
         "keyframes_done": "Video keyframes extracted.",
+        "extracting_keyframes": "Extracting video keyframes...",
+        "keyframes_failed": "Keyframe extraction failed",
         "keyframes_title": "Thumbnails / Keyframes",
         "keyframes_video_only": "Keyframe extraction is available for video files only.",
         "start": "Start",
@@ -776,14 +780,14 @@ with tab_transcript:
             keyframe_dir = Path("data/keyframes") / video_id
             if st.button(t["extract_keyframes"]):
                 try:
-                    with st.spinner(t["extracting_audio"]):
+                    with st.spinner(t["extracting_keyframes"]):
                         KeyframeExtractor.extract(
                             st.session_state.media_path,
                             keyframe_dir,
                         )
                     st.success(t["keyframes_done"])
                 except Exception as error:
-                    st.error(f'{t["transcription_failed"]}: {error}')
+                    st.error(f'{t["keyframes_failed"]}: {error}')
 
             keyframe_paths = sorted(keyframe_dir.glob("keyframe_*.jpg"))
             if keyframe_paths:
