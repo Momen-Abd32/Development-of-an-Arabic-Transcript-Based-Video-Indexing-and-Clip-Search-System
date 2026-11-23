@@ -221,6 +221,15 @@ TEXT = {
         "media_source": "المصدر",
         "media_preview": "معاينة المصدر",
         "no_archive_media": "لا توجد ملفات مفهرسة في الأرشيف حتى الآن.",
+        "search_filters": "تصفية نتائج البحث",
+        "filter_media_type": "نوع الوسائط",
+        "filter_all": "الكل",
+        "filter_video": "فيديو",
+        "filter_audio": "صوت",
+        "filter_source": "اسم المصدر يحتوي على",
+        "filter_date": "تاريخ الإضافة",
+        "filter_speaker": "المتحدث",
+        "filter_no_speaker": "غير محدد",
     },
     "en": {
         "page_title": "Arabic Media Archiving & Search",
@@ -386,6 +395,15 @@ TEXT = {
         "media_source": "Source",
         "media_preview": "Preview source",
         "no_archive_media": "There are no indexed media files in the archive yet.",
+        "search_filters": "Search filters",
+        "filter_media_type": "Media type",
+        "filter_all": "All",
+        "filter_video": "Video",
+        "filter_audio": "Audio",
+        "filter_source": "Source name contains",
+        "filter_date": "Added date range",
+        "filter_speaker": "Speaker",
+        "filter_no_speaker": "Unspecified",
     },
 }
 
@@ -1061,6 +1079,102 @@ with tab_search:
             key=f"search_type_{scope_key}",
         )
 
+        catalog = MediaCatalog()
+        catalog_records = catalog.get_all()
+        with st.expander(t["search_filters"], expanded=False):
+            media_type_choice = st.selectbox(
+                t["filter_media_type"],
+                [t["filter_all"], t["filter_video"], t["filter_audio"]],
+                key=f"search_media_type_{scope_key}",
+            )
+            source_contains = st.text_input(
+                t["filter_source"],
+                key=f"search_source_{scope_key}",
+            )
+            collection_choice = st.selectbox(
+                t["filter_collection"],
+                [t["all_collections"]] + catalog.get_collections(),
+                key=f"search_collection_{scope_key}",
+            )
+            tag_choices = st.multiselect(
+                t["filter_tags"],
+                catalog.get_all_tags(),
+                key=f"search_tags_{scope_key}",
+            )
+            date_range = st.date_input(
+                t["filter_date"],
+                value=(),
+                key=f"search_date_range_{scope_key}",
+            )
+            filter_db = SearchEngine()
+            try:
+                speaker_values = [
+                    row["speaker"]
+                    for row in filter_db.db.connection.execute(
+                        "SELECT DISTINCT speaker FROM segments "
+                        "WHERE speaker IS NOT NULL AND TRIM(speaker) != '' "
+                        "ORDER BY speaker COLLATE NOCASE"
+                    ).fetchall()
+                ]
+            finally:
+                filter_db.close()
+            speaker_choice = st.selectbox(
+                t["filter_speaker"],
+                [t["filter_all"], t["filter_no_speaker"]] + speaker_values,
+                key=f"search_speaker_{scope_key}",
+            )
+
+        filtered_catalog = catalog_records
+        if media_type_choice != t["filter_all"]:
+            expected_type = "video" if media_type_choice == t["filter_video"] else "audio"
+            filtered_catalog = [
+                item for item in filtered_catalog
+                if item["media_type"] == expected_type
+            ]
+        if source_contains.strip():
+            needle = source_contains.strip().casefold()
+            filtered_catalog = [
+                item for item in filtered_catalog
+                if needle in item["source_name"].casefold()
+            ]
+        if collection_choice != t["all_collections"]:
+            filtered_catalog = [
+                item for item in filtered_catalog
+                if item.get("collection", "").casefold() == collection_choice.casefold()
+            ]
+        if tag_choices:
+            filtered_catalog = [
+                item for item in filtered_catalog
+                if all(
+                    tag.casefold() in {
+                        value.casefold() for value in item.get("tags", [])
+                    }
+                    for tag in tag_choices
+                )
+            ]
+        if date_range and len(date_range) == 2:
+            start_date, end_date = date_range
+            filtered_catalog = [
+                item for item in filtered_catalog
+                if start_date.isoformat() <= item.get("created_at", "")[:10] <= end_date.isoformat()
+            ]
+        has_metadata_filters = (
+            media_type_choice != t["filter_all"]
+            or bool(source_contains.strip())
+            or collection_choice != t["all_collections"]
+            or bool(tag_choices)
+            or (date_range and len(date_range) == 2)
+        )
+        allowed_media_ids = (
+            [item["media_id"] for item in filtered_catalog]
+            if has_metadata_filters else None
+        )
+        selected_speaker = (
+            None if speaker_choice in (t["filter_all"], t["filter_no_speaker"])
+            else speaker_choice
+        )
+        only_unspecified_speaker = speaker_choice == t["filter_no_speaker"]
+
         if search_type == t["hybrid"]:
             st.caption(t["semantic_index_hint"])
 
@@ -1094,22 +1208,23 @@ with tab_search:
                     media_filter = (
                         st.session_state.video_id if current_scope else None
                     )
+                    speaker_filter = (
+                        "__UNSPECIFIED_SPEAKER__"
+                        if only_unspecified_speaker else selected_speaker
+                    )
+                    search_options = {
+                        "video_id": media_filter,
+                        "media_ids": allowed_media_ids,
+                        "speaker": speaker_filter,
+                    }
                     if search_type == t["exact"]:
-                        results = search_engine.exact_search(
-                            query,
-                            video_id=media_filter,
-                        )
+                        results = search_engine.exact_search(query, **search_options)
                     elif search_type == t["fuzzy"]:
-                        results = search_engine.fuzzy_search(
-                            query,
-                            video_id=media_filter,
-                        )
+                        results = search_engine.fuzzy_search(query, **search_options)
                     else:
                         provider = SentenceTransformerProvider()
                         results = search_engine.hybrid_search(
-                            query,
-                            provider,
-                            video_id=media_filter,
+                            query, provider, **search_options
                         )
 
                     st.session_state.search_results = results
