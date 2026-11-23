@@ -128,10 +128,10 @@ The application separates its main responsibilities into modules under `src/`:
 | `media` | Prepare normalized audio, extract video keyframes, batch-import media folders, manage durable processing jobs, and collect archive/runtime metrics |
 | `transcription` | Run speech recognition, validate and manage transcripts, generate optional speaker labels and extractive insights, and export transcript data |
 | `indexing` | Normalize Arabic text and index transcript segments |
-| `search` | Perform exact and fuzzy transcript searches |
+| `search` | Perform exact, fuzzy, semantic, visual keyframe, and RRF-fused cross-modal retrieval |
 | `database` | Create and manage SQLite tables, indexes, and triggers |
 | `clips` | Extract video clips, manage clip metadata, and export clip lists |
-| `evaluation` | Calculate transcription evaluation metrics |
+| `evaluation` | Calculate transcription, transcript retrieval, visual retrieval, and mixed cross-modal ranking metrics |
 
 The Streamlit interface in `app.py` coordinates these modules and presents the workflow to the user.
 
