@@ -118,9 +118,14 @@ class ProcessingWorker:
                     raise TypeError(
                         "The configured processor does not support file imports."
                     )
+                file_process_kwargs = {
+                    key: value
+                    for key, value in process_kwargs.items()
+                    if key != "recursive"
+                }
                 results = process_files(
                     payload["files"],
-                    **process_kwargs,
+                    **file_process_kwargs,
                 )
             else:
                 raise ValueError(
