@@ -7,6 +7,7 @@ import streamlit as st
 
 from src.media.audio_extractor import AudioExtractor
 from src.media.media_catalog import MediaCatalog
+from src.media.keyframe_extractor import KeyframeExtractor
 from src.transcription.faster_whisper_engine import FasterWhisperEngine
 from src.transcription.transcript_manager import TranscriptManager
 from src.transcription.speaker_diarizer import PyannoteSpeakerDiarizer
@@ -96,6 +97,10 @@ TEXT = {
         "insights_title": "ملخص استخراجي",
         "keywords_title": "الكلمات المفتاحية",
         "extractive_note": "هذا ملخص استخراجي مكوّن من جمل أصلية من التفريغ؛ لا يعيد صياغة الكلام أو يحوّل اللهجة إلى الفصحى.",
+        "extract_keyframes": "استخراج الصور المصغّرة من الفيديو",
+        "keyframes_done": "تم استخراج الصور المصغّرة.",
+        "keyframes_title": "الصور المصغّرة / اللقطات الرئيسية",
+        "keyframes_video_only": "استخراج اللقطات الرئيسية متاح لملفات الفيديو فقط.",
         "start": "البداية",
         "end": "النهاية",
         "save_changes": "حفظ تعديلات النص",
@@ -192,6 +197,10 @@ TEXT = {
         "insights_title": "Extractive Summary",
         "keywords_title": "Keywords",
         "extractive_note": "This summary selects original transcript sentences. It does not rewrite speech or convert dialect into Modern Standard Arabic.",
+        "extract_keyframes": "Extract Video Keyframes",
+        "keyframes_done": "Video keyframes extracted.",
+        "keyframes_title": "Thumbnails / Keyframes",
+        "keyframes_video_only": "Keyframe extraction is available for video files only.",
         "start": "Start",
         "end": "End",
         "save_changes": "Save Transcript Changes",
@@ -762,6 +771,31 @@ with tab_transcript:
             if current_insights["keywords"]:
                 st.markdown(f'**{t["keywords_title"]}**')
                 st.write(", ".join(item["term"] for item in current_insights["keywords"]))
+
+        if st.session_state.get("media_type") == "video":
+            keyframe_dir = Path("data/keyframes") / video_id
+            if st.button(t["extract_keyframes"]):
+                try:
+                    with st.spinner(t["extracting_audio"]):
+                        KeyframeExtractor.extract(
+                            st.session_state.media_path,
+                            keyframe_dir,
+                        )
+                    st.success(t["keyframes_done"])
+                except Exception as error:
+                    st.error(f'{t["transcription_failed"]}: {error}')
+
+            keyframe_paths = sorted(keyframe_dir.glob("keyframe_*.jpg"))
+            if keyframe_paths:
+                st.markdown(f'#### {t["keyframes_title"]}')
+                image_columns = st.columns(3)
+                for frame_index, frame_path in enumerate(keyframe_paths):
+                    with image_columns[frame_index % len(image_columns)]:
+                        st.image(
+                            str(frame_path),
+                            caption=f"{frame_index + 1}",
+                            use_container_width=True,
+                        )
 
         for index, segment in enumerate(st.session_state.segments):
             with st.container(border=True):
