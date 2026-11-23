@@ -59,7 +59,7 @@ The current feature branch contains initial foundations for multilingual semanti
 - An append-only SQLite audit history now records media registration/status/metadata changes and processing-job lifecycle transitions, with UTC timestamps, actor labels, entity IDs, and JSON change details. The default actor is `system` until authenticated identities exist; tamper-evident storage and retention policies remain future work.
 - The archive dashboard now reports media-type and processing-state counts, stored media size, transcript file count, missing source files, SQLite integrity, and availability of FFmpeg and optional model packages. Runtime metrics are read-only and do not imply that a model is downloaded or loaded.
 - Speaker diarization requires optional pyannote dependencies, model access, and validation against representative Arabic recordings.
-- The previous CI run passed 230 tests on commit `0d4a27740ac157cc51c993e46f14e0b9bde93b7c`. Audit-history additions include new focused tests; the current branch must pass a fresh CI run before these additions are considered verified.
+- CI compiles the application and source modules and runs the full pytest suite on pushes and pull requests; consult the latest branch workflow run for the current verification result.
 
 ## Delivery order
 
