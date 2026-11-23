@@ -256,3 +256,18 @@ def test_hybrid_search_returns_empty_when_current_media_is_excluded(search_engin
         FakeEmbeddingProvider(),
         media_ids=[],
     ) == []
+
+
+def test_list_speakers_returns_distinct_labels_in_archive_scope(search_engine):
+    search_engine.db.connection.execute(
+        "UPDATE segments SET speaker = 'SPEAKER_01' WHERE id IN (2, 3)"
+    )
+    search_engine.db.connection.commit()
+
+    assert search_engine.list_speakers() == ["SPEAKER_00", "SPEAKER_01"]
+    assert search_engine.list_speakers(media_ids=["video1"]) == [
+        "SPEAKER_00",
+        "SPEAKER_01",
+    ]
+    assert search_engine.list_speakers(media_ids=["video2"]) == ["SPEAKER_01"]
+    assert search_engine.list_speakers(media_ids=[]) == []
