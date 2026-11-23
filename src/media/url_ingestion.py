@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import ipaddress
+import math
 import mimetypes
 import os
 import socket
@@ -77,19 +78,23 @@ class RemoteURLAdapter:
             normalized_hosts.add(value)
         if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes <= 0:
             raise ValueError("Maximum download size must be a positive integer.")
-        if (
-            isinstance(timeout_seconds, bool)
-            or not isinstance(timeout_seconds, (int, float))
-            or timeout_seconds <= 0
+        if isinstance(timeout_seconds, bool) or not isinstance(
+            timeout_seconds, (int, float)
         ):
-            raise ValueError("Timeout must be a positive number.")
+            raise ValueError("Timeout must be a finite positive number.")
+        try:
+            timeout_value = float(timeout_seconds)
+        except (OverflowError, ValueError) as error:
+            raise ValueError("Timeout must be a finite positive number.") from error
+        if not math.isfinite(timeout_value) or timeout_value <= 0:
+            raise ValueError("Timeout must be a finite positive number.")
         if isinstance(max_redirects, bool) or not isinstance(max_redirects, int) or max_redirects < 0:
             raise ValueError("Maximum redirects must be a non-negative integer.")
 
         self.allowed_hosts = normalized_hosts
         self.download_directory = Path(download_directory).expanduser()
         self.max_bytes = max_bytes
-        self.timeout_seconds = float(timeout_seconds)
+        self.timeout_seconds = timeout_value
         self.max_redirects = max_redirects
         self.resolver = resolver or self._resolve_host
         self.opener_factory = opener_factory or self._build_opener
