@@ -683,7 +683,7 @@ The complete test suite should be run after pulling the current development bran
 
 The **Review Notes** workspace stores comments against a media SHA-256 ID and a non-negative timestamp. Notes can be created, listed in timestamp order, edited, deleted, and played back from their source position. The notes table is additive in the existing processing/audit SQLite database; it does not change transcript, media catalog, or clip metadata formats.
 
-Each create/update/delete action appends an audit event. The current application is still single-instance and has no authenticated user accounts, so the author/editor value is a user-entered label, not a verified identity. Notes are review annotations, not synchronized multi-user live collaboration.
+Each create/update/delete action appends an audit event. When optional authentication is enabled, the author/editor is taken from the authenticated account; when authentication is disabled, it remains a user-entered label. The application is still designed as a local single-instance archive, so notes are not synchronized across multiple live application instances.
 
 ## Evidence-First Archive Q&A
 
@@ -758,7 +758,7 @@ Uploaded videos, original audio files, normalized audio, transcript JSON files, 
 - Visual search uses multilingual CLIP embeddings, but its retrieval quality has not yet been measured against a human-judged Dukkan Media visual-search dataset. Keyframes are sampled every 30 seconds and capped at 300 frames per video by default, so very long recordings may need a configurable sampling policy to cover their full duration. Frame timestamps are sampled from FFmpeg presentation timestamps.
 - The application currently uses local file storage and a local SQLite database; it is not designed as a multi-user hosted service.
 - Timestamped notes provide a local review workflow with audit events, but author labels are not authenticated identities and simultaneous multi-user collaboration is not implemented.
-- Batch import currently reads local or mounted folders. Direct cloud-provider APIs, remote URL ingestion, and continuous folder monitoring are not implemented yet.
+- Batch import reads local or mounted folders. The polling watcher supports continuous monitoring of local/mounted folders, and direct-media URL ingestion supports HTTPS files from explicitly allowlisted hosts. Direct cloud-provider APIs, authenticated streaming pages, and playlist downloads are not implemented.
 - The SQLite segment table retains the legacy `video_id` column name; for audio records, it stores the SHA-256 media identifier as well.
 - The media catalog is a local JSON file intended for the current single-instance application; concurrent multi-process writes are not coordinated.
 - Active application session state is not automatically reconstructed after a process restart.
