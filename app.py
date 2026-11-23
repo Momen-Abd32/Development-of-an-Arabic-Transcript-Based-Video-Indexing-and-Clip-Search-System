@@ -9,6 +9,7 @@ from src.media.audio_extractor import AudioExtractor
 from src.media.media_catalog import MediaCatalog
 from src.transcription.faster_whisper_engine import FasterWhisperEngine
 from src.transcription.transcript_manager import TranscriptManager
+from src.transcription.speaker_diarizer import PyannoteSpeakerDiarizer
 from src.transcription.transcript_exporter import TranscriptExporter
 from src.indexing.indexer import TranscriptIndexer
 from src.search.search_engine import SearchEngine
@@ -86,6 +87,9 @@ TEXT = {
         "segment": "المقطع",
         "play_segment": "تشغيل من هذا التوقيت",
         "selected_segment": "معاينة من التوقيت المحدد",
+        "diarize_speakers": "تمييز المتحدثين",
+        "speaker_diarization_help": "تتطلب هذه الميزة تثبيت requirements-diarization.txt وإعداد HF_TOKEN مع صلاحية الوصول إلى نموذج pyannote.",
+        "speaker": "المتحدث",
         "start": "البداية",
         "end": "النهاية",
         "save_changes": "حفظ تعديلات النص",
@@ -174,6 +178,9 @@ TEXT = {
         "segment": "Segment",
         "play_segment": "Play from this timestamp",
         "selected_segment": "Preview from selected timestamp",
+        "diarize_speakers": "Identify Speakers",
+        "speaker_diarization_help": "Requires requirements-diarization.txt, HF_TOKEN, and access to the pyannote model.",
+        "speaker": "Speaker",
         "start": "Start",
         "end": "End",
         "save_changes": "Save Transcript Changes",
@@ -689,12 +696,37 @@ with tab_transcript:
         video_id = st.session_state.video_id
         edited_segments = []
 
+        st.caption(t["speaker_diarization_help"])
+        if st.button(t["diarize_speakers"]):
+            try:
+                media_path = Path(st.session_state.media_path)
+                audio_path = Path("data/audio") / f"{video_id}.wav"
+                with st.spinner(t["loading_model"]):
+                    if not audio_path.is_file():
+                        AudioExtractor.prepare(str(media_path), str(audio_path))
+                    diarizer = PyannoteSpeakerDiarizer()
+                    annotated_segments = diarizer.annotate(
+                        st.session_state.segments,
+                        str(audio_path),
+                    )
+                    TranscriptManager.save(
+                        annotated_segments,
+                        f"data/transcripts/{video_id}.json",
+                    )
+                    st.session_state.segments = annotated_segments
+                    st.success(t["diarize_speakers"])
+                    st.rerun()
+            except Exception as error:
+                st.error(f'{t["transcription_failed"]}: {error}')
+
         for index, segment in enumerate(st.session_state.segments):
             with st.container(border=True):
                 time_col, text_col = st.columns([1.5, 5])
                 with time_col:
                     st.caption(f'{t["start"]}: {segment["start"]}s')
                     st.caption(f'{t["end"]}: {segment["end"]}s')
+                    if segment.get("speaker"):
+                        st.caption(f'{t["speaker"]}: {segment["speaker"]}')
                     if st.button(
                         t["play_segment"],
                         key=f"play_segment_{video_id}_{index}",
@@ -711,6 +743,7 @@ with tab_transcript:
                     "start": segment["start"],
                     "end": segment["end"],
                     "text": edited_text,
+                    **({"speaker": segment["speaker"]} if segment.get("speaker") else {}),
                 })
 
         if st.session_state.get("transcript_seek") is not None:
