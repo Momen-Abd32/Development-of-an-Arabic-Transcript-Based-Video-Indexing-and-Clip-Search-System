@@ -122,7 +122,6 @@ class SearchEngine:
 
         best_results.sort(
             key=lambda item: (-item[0], -item[1]),
-            reverse=True,
         )
         return [item[2] for item in best_results]
 
