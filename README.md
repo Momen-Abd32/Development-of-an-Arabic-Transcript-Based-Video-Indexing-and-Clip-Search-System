@@ -500,7 +500,7 @@ python scripts/run_processing_worker.py --once
 python scripts/run_processing_worker.py --poll-seconds 10 --lease-seconds 900
 ```
 
-The worker claims jobs transactionally, reports per-file progress, retries failed batches according to each job's attempt limit, and renews its lease while working. Pending jobs can be cancelled from the UI. Active processing is not yet cooperatively cancellable; stop the worker with Ctrl+C to let the current file finish before shutdown.
+The worker claims jobs transactionally, reports per-file progress, retries failed batches according to each job's attempt limit, and renews its lease while working. Queued jobs can be cancelled immediately. Running jobs accept a cancellation request and stop at the next per-file progress callback, allowing the current file to finish safely. The cancellation request is persisted so a restarted worker can complete recovery.
 
 ## Audit History
 
