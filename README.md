@@ -118,7 +118,7 @@ The application separates its main responsibilities into modules under `src/`:
 
 | Module | Responsibility |
 |---|---|
-| `media` | Prepare normalized audio, extract video keyframes, and batch-import media folders |
+| `media` | Prepare normalized audio, extract video keyframes, batch-import media folders, and manage durable processing jobs |
 | `transcription` | Run speech recognition, validate and manage transcripts, generate optional speaker labels and extractive insights, and export transcript data |
 | `indexing` | Normalize Arabic text and index transcript segments |
 | `search` | Perform exact and fuzzy transcript searches |
