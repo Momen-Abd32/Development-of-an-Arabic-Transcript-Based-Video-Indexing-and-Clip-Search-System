@@ -62,6 +62,7 @@ def test_evaluation_dataset_merges_existing_query_and_deduplicates_timestamps(tm
         ("سؤال", [{"media_id": "media-1", "start": 1, "end": 1}]),
         ("سؤال", [{"media_id": "media-1", "start": float("nan"), "end": 2}]),
         ("سؤال", [{"media_id": "media-1", "start": 0, "end": float("inf")}]),
+        ("سؤال", [{"media_id": "media-1", "start": 10**400, "end": 10**401}]),
         ("سؤال", [{"media_id": "media-1", "start": True, "end": 2}]),
     ],
 )
