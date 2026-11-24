@@ -302,6 +302,7 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │
 ├── app.py
 ├── requirements.txt
+├── requirements-cloud.txt  # Optional S3 object-storage adapter
 ├── README.md
 │
 ├── .streamlit/
@@ -329,6 +330,7 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   │   ├── audio_extractor.py
 │   │   ├── archive_metrics.py
 │   │   ├── batch_processor.py
+│   │   ├── cloud_ingestion.py
 │   │   ├── folder_watcher.py
 │   │   ├── url_ingestion.py
 │   │   ├── keyframe_extractor.py
@@ -364,6 +366,8 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   ├── test_evaluation_dataset.py
 │   ├── test_local_answer_provider.py
 │   ├── test_auth_manager.py
+│   ├── test_cloud_ingestion.py
+│   ├── test_cloud_ingestion_cli.py
 │   ├── test_archive_backup.py
 │   ├── test_archive_backup_cli.py
 │   ├── test_archive_notes.py
@@ -408,6 +412,7 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
     ├── manage_archive_backup.py
     ├── run_processing_worker.py
     ├── import_media_url.py
+    ├── import_s3_media.py
     ├── watch_media_folders.py
     └── test_transcription.py
 ```
