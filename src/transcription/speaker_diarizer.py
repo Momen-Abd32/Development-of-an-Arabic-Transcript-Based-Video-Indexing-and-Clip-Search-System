@@ -2,8 +2,22 @@
 from __future__ import annotations
 
 import os
+import math
 from pathlib import Path
 from typing import Iterable
+
+
+def _valid_interval(start, end) -> bool:
+    return (
+        not isinstance(start, bool)
+        and isinstance(start, (int, float))
+        and not isinstance(end, bool)
+        and isinstance(end, (int, float))
+        and math.isfinite(start)
+        and math.isfinite(end)
+        and start >= 0
+        and end > start
+    )
 
 
 def apply_speaker_turns(
@@ -11,21 +25,31 @@ def apply_speaker_turns(
     speaker_turns: Iterable[dict],
 ) -> list[dict]:
     """Attach the speaker with the greatest temporal overlap to each segment."""
+    if not isinstance(segments, list):
+        raise TypeError("Transcript segments must be a list.")
     turns = []
-    for turn in speaker_turns:
-        start = float(turn["start"])
-        end = float(turn["end"])
-        speaker = turn["speaker"]
-        if start < 0 or end <= start or not isinstance(speaker, str) or not speaker:
-            raise ValueError("Speaker turns must have valid times and a speaker label.")
-        turns.append((start, end, speaker))
+    for index, turn in enumerate(speaker_turns):
+        if not isinstance(turn, dict) or not all(
+            key in turn for key in ("start", "end", "speaker")
+        ):
+            raise ValueError(f"Speaker turn {index} is missing required fields.")
+        start, end, speaker = turn["start"], turn["end"], turn["speaker"]
+        if not _valid_interval(start, end) or not isinstance(speaker, str) or not speaker.strip():
+            raise ValueError(f"Speaker turn {index} must have valid times and a speaker label.")
+        turns.append((float(start), float(end), speaker.strip()))
 
     annotated = []
-    for segment in segments:
-        start = float(segment["start"])
-        end = float(segment["end"])
-        if start < 0 or end <= start:
-            raise ValueError("Transcript segments must have valid timestamps.")
+    for index, segment in enumerate(segments):
+        if not isinstance(segment, dict) or not all(
+            key in segment for key in ("start", "end", "text")
+        ):
+            raise ValueError(f"Transcript segment {index} is missing required fields.")
+        start, end = segment["start"], segment["end"]
+        if not _valid_interval(start, end):
+            raise ValueError(f"Transcript segment {index} must have valid timestamps.")
+        if not isinstance(segment["text"], str):
+            raise TypeError(f"Transcript segment {index} text must be a string.")
+        start, end = float(start), float(end)
 
         overlap_by_speaker: dict[str, float] = {}
         for turn_start, turn_end, speaker in turns:
