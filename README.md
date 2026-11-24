@@ -55,7 +55,7 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - **Duplicate detection:** Identify identical files using SHA-256 and avoid processing duplicate content within the same batch.
 - **Transcript reuse:** Reuse existing transcript JSON files and rebuild their search index instead of transcribing the same media again.
 - **Arabic speech recognition:** Generate timestamped transcript segments with Faster-Whisper.
-- **Transcript review and editing:** Review generated segments, correct their text, and save the updated transcript.
+- **Transcript review and editing:** Review generated segments, correct their text, and save the updated transcript. Each segment shows its start/end time and speaker label; its play action opens the source media at that segment's start time. Editing preserves segment metadata such as speaker and confidence.
 - **Timestamp-based transcript playback:** Start video or audio preview from a selected transcript segment.
 - **Optional speaker diarization:** Attach speaker labels to transcript segments using pyannote.audio when model access is configured.
 - **Extractive transcript insights:** Select representative original transcript sentences, rank Arabic/Latin keywords using a term-frequency/document-frequency weighting, normalize Arabic diacritics and Alef variants for matching without changing the source transcript, and group segments into explainable topic candidates using keyword co-occurrence. Topic candidates retain source timestamps and are explicitly heuristic (not semantic topic modeling); insights are stored separately from the verbatim transcript and never rewrite dialect.
@@ -536,7 +536,7 @@ Speaker diarization requires the optional dependencies, a Hugging Face access to
 pip install -r requirements-diarization.txt
 ```
 
-Set `HF_TOKEN` in your environment, then use **Identify Speakers** in the Transcript tab. Speaker labels are metadata attached to transcript segments using greatest temporal overlap; segments with no overlapping diarization turn are labeled `UNKNOWN`. Timestamp values and turn labels are validated before annotation, and the original recognized words are not rewritten.
+Set `HF_TOKEN` in your environment, then use **Identify Speakers** in the Transcript tab. Speaker labels are metadata attached to transcript segments using greatest temporal overlap; segments with no overlapping diarization turn are labeled `UNKNOWN`. If the optional model cannot initialize because its package/token is unavailable, the UI marks segments `UNKNOWN` and allows transcript review to continue. Timestamp values and turn labels are validated before annotation, and the original recognized words are not rewritten.
 
 ### 6. Install and verify FFmpeg
 
