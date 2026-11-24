@@ -737,10 +737,11 @@ Run one retrieval mode:
 ```bash
 python scripts/evaluate_search.py --mode exact --dataset data/evaluation/search_queries.json --top-k 5
 python scripts/evaluate_search.py --mode fuzzy --dataset data/evaluation/search_queries.json --top-k 5
+python scripts/evaluate_search.py --mode semantic --dataset data/evaluation/search_queries.json --top-k 5
 python scripts/evaluate_search.py --mode hybrid --dataset data/evaluation/search_queries.json --top-k 5
 ```
 
-Hybrid evaluation requires the optional semantic dependencies and an existing semantic index. Add `--build-semantic-index` to build/refresh embeddings before evaluation. Use `--output reports/hybrid-evaluation.json` to save a machine-readable report.
+Standalone semantic and hybrid evaluation require the optional semantic dependencies and an existing semantic index. Add `--build-semantic-index` to build/refresh embeddings before either evaluation mode. The `semantic` mode measures vector retrieval by itself; `hybrid` measures the fused lexical, fuzzy, and semantic ranking. Use `--output reports/semantic-evaluation.json` or `--output reports/hybrid-evaluation.json` to save machine-readable reports.
 
 The checked-in file is a template, not a measured benchmark. Do not report its results as real archive performance until the relevance judgments have been reviewed and populated using representative Dukkan Media content.
 
