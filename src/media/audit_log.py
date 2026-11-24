@@ -39,6 +39,19 @@ class AuditLog:
             CREATE INDEX IF NOT EXISTS idx_audit_events_entity
             ON audit_events(entity_type, entity_id, occurred_at DESC)
         """)
+        self.connection.executescript("""
+            CREATE TRIGGER IF NOT EXISTS audit_events_reject_update
+            BEFORE UPDATE ON audit_events
+            BEGIN
+                SELECT RAISE(ABORT, 'audit_events are append-only');
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS audit_events_reject_delete
+            BEFORE DELETE ON audit_events
+            BEGIN
+                SELECT RAISE(ABORT, 'audit_events are append-only');
+            END;
+        """)
 
     def close(self) -> None:
         self.connection.close()
