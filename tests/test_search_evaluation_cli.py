@@ -96,3 +96,25 @@ def test_evaluate_modes_compares_all_rankers_on_the_same_judgments():
     assert all(report["precision@5"] == 0.2 for report in reports.values())
     assert all(report["recall@5"] == 1.0 for report in reports.values())
     assert all(report["mrr"] == 1.0 for report in reports.values())
+
+
+@pytest.mark.parametrize(
+    "relevant",
+    [
+        {"media_id": "media-a", "start": -1, "end": 2},
+        {"media_id": "media-a", "start": 3, "end": 2},
+        {"media_id": "media-a", "start": 1, "end": 1},
+        {"media_id": "media-a", "start": float("nan"), "end": 2},
+        {"media_id": "media-a", "start": 0, "end": float("inf")},
+        {"media_id": "", "start": 0, "end": 1},
+        {"media_id": "media-a", "start": 0},
+    ],
+)
+def test_load_dataset_rejects_invalid_relevant_segment_details(tmp_path, relevant):
+    path = tmp_path / "invalid-segment.json"
+    path.write_text(
+        json.dumps({"queries": [{"query": "بحث عربي", "relevant_segments": [relevant]}]}),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="query 0, relevant segment 0"):
+        load_dataset(path)
