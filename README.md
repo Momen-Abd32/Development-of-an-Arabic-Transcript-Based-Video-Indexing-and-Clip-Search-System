@@ -478,6 +478,18 @@ pip install -r requirements-semantic.txt
 
 In the Search tab, choose **Hybrid Semantic Search**, then select **Build / Refresh Semantic Index**. The first use downloads the configured multilingual embedding model. Model download and embedding generation require additional disk space, memory, and processing time.
 
+#### Optional: enable SQLite vector retrieval
+
+For a SQLite-native KNN execution path, install the separately pinned optional extension:
+
+```bash
+pip install -r requirements-vector.txt
+```
+
+The semantic search index will create and rebuild its derived `vec0` table automatically when needed. Existing JSON embeddings remain the source of truth, and the exact Python/SQLite heap implementation remains the fallback if the extension is unavailable or a query uses unsupported multi-media or speaker filters. The vector table is derived and can be recreated without changing the stored transcript or embedding format.
+
+This backend is an optional native KNN path, **not an approximate HNSW/ANN index**; do not interpret it as eliminating linear-scan behavior or as a measured latency improvement until benchmarked on representative archive sizes.
+
 ### Optional: enable visual keyframe search
 
 Visual search requires extracted video keyframes and two aligned optional CLIP encoders: the original image encoder and a multilingual text encoder that supports 50+ languages, including Arabic. The provider deliberately uses the image model for frames and the multilingual model for text queries:
@@ -764,9 +776,9 @@ Uploaded videos, original audio files, normalized audio, transcript JSON files, 
 - Transcription quality depends on audio clarity, accents, background noise, and the selected speech-recognition model.
 - The default `tiny` model favors lower resource usage; it may not provide the highest transcription accuracy.
 - Fuzzy search compares transcript segments and can require more processing as the indexed transcript collection grows.
-- Semantic and hybrid transcript search are optional and require installing `requirements-semantic.txt` and explicitly building the semantic index. Visual keyframe search separately requires `requirements-visual.txt`, extracted keyframes, and a built visual index. Both embedding stores are separate from the existing FTS5 and RapidFuzz indexes.
+- Semantic and hybrid transcript search are optional and require installing `requirements-semantic.txt` and explicitly building the semantic index. An additional optional `sqlite-vec` backend can execute KNN retrieval inside SQLite; the JSON embedding table remains authoritative and the existing exact heap implementation remains the fallback. Visual keyframe search separately requires `requirements-visual.txt`, extracted keyframes, and a built visual index.
 - Speaker diarization is optional, requires a Hugging Face token and access to the gated pyannote model, and has not yet been evaluated on Dukkan Media recordings.
-- The initial semantic and visual search implementations rank stored embeddings in application code. Very large archives will need a dedicated vector index and retrieval-performance evaluation.
+- The optional `sqlite-vec` backend currently provides SQLite-native KNN execution for unfiltered or single-media semantic queries; multi-media and speaker-filtered queries retain the exact heap fallback. It is not an approximate HNSW/ANN index, so large-archive latency and scaling gains are not yet established. A true ANN backend and retrieval-performance/recall benchmarks remain future work.
 - Archive Q&A defaults to a verbatim transcript quote and can optionally use a local Ollama model to generate multi-passage claims with references to retrieved segments. Citation IDs are checked against retrieved evidence, but this does not prove logical entailment; visual-only question answering is not implemented.
 - Visual search uses multilingual CLIP embeddings, but its retrieval quality has not yet been measured against a human-judged Dukkan Media visual-search dataset. Keyframes are sampled every 30 seconds and capped at 300 frames per video by default, so very long recordings may need a configurable sampling policy to cover their full duration. Frame timestamps are sampled from FFmpeg presentation timestamps.
 - The application currently uses local file storage and a local SQLite database; it is not designed as a multi-user hosted service.
