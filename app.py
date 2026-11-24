@@ -17,7 +17,7 @@ from src.media.archive_metrics import ArchiveMetrics
 from src.security.auth_manager import AuthManager, AuthRateLimitError
 from src.transcription.faster_whisper_engine import FasterWhisperEngine
 from src.transcription.transcript_manager import TranscriptManager
-from src.transcription.speaker_diarizer import PyannoteSpeakerDiarizer
+from src.transcription.speaker_diarizer import PyannoteSpeakerDiarizer, apply_speaker_turns
 from src.transcription.transcript_insights import TranscriptInsights
 from src.transcription.transcript_exporter import TranscriptExporter
 from src.indexing.indexer import TranscriptIndexer
@@ -232,6 +232,7 @@ TEXT = {
         "selected_segment": "معاينة من التوقيت المحدد",
         "diarize_speakers": "تمييز المتحدثين",
         "speaker_diarization_help": "تتطلب هذه الميزة تثبيت requirements-diarization.txt وإعداد HF_TOKEN مع صلاحية الوصول إلى نموذج pyannote. المقاطع التي لا يمكن إسنادها بوضوح ستظهر كمتحدث غير معروف.",
+        "diarization_unavailable": "تعذر تشغيل نموذج تمييز المتحدثين؛ تم وضع المقاطع كمتحدث غير معروف بدلاً من إيقاف مراجعة التفريغ.",
         "speaker": "المتحدث",
         "generate_insights": "إنشاء ملخص واستخراج الكلمات المفتاحية",
         "insights_saved": "تم إنشاء وحفظ الملخص والكلمات المفتاحية.",
@@ -610,6 +611,7 @@ TEXT = {
         "selected_segment": "Preview from selected timestamp",
         "diarize_speakers": "Identify Speakers",
         "speaker_diarization_help": "Requires requirements-diarization.txt, HF_TOKEN, and access to the pyannote model. Segments without a confident temporal match are labeled UNKNOWN.",
+        "diarization_unavailable": "The speaker model could not be initialized; segments were marked UNKNOWN so transcript review can continue.",
         "speaker": "Speaker",
         "generate_insights": "Generate Summary and Keywords",
         "insights_saved": "Summary and keywords generated and saved.",
@@ -1344,11 +1346,18 @@ with tab_transcript:
                     with st.spinner(t["loading_model"]):
                         if not audio_path.is_file():
                             AudioExtractor.prepare(str(media_path), str(audio_path))
-                        diarizer = PyannoteSpeakerDiarizer()
-                        annotated_segments = diarizer.annotate(
-                            st.session_state.segments,
-                            str(audio_path),
-                        )
+                        try:
+                            diarizer = PyannoteSpeakerDiarizer()
+                        except RuntimeError:
+                            annotated_segments = apply_speaker_turns(
+                                st.session_state.segments, []
+                            )
+                            st.warning(t["diarization_unavailable"])
+                        else:
+                            annotated_segments = diarizer.annotate(
+                                st.session_state.segments,
+                                str(audio_path),
+                            )
                         TranscriptManager.save(
                             annotated_segments,
                             f"data/transcripts/{video_id}.json",
@@ -1470,12 +1479,9 @@ with tab_transcript:
                             key=f"segment_{video_id}_{index}",
                         )
 
-                    edited_segments.append({
-                        "start": segment["start"],
-                        "end": segment["end"],
-                        "text": edited_text,
-                        **({"speaker": segment["speaker"]} if segment.get("speaker") else {}),
-                    })
+                    updated_segment = dict(segment)
+                    updated_segment["text"] = edited_text
+                    edited_segments.append(updated_segment)
 
             if st.session_state.get("transcript_seek") is not None:
                 seek_time = max(0, int(st.session_state.transcript_seek))
