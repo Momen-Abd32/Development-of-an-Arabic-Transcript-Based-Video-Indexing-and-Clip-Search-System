@@ -445,7 +445,7 @@ TEXT = {
         "evaluation_mode": "Retrieval mode",
         "evaluation_cross_modal": "Unified cross-modal (text + frames)",
         "evaluation_frame_index": "Frame index",
-        "evaluation_build_semantic": "Build / refresh the archive-wide semantic index before hybrid search",
+        "evaluation_build_semantic": "Build / refresh the archive-wide semantic index before semantic or hybrid search",
         "evaluation_search": "Find segments to judge",
         "evaluation_relevant": "This result is relevant",
         "evaluation_play": "Play source at this timestamp",
@@ -2455,7 +2455,7 @@ with tab_evaluation:
         )
         evaluation_mode_label = st.selectbox(
             t["evaluation_mode"],
-            [t["exact"], t["fuzzy"], t["hybrid"], t["evaluation_cross_modal"]],
+            [t["exact"], t["fuzzy"], t["semantic"], t["hybrid"], t["evaluation_cross_modal"]],
             key="evaluation_mode",
         )
         evaluation_is_cross_modal = (
@@ -2467,7 +2467,7 @@ with tab_evaluation:
                 value=False,
                 key="evaluation_build_semantic",
             )
-            if evaluation_mode_label == t["hybrid"] else False
+            if evaluation_mode_label in (t["semantic"], t["hybrid"]) else False
         )
         if evaluation_is_cross_modal:
             st.info(t["cross_modal_visual_note"])
@@ -2520,7 +2520,7 @@ with tab_evaluation:
                             visual_provider=evaluation_visual_provider,
                             include_visual=True,
                         )
-                    elif evaluation_mode_label == t["hybrid"]:
+                    elif evaluation_mode_label in (t["semantic"], t["hybrid"]):
                         evaluation_provider = SentenceTransformerProvider()
                         if evaluation_build_semantic:
                             media_ids = [
@@ -2534,11 +2534,18 @@ with tab_evaluation:
                                     evaluation_engine.index_semantic_media(
                                         media_id, evaluation_provider
                                     )
-                        found_results = evaluation_engine.hybrid_search(
-                            evaluation_query,
-                            evaluation_provider,
-                            limit=10,
-                        )
+                        if evaluation_mode_label == t["semantic"]:
+                            found_results = evaluation_engine.semantic_search(
+                                evaluation_query,
+                                evaluation_provider,
+                                limit=10,
+                            )
+                        else:
+                            found_results = evaluation_engine.hybrid_search(
+                                evaluation_query,
+                                evaluation_provider,
+                                limit=10,
+                            )
                     elif evaluation_mode_label == t["fuzzy"]:
                         found_results = evaluation_engine.fuzzy_search(
                             evaluation_query, limit=10
