@@ -63,3 +63,35 @@ def test_rejects_invalid_insights_file(tmp_path):
 
     with pytest.raises(ValueError, match="Invalid transcript insights"):
         TranscriptInsights.load(path)
+
+
+def test_extracts_explainable_topic_candidates_with_source_timestamps():
+    result = TranscriptInsights.generate([
+        {"start": 0, "end": 2, "text": "الذكاء الاصطناعي يحلل البيانات"},
+        {"start": 2, "end": 4, "text": "الذكاء الاصطناعي يطور تحليل البيانات"},
+        {"start": 4, "end": 6, "text": "كرة القدم والرياضة مهمة"},
+    ])
+
+    topics = result["topic_candidates"]
+    assert result["topic_method"] == "segment_keyword_cooccurrence"
+    assert topics
+    assert topics[0]["segment_count"] >= 1
+    assert topics[0]["label"] in topics[0]["keywords"]
+    assert all(
+        {"index", "start", "end", "text"} <= set(source)
+        for topic in topics
+        for source in topic["source_segments"]
+    )
+
+
+def test_loads_legacy_insights_without_topic_candidates(tmp_path):
+    path = tmp_path / "legacy.json"
+    path.write_text(json.dumps({
+        "method": "extractive",
+        "summary": "ملخص قديم",
+        "keywords": [],
+        "source_segments": [],
+    }), encoding="utf-8")
+
+    loaded = TranscriptInsights.load(path)
+    assert loaded["summary"] == "ملخص قديم"
