@@ -268,7 +268,7 @@ TEXT = {
         "evaluation_mode": "طريقة الاسترجاع",
         "evaluation_cross_modal": "بحث موحّد (نص + لقطات)",
         "evaluation_frame_index": "رقم اللقطة",
-        "evaluation_build_semantic": "بناء / تحديث الفهرس الدلالي لكل الأرشيف قبل البحث الهجين",
+        "evaluation_build_semantic": "بناء / تحديث الفهرس الدلالي لكل الأرشيف قبل البحث الدلالي أو الهجين",
         "evaluation_search": "اعرض المقاطع لتقييمها",
         "evaluation_relevant": "هذه النتيجة ذات صلة",
         "evaluation_play": "تشغيل المصدر عند هذا التوقيت",
