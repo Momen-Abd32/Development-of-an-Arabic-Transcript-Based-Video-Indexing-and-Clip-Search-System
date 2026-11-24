@@ -728,20 +728,21 @@ Enable **Generate a multi-passage answer with local Ollama** in the Q&A workspac
 
 ## Search Retrieval Evaluation
 
-The project includes macro-averaged Precision@k, Recall@k, and Mean Reciprocal Rank (MRR) for comparing exact, fuzzy, and hybrid transcript retrieval against human relevance judgments.
+The project includes macro-averaged Precision@k, Recall@k, and Mean Reciprocal Rank (MRR) for comparing exact, fuzzy, standalone semantic, and hybrid transcript retrieval against human relevance judgments.
 
 Use the **Search Evaluation** workspace in the Streamlit app to enter a query and choose exact, fuzzy, hybrid, or unified cross-modal retrieval. Hybrid mode can build the semantic index; cross-modal mode requires the optional visual dependencies and a built keyframe index. Mark relevant transcript passages and/or keyframes, inspect source playback, and save judgments. Transcript labels are written atomically to `data/evaluation/search_queries.json`; mixed transcript/keyframe labels are written to `data/evaluation/cross_modal_queries.json`. Both files are ignored by Git because they contain references to the local archive. Alternatively, create either file manually from its checked-in template and replace example IDs/timestamps/frame indices with human-reviewed results. Include varied Arabic queries: MSA wording, spelling variants, diacritics, and mixed Arabic/English phrases.
 
-Run one retrieval mode:
+Run one retrieval mode, or use `all` to compare every transcript ranker against the exact same relevance judgments in a single report:
 
 ```bash
 python scripts/evaluate_search.py --mode exact --dataset data/evaluation/search_queries.json --top-k 5
 python scripts/evaluate_search.py --mode fuzzy --dataset data/evaluation/search_queries.json --top-k 5
 python scripts/evaluate_search.py --mode semantic --dataset data/evaluation/search_queries.json --top-k 5
 python scripts/evaluate_search.py --mode hybrid --dataset data/evaluation/search_queries.json --top-k 5
+python scripts/evaluate_search.py --mode all --dataset data/evaluation/search_queries.json --top-k 5 --build-semantic-index --output reports/retrieval-comparison.json
 ```
 
-Standalone semantic and hybrid evaluation require the optional semantic dependencies and an existing semantic index. Add `--build-semantic-index` to build/refresh embeddings before either evaluation mode. The `semantic` mode measures vector retrieval by itself; `hybrid` measures the fused lexical, fuzzy, and semantic ranking. Use `--output reports/semantic-evaluation.json` or `--output reports/hybrid-evaluation.json` to save machine-readable reports.
+Standalone semantic and hybrid evaluation require the optional semantic dependencies and an existing semantic index. Add `--build-semantic-index` to build/refresh embeddings before either evaluation mode. The `semantic` mode measures vector retrieval by itself; `hybrid` measures the fused lexical, fuzzy, and semantic ranking. Use `--output reports/semantic-evaluation.json` or `--output reports/hybrid-evaluation.json` to save individual reports. The `all` mode emits a `results` object containing all four metric summaries, making side-by-side comparison reproducible. Semantic and hybrid modes require the optional semantic dependencies and an existing semantic index; `--build-semantic-index` builds/refreshes it before evaluation.
 
 The checked-in file is a template, not a measured benchmark. Do not report its results as real archive performance until the relevance judgments have been reviewed and populated using representative Dukkan Media content.
 
