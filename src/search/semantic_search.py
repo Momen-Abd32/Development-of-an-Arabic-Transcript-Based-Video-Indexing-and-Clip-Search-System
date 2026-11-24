@@ -215,6 +215,8 @@ class SemanticSearchIndex:
                 results.append(result)
             return results
         except (ImportError, AttributeError, sqlite3.Error, RuntimeError, OSError, ValueError):
+            # Discard any partial derived-index rebuild before falling back.
+            self.connection.rollback()
             # Extension availability, version, or virtual-table errors must
             # never disable semantic search: the exact SQLite heap path below
             # remains the compatibility fallback.
