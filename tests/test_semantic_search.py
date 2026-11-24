@@ -104,6 +104,12 @@ def test_rejects_wrong_embedding_dimensions(semantic_index):
     with pytest.raises(ValueError, match="dimensions"):
         semantic_index.search("برمجة", WrongDimensionProvider())
 
+    # A failed query with another dimension must not poison the optional
+    # vec0 table for the provider's real embedding dimension.
+    assert [
+        item["id"] for item in semantic_index.search("برمجة", provider)
+    ] == [1, 3]
+
 def test_rejects_inconsistent_dimensions_and_preserves_previous_index(semantic_index):
     provider = FakeEmbeddingProvider()
     semantic_index.index_media("media-a", provider)
