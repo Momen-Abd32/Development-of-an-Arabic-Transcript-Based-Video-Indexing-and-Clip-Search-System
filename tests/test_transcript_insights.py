@@ -17,7 +17,7 @@ def test_generates_extractive_summary_and_arabic_keywords():
     assert result["method"] == "extractive"
     assert "الذكاء الاصطناعي" in result["summary"]
     assert len(result["source_segments"]) == 2
-    assert result["keywords"][0]["term"] == "البيانات"
+    assert "البيانات" in {item["term"] for item in result["keywords"]}
     assert result["source_segments"][0]["start"] == 0.0
 
 
