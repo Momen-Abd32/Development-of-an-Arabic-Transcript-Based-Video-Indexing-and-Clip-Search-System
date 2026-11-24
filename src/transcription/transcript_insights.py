@@ -24,6 +24,10 @@ _STOPWORDS = {
     "و", "او", "أو", "ثم", "قد", "كل", "بعض", "بين", "بعد", "قبل",
     "the", "and", "for", "with", "from", "that", "this", "are", "was",
 }
+_STOPWORDS_NORMALIZED = {
+    _ARABIC_DIACRITICS.sub("", word).translate(_ARABIC_ALEF).lower()
+    for word in _STOPWORDS
+}
 
 
 class TranscriptInsights:
@@ -40,7 +44,7 @@ class TranscriptInsights:
             normalized
             for token in _TOKEN_PATTERN.findall(text)
             if len(normalized := cls._normalize_token(token)) > 1
-            and normalized not in _STOPWORDS
+            and normalized not in _STOPWORDS_NORMALIZED
         ]
 
     @classmethod
