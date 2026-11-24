@@ -1,6 +1,7 @@
 """SQLite-backed semantic indexing and hybrid transcript retrieval."""
 from __future__ import annotations
 
+import hashlib
 import heapq
 import json
 import math
@@ -41,6 +42,170 @@ class SemanticSearchIndex:
             "ON segment_embeddings(model_name, video_id)"
         )
         self.connection.commit()
+
+    @staticmethod
+    def _vector_table_name(model_name: str) -> str:
+        digest = hashlib.sha256(model_name.encode("utf-8")).hexdigest()[:16]
+        return f"semantic_vec_{digest}"
+
+    def _load_vector_extension(self):
+        """Load sqlite-vec when installed; the core SQLite path stays optional."""
+        try:
+            import sqlite_vec
+            self.connection.enable_load_extension(True)
+            try:
+                sqlite_vec.load(self.connection)
+            finally:
+                self.connection.enable_load_extension(False)
+            return sqlite_vec
+        except (ImportError, AttributeError, sqlite3.Error, RuntimeError, OSError):
+            return None
+
+    def _ensure_vector_table(self, model_name: str, dimension: int):
+        sqlite_vec = self._load_vector_extension()
+        if sqlite_vec is None:
+            return None
+
+        table = self._vector_table_name(model_name)
+        self.connection.execute(
+            f"""
+            CREATE VIRTUAL TABLE IF NOT EXISTS "{table}" USING vec0(
+                segment_id INTEGER PRIMARY KEY,
+                video_id TEXT,
+                embedding FLOAT[{dimension}] distance_metric=cosine
+            )
+            """
+        )
+        vector_count = self.connection.execute(
+            f'SELECT COUNT(*) FROM "{table}"'
+        ).fetchone()[0]
+        source_count = self.connection.execute(
+            "SELECT COUNT(*) FROM segment_embeddings WHERE model_name = ?",
+            (model_name,),
+        ).fetchone()[0]
+
+        if vector_count != source_count:
+            self.connection.execute(f'DELETE FROM "{table}"')
+            rows = self.connection.execute(
+                """
+                SELECT segment_id, video_id, embedding_json
+                FROM segment_embeddings
+                WHERE model_name = ?
+                ORDER BY segment_id
+                """,
+                (model_name,),
+            ).fetchall()
+            self.connection.executemany(
+                f'INSERT INTO "{table}" (segment_id, video_id, embedding) VALUES (?, ?, ?)',
+                [
+                    (
+                        row["segment_id"],
+                        row["video_id"],
+                        sqlite_vec.serialize_float32(
+                            self._validate_vector(json.loads(row["embedding_json"]))
+                        ),
+                    )
+                    for row in rows
+                ],
+            )
+            self.connection.commit()
+        return sqlite_vec, table
+
+    def _invalidate_vector_table(self, model_name: str) -> None:
+        """Drop a derived vector table after source embeddings are replaced."""
+        sqlite_vec = self._load_vector_extension()
+        if sqlite_vec is None:
+            return
+        table = self._vector_table_name(model_name)
+        try:
+            self.connection.execute(f'DROP TABLE IF EXISTS "{table}"')
+            self.connection.commit()
+        except sqlite3.Error:
+            self.connection.rollback()
+
+    def _vector_search(
+        self,
+        query_vector: Sequence[float],
+        provider: EmbeddingProvider,
+        limit: int,
+        media_id: str | None,
+        media_ids: list[str] | None,
+        speaker: str | None,
+    ) -> list[dict] | None:
+        # vec0 supports exact equality metadata filters. Keep more complex
+        # multi-media and speaker scopes on the established SQLite fallback.
+        if speaker is not None or (media_ids is not None and len(media_ids) != 1):
+            return None
+        selected_media = media_id
+        if media_ids:
+            if selected_media is not None and selected_media != media_ids[0]:
+                return []
+            selected_media = media_ids[0]
+
+        try:
+            loaded = self._ensure_vector_table(provider.model_name, len(query_vector))
+            if loaded is None:
+                return None
+            sqlite_vec, table = loaded
+            sql = (
+                f'SELECT segment_id, distance FROM "{table}" '
+                "WHERE embedding MATCH ? AND k = ?"
+            )
+            params: list[object] = [
+                sqlite_vec.serialize_float32(list(query_vector)),
+                limit + 1,
+            ]
+            if selected_media is not None:
+                sql += " AND video_id = ?"
+                params.append(selected_media)
+
+            matches = self.connection.execute(sql, params).fetchall()
+            # If the cutoff falls inside a tie, use the exact heap path so
+            # deterministic segment-id tie ordering remains unchanged.
+            if len(matches) > limit and math.isclose(
+                float(matches[limit - 1]["distance"]),
+                float(matches[limit]["distance"]),
+                rel_tol=0.0,
+                abs_tol=1e-7,
+            ):
+                return None
+
+            matches = sorted(
+                matches[:limit],
+                key=lambda row: (float(row["distance"]), int(row["segment_id"])),
+            )
+            if not matches:
+                return []
+
+            ids = [int(row["segment_id"]) for row in matches]
+            placeholders = ",".join("?" for _ in ids)
+            segment_rows = self.connection.execute(
+                f"""
+                SELECT id, video_id, start, end, original_text, speaker
+                FROM segments
+                WHERE id IN ({placeholders})
+                """,
+                ids,
+            ).fetchall()
+            by_id = {int(row["id"]): dict(row) for row in segment_rows}
+            distance_by_id = {
+                int(row["segment_id"]): float(row["distance"]) for row in matches
+            }
+            results = []
+            for segment_id in ids:
+                result = by_id.get(segment_id)
+                if result is None:
+                    continue
+                result["semantic_score"] = round(
+                    max(-1.0, min(1.0, 1.0 - distance_by_id[segment_id])), 6
+                )
+                results.append(result)
+            return results
+        except (ImportError, AttributeError, sqlite3.Error, RuntimeError, OSError, ValueError):
+            # Extension availability, version, or virtual-table errors must
+            # never disable semantic search: the exact SQLite heap path below
+            # remains the compatibility fallback.
+            return None
 
     @staticmethod
     def _validate_vector(vector: Sequence[float]) -> list[float]:
@@ -130,6 +295,10 @@ class SemanticSearchIndex:
                 )
                 indexed += len(records)
             self.connection.commit()
+            # The vec0 table is a derived, optional acceleration structure.
+            # Invalidate it after source changes; it is rebuilt lazily on the
+            # next unfiltered or single-media semantic query.
+            self._invalidate_vector_table(provider.model_name)
             return indexed
         except Exception:
             self.connection.rollback()
@@ -161,6 +330,17 @@ class SemanticSearchIndex:
             raise ValueError("Limit must be a positive integer.")
 
         query_vector = self._validate_vector(provider.embed_query(query))
+        vector_results = self._vector_search(
+            query_vector,
+            provider,
+            limit,
+            media_id,
+            media_ids,
+            speaker,
+        )
+        if vector_results is not None:
+            return vector_results
+
         sql = """
             SELECT s.id, s.video_id, s.start, s.end, s.original_text,
                    s.speaker, e.embedding_json
