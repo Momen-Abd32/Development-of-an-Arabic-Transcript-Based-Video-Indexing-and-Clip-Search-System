@@ -43,6 +43,7 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - **Batch media import:** Recursively scan a local folder and process supported audio and video files one by one.
 - **Watched-folder ingestion:** Poll one or more local folders or mounted NAS shares, wait until new files remain unchanged across consecutive scans, and enqueue only new or changed files for background processing.
 - **Remote direct-media URL ingestion:** Download media over HTTPS only from exact operator-allowlisted hosts, validate redirects and public DNS answers, enforce size/time limits, then enqueue the file through the same processing pipeline.
+- **S3 cloud object ingestion:** Optionally download media objects from exact operator-allowlisted S3 buckets using boto3 credentials/profiles, enforce object-size and media-type checks, verify downloaded length and SHA-256, and enqueue through the same file-import worker.
 - **Durable processing queue:** Persist folder-import jobs in a separate SQLite database, track overall progress, the current file and processing stage, and stage start/completion indicators; retry failures, cancel queued jobs immediately, request cooperative cancellation of active jobs between files, and recover interrupted jobs after restart.
 - **Independent background worker:** Run the persistent processing queue as a separate CLI process with polling, worker heartbeats, and expired-lease recovery.
 - **Archive dashboard:** Summarize media counts, stored file size, transcript totals, processing and queue states, missing source files, database integrity, and runtime dependency availability.
@@ -619,6 +620,28 @@ Repeat `--url` for multiple files and `--allowed-host` for each trusted host. Th
 
 Only allowlist domains controlled by the archive operator. DNS addresses are checked before each request but are not pinned at the socket layer, so use a trusted host allowlist and network egress controls for deployments exposed to untrusted users. This adapter downloads direct media files only; it does not scrape YouTube or authenticated streaming pages, playlists, or links that require browser cookies or custom authorization headers.
 
+## S3 Cloud Object Ingestion
+
+S3-compatible object storage is supported through an optional adapter. Install its dependencies separately so the core local archive does not require a cloud SDK:
+
+```bash
+pip install -r requirements-cloud.txt
+```
+
+Configure AWS credentials using the standard boto3 environment, shared credentials file, IAM role, or an explicitly selected profile. Then allowlist the exact bucket names and enqueue one or more objects:
+
+```bash
+python scripts/import_s3_media.py \
+  --bucket dukkan-archive \
+  --key "recordings/interview.mp4" \
+  --allowed-bucket dukkan-archive \
+  --region eu-central-1
+```
+
+Repeat `--bucket` and `--key` together for additional objects, and repeat `--allowed-bucket` for every trusted bucket. The CLI downloads each object to `data/incoming/cloud/`, checks the declared size and supported media type, verifies the complete byte count, calculates SHA-256, and queues a normal `file_import` job. The background worker then uses the same deduplication, transcription, catalog, and indexing pipeline as local and watched-folder imports.
+
+For an operator-managed S3-compatible service, `--endpoint-url` may be supplied explicitly. Treat that endpoint as trusted deployment configuration; never accept it from an untrusted user. Bucket allowlisting is exact, and the application does not store cloud credentials in the archive or Git repository. The adapter does not enumerate buckets, sync remote deletions, or implement provider-specific Google Drive/Azure integrations.
+
 ## Background Processing Worker
 
 The Streamlit queue tab can enqueue folder-import jobs and run one job on demand. For continuous processing independent of the browser session, start the worker in a separate terminal:
@@ -795,7 +818,7 @@ Uploaded videos, original audio files, normalized audio, transcript JSON files, 
 - Visual search uses multilingual CLIP embeddings, but its retrieval quality has not yet been measured against a human-judged Dukkan Media visual-search dataset. Keyframes are sampled every 30 seconds and capped at 300 frames per video by default, so very long recordings may need a configurable sampling policy to cover their full duration. Frame timestamps are sampled from FFmpeg presentation timestamps.
 - The application currently uses local file storage and a local SQLite database; it is not designed as a multi-user hosted service.
 - Timestamped notes provide a local review workflow with audit events. Author/editor values are authenticated when optional account authentication is enabled and are user-entered labels otherwise; simultaneous multi-instance collaboration is not implemented.
-- Batch import reads local or mounted folders. The polling watcher supports continuous monitoring of local/mounted folders, and direct-media URL ingestion supports HTTPS files from explicitly allowlisted hosts. Direct cloud-provider APIs, authenticated streaming pages, and playlist downloads are not implemented.
+- Batch import reads local or mounted folders. The polling watcher supports continuous monitoring of local/mounted folders, direct-media URL ingestion supports HTTPS files from explicitly allowlisted hosts, and optional S3 ingestion supports exact allowlisted buckets. Provider-specific Google Drive/Azure integrations, remote deletion synchronization, authenticated streaming pages, and playlist downloads are not implemented.
 - The SQLite segment table retains the legacy `video_id` column name; for audio records, it stores the SHA-256 media identifier as well.
 - The media catalog remains a backward-compatible local JSON file. An OS-level advisory lock serializes catalog reads and updates between processes on the same host; this is not distributed locking for multiple hosts sharing an unreliable network filesystem, nor does it provide live multi-instance UI synchronization.
 - Active application session state is not automatically reconstructed after a process restart.
