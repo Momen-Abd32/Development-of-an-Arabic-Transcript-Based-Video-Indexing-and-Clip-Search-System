@@ -5,7 +5,7 @@ import argparse
 import json
 from pathlib import Path
 
-from src.search.evaluation import evaluate_rankings
+from src.search.evaluation import evaluate_rankings, validate_relevant_segment
 from src.search.search_engine import SearchEngine
 
 
@@ -25,6 +25,13 @@ def load_dataset(path: Path) -> list[dict]:
             raise ValueError(
                 f"Evaluation query {index} needs query text and relevant_segments."
             )
+        for segment_index, segment in enumerate(case["relevant_segments"]):
+            try:
+                validate_relevant_segment(segment)
+            except (ValueError, TypeError) as error:
+                raise ValueError(
+                    f"Evaluation query {index}, relevant segment {segment_index}: {error}"
+                ) from error
     if not queries:
         raise ValueError("Evaluation dataset contains no judged queries.")
     return queries
