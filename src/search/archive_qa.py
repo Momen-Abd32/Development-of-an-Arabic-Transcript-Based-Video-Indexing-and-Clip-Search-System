@@ -207,9 +207,9 @@ class ArchiveQA:
     def _claim_tokens(value: str) -> set[str]:
         """Normalize Arabic/Latin claim tokens for a conservative support check."""
         import re
-        from src.indexing.arabic_normalizer import normalize_arabic
+        from src.indexing.text_processor import ArabicTextProcessor
 
-        normalized = normalize_arabic(value).casefold()
+        normalized = ArabicTextProcessor.normalize(value).casefold()
         tokens = set(re.findall(r"[\w]+", normalized, flags=re.UNICODE))
         stop_words = {
             "في", "من", "على", "الى", "إلى", "عن", "مع", "هذا", "هذه",
