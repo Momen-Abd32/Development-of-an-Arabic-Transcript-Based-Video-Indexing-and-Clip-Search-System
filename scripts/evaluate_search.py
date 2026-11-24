@@ -30,6 +30,21 @@ def load_dataset(path: Path) -> list[dict]:
     return queries
 
 
+def collect_rankings(engine, cases, mode, top_k, provider=None):
+    """Run one retrieval mode so each ranker can be evaluated independently."""
+    if mode in ("semantic", "hybrid") and provider is None:
+        raise ValueError("A semantic embedding provider is required.")
+    if mode == "semantic":
+        return [engine.semantic_search(case["query"], provider, limit=top_k) for case in cases]
+    if mode == "hybrid":
+        return [engine.hybrid_search(case["query"], provider, limit=top_k) for case in cases]
+    if mode == "fuzzy":
+        return [engine.fuzzy_search(case["query"], limit=top_k) for case in cases]
+    if mode == "exact":
+        return [engine.exact_search(case["query"], limit=top_k) for case in cases]
+    raise ValueError("Unsupported search mode: " + mode)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -40,7 +55,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--mode",
-        choices=("exact", "fuzzy", "hybrid"),
+        choices=("exact", "fuzzy", "semantic", "hybrid"),
         default="exact",
     )
     parser.add_argument("--database", default="data/database/videos.db")
@@ -48,7 +63,7 @@ def main() -> int:
     parser.add_argument(
         "--build-semantic-index",
         action="store_true",
-        help="Build/refresh embeddings for all indexed media before hybrid evaluation.",
+        help="Build/refresh embeddings for all indexed media before semantic or hybrid evaluation.",
     )
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
@@ -59,7 +74,8 @@ def main() -> int:
 
     engine = SearchEngine(args.database)
     try:
-        if args.mode == "hybrid":
+        provider = None
+        if args.mode in ("semantic", "hybrid"):
             from src.search.embedding_provider import SentenceTransformerProvider
 
             provider = SentenceTransformerProvider()
@@ -72,20 +88,7 @@ def main() -> int:
                 ]
                 for media_id in media_ids:
                     engine.index_semantic_media(media_id, provider)
-            rankings = [
-                engine.hybrid_search(case["query"], provider, limit=args.top_k)
-                for case in cases
-            ]
-        elif args.mode == "fuzzy":
-            rankings = [
-                engine.fuzzy_search(case["query"], limit=args.top_k)
-                for case in cases
-            ]
-        else:
-            rankings = [
-                engine.exact_search(case["query"], limit=args.top_k)
-                for case in cases
-            ]
+        rankings = collect_rankings(engine, cases, args.mode, args.top_k, provider)
     finally:
         engine.close()
 
