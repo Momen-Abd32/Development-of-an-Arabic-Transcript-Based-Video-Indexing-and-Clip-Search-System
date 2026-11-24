@@ -7,7 +7,6 @@ import os
 import tempfile
 import uuid
 from pathlib import Path
-from urllib.parse import urlsplit
 
 
 class CloudIngestionError(ValueError):
@@ -153,6 +152,7 @@ class S3ObjectAdapter:
             dir=self.download_directory,
         )
         response = None
+        descriptor_open = True
         digest = hashlib.sha256()
         total = 0
         try:
@@ -161,6 +161,7 @@ class S3ObjectAdapter:
             if body is None or not callable(getattr(body, "read", None)):
                 raise CloudIngestionError("Cloud object response has no readable body.")
             with os.fdopen(descriptor, "wb") as output:
+                descriptor_open = False
                 while True:
                     chunk = body.read(self.CHUNK_SIZE)
                     if not chunk:
@@ -174,6 +175,8 @@ class S3ObjectAdapter:
                 raise CloudIngestionError("Cloud object download was truncated.")
             os.replace(temporary_name, destination)
         except Exception:
+            if descriptor_open:
+                os.close(descriptor)
             if os.path.exists(temporary_name):
                 os.unlink(temporary_name)
             raise
