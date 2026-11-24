@@ -64,3 +64,35 @@ def test_collect_rankings_requires_provider_for_semantic_mode():
 
     with pytest.raises(ValueError, match="provider"):
         collect_rankings(object(), [{"query": "بحث"}], "semantic", 5)
+
+
+
+def test_evaluate_modes_compares_all_rankers_on_the_same_judgments():
+    from scripts.evaluate_search import evaluate_modes
+
+    relevant = {"media_id": "media-a", "start": 1.0, "end": 2.0}
+
+    class FakeEngine:
+        def exact_search(self, query, limit):
+            return [{"video_id": "media-a", "start": 1.0, "end": 2.0}]
+
+        def fuzzy_search(self, query, limit):
+            return [{"video_id": "media-a", "start": 1.0, "end": 2.0}]
+
+        def semantic_search(self, query, provider, limit):
+            return [{"video_id": "media-a", "start": 1.0, "end": 2.0}]
+
+        def hybrid_search(self, query, provider, limit):
+            return [{"video_id": "media-a", "start": 1.0, "end": 2.0}]
+
+    cases = [{"query": "اختبار عربي", "relevant_segments": [relevant]}]
+    reports = evaluate_modes(
+        FakeEngine(), cases, ("exact", "fuzzy", "semantic", "hybrid"), 5,
+        provider=object(),
+    )
+
+    assert set(reports) == {"exact", "fuzzy", "semantic", "hybrid"}
+    assert all(report["query_count"] == 1 for report in reports.values())
+    assert all(report["precision@5"] == 0.2 for report in reports.values())
+    assert all(report["recall@5"] == 1.0 for report in reports.values())
+    assert all(report["mrr"] == 1.0 for report in reports.values())
