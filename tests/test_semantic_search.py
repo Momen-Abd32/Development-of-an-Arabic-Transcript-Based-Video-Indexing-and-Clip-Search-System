@@ -216,4 +216,4 @@ def test_optional_sqlite_vec_backend_applies_single_media_filter(semantic_index)
         media_ids=["media-b"],
     )
 
-    assert results == []
+    assert [item["id"] for item in results] == [2]
