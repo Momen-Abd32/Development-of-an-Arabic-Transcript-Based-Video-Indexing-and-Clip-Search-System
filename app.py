@@ -237,6 +237,8 @@ TEXT = {
         "generate_insights": "إنشاء ملخص واستخراج الكلمات المفتاحية",
         "insights_saved": "تم إنشاء وحفظ الملخص والكلمات المفتاحية.",
         "insights_title": "ملخص استخراجي",
+        "insight_sources_title": "المقاطع التي بُني عليها الملخص",
+        "topic_sources_title": "المقاطع المصدرية لهذا المحور",
         "keywords_title": "الكلمات المفتاحية",
         "topic_candidates_title": "محاور مستخلصة (مقترحة)",
         "topic_candidates_note": "تجميع إرشادي حسب تكرار الكلمات وظهورها معاً في المقاطع، وليس نموذجاً دلالياً لفهم الموضوعات.",
@@ -616,6 +618,8 @@ TEXT = {
         "generate_insights": "Generate Summary and Keywords",
         "insights_saved": "Summary and keywords generated and saved.",
         "insights_title": "Extractive Summary",
+        "insight_sources_title": "Summary Source Segments",
+        "topic_sources_title": "Source Segments for This Topic",
         "keywords_title": "Keywords",
         "topic_candidates_title": "Extracted Topic Candidates (Heuristic)",
         "topic_candidates_note": "Groups segments by keyword frequency and co-occurrence; this is not semantic topic modeling.",
@@ -1398,16 +1402,36 @@ with tab_transcript:
                 st.markdown(f'#### {t["insights_title"]}')
                 st.caption(t["extractive_note"])
                 st.write(current_insights["summary"] or t["no_results"])
+                if current_insights.get("source_segments"):
+                    with st.expander(t["insight_sources_title"]):
+                        for source in current_insights["source_segments"]:
+                            st.caption(f'{source["start"]:.1f}s – {source["end"]:.1f}s')
+                            st.write(source["text"])
+                            if st.button(
+                                t["play_segment"],
+                                key=f'insight_source_{video_id}_{source["index"]}',
+                            ):
+                                st.session_state.transcript_seek = float(source["start"])
                 if current_insights["keywords"]:
                     st.markdown(f'**{t["keywords_title"]}**')
                     st.write(", ".join(item["term"] for item in current_insights["keywords"]))
                 if current_insights.get("topic_candidates"):
                     st.markdown(f'**{t["topic_candidates_title"]}**')
                     st.caption(t["topic_candidates_note"])
-                    for topic in current_insights["topic_candidates"]:
-                        st.markdown(f'**{topic["label"]}**')
-                        st.write(", ".join(topic["keywords"]))
-                        st.caption(f'{topic["segment_count"]} segments')
+                    for topic_index, topic in enumerate(current_insights["topic_candidates"]):
+                        with st.expander(
+                            f'{topic["label"]} · {topic["segment_count"]} segments'
+                        ):
+                            st.write(", ".join(topic["keywords"]))
+                            st.caption(t["topic_sources_title"])
+                            for source in topic["source_segments"]:
+                                st.caption(f'{source["start"]:.1f}s – {source["end"]:.1f}s')
+                                st.write(source["text"])
+                                if st.button(
+                                    t["play_segment"],
+                                    key=f'topic_source_{video_id}_{topic_index}_{source["index"]}',
+                                ):
+                                    st.session_state.transcript_seek = float(source["start"])
 
             if st.session_state.get("media_type") == "video":
                 keyframe_dir = Path("data/keyframes") / video_id
