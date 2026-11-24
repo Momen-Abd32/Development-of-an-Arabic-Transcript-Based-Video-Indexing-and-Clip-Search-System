@@ -1,3 +1,5 @@
+import sqlite3
+
 import pytest
 
 from src.media.audit_log import AuditLog
@@ -58,8 +60,6 @@ def test_audit_log_validates_limit_and_filters(tmp_path):
 
 
 def test_audit_events_reject_update_and_delete_at_database_level(tmp_path):
-    import sqlite3
-
     path = tmp_path / "immutable-audit.db"
     log = AuditLog(path)
     event = log.record(
