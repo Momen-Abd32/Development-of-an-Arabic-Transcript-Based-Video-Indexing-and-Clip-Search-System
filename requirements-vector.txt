@@ -1,0 +1,3 @@
+# Optional native SQLite vector retrieval backend.
+# Install after requirements-semantic.txt when enabling vec0 acceleration.
+sqlite-vec==0.1.9
