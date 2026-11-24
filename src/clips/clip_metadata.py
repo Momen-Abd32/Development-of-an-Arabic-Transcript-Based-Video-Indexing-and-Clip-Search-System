@@ -56,9 +56,15 @@ class ClipMetadata:
             or not isinstance(start, (int, float))
             or isinstance(end, bool)
             or not isinstance(end, (int, float))
-            or not math.isfinite(start)
-            or not math.isfinite(end)
         ):
+            raise TypeError("Clip timestamps must be finite numbers.")
+
+        try:
+            timestamps_are_finite = math.isfinite(start) and math.isfinite(end)
+        except OverflowError:
+            timestamps_are_finite = False
+
+        if not timestamps_are_finite:
             raise TypeError("Clip timestamps must be finite numbers.")
 
         if start < 0 or end <= start:
@@ -69,8 +75,59 @@ class ClipMetadata:
 
         clips = self.load()
 
+        # Re-saving the same video segment updates its existing metadata.
+        # Keep the first record's ID and creation timestamp, and remove any
+        # legacy duplicates for the same video and time range.
+        matching_clips = [
+            clip
+            for clip in clips
+            if isinstance(clip, dict)
+            and clip.get("video_id") == video_id
+            and clip.get("start") == start
+            and clip.get("end") == end
+        ]
+
+        if matching_clips:
+            existing_clip = matching_clips[0]
+            metadata_changed = (
+                existing_clip.get("clip_path") != clip_path
+                or existing_clip.get("notes") != notes
+            )
+            existing_clip["clip_path"] = clip_path
+            existing_clip["notes"] = notes
+
+            deduplicated_clips = []
+            kept_existing_clip = False
+
+            for clip in clips:
+                if (
+                    isinstance(clip, dict)
+                    and clip.get("video_id") == video_id
+                    and clip.get("start") == start
+                    and clip.get("end") == end
+                ):
+                    if kept_existing_clip:
+                        continue
+                    kept_existing_clip = True
+
+                deduplicated_clips.append(clip)
+
+            if len(deduplicated_clips) != len(clips) or metadata_changed:
+                self._write(deduplicated_clips)
+
+            return existing_clip
+
+        # Ignore invalid legacy IDs and booleans (bool is a subclass of int).
+        # New IDs are always positive integers greater than existing valid IDs.
         next_id = max(
-            (clip.get("id", 0) for clip in clips),
+            (
+                clip["id"]
+                for clip in clips
+                if isinstance(clip, dict)
+                and isinstance(clip.get("id"), int)
+                and not isinstance(clip.get("id"), bool)
+                and clip["id"] > 0
+            ),
             default=0,
         ) + 1
 

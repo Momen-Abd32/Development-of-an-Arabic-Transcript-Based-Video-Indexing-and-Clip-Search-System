@@ -55,3 +55,8 @@ Thumbs.db
 .coverage
 .coverage.*
 htmlcov/
+
+# Human relevance labels may contain private archive references; keep local.
+data/evaluation/search_queries.json
+data/evaluation/cross_modal_queries.json
+data/evaluation/visual_queries.json

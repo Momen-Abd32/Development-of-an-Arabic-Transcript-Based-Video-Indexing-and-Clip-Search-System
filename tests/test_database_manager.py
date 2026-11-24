@@ -164,3 +164,35 @@ def test_database_persists_after_reopening(tmp_path):
     assert result["original_text"] == "بيانات محفوظة"
 
     reopened_db.close()
+
+
+def test_existing_database_migrates_segments_speaker_column(tmp_path):
+    db_path = tmp_path / "legacy.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute("""
+            CREATE TABLE segments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                video_id TEXT NOT NULL,
+                start REAL NOT NULL,
+                end REAL NOT NULL,
+                original_text TEXT NOT NULL,
+                normalized_text TEXT NOT NULL
+            )
+        """)
+        connection.execute(
+            "INSERT INTO segments (video_id, start, end, original_text, normalized_text) "
+            "VALUES ('legacy', 0, 1, 'نص قديم', 'نص قديم')"
+        )
+
+    db = DatabaseManager(str(db_path))
+    columns = {
+        row["name"]
+        for row in db.connection.execute("PRAGMA table_info(segments)")
+    }
+    assert "speaker" in columns
+    row = db.connection.execute(
+        "SELECT original_text, speaker FROM segments WHERE video_id = 'legacy'"
+    ).fetchone()
+    assert row["original_text"] == "نص قديم"
+    assert row["speaker"] is None
+    db.close()

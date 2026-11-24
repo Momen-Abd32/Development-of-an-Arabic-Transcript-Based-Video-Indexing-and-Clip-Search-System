@@ -28,13 +28,41 @@ class DatabaseManager:
                 start REAL NOT NULL,
                 end REAL NOT NULL,
                 original_text TEXT NOT NULL,
-                normalized_text TEXT NOT NULL
+                normalized_text TEXT NOT NULL,
+                speaker TEXT
             )
         """)
+
+        columns = {
+            row["name"] for row in cursor.execute("PRAGMA table_info(segments)")
+        }
+        if "speaker" not in columns:
+            cursor.execute("ALTER TABLE segments ADD COLUMN speaker TEXT")
 
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_segments_video_id
             ON segments(video_id)
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_segments_speaker
+            ON segments(speaker)
+        """)
+
+        # Optional semantic vectors are stored separately so legacy transcript
+        # and FTS5 data remain untouched when semantic search is not installed.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS segment_embeddings (
+                segment_id INTEGER NOT NULL,
+                video_id TEXT NOT NULL,
+                model_name TEXT NOT NULL,
+                embedding_json TEXT NOT NULL,
+                PRIMARY KEY (segment_id, model_name)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_segment_embeddings_model
+            ON segment_embeddings(model_name, video_id)
         """)
 
         cursor.execute("""
