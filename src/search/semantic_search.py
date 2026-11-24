@@ -1,6 +1,7 @@
 """SQLite-backed semantic indexing and hybrid transcript retrieval."""
 from __future__ import annotations
 
+import heapq
 import json
 import math
 import sqlite3
@@ -180,7 +181,11 @@ class SemanticSearchIndex:
             sql += " AND s.speaker = ?"
             params.append(speaker)
 
-        ranked = []
+        # Keep only the best k candidates while streaming SQLite rows. The
+        # previous implementation retained every embedding and result in
+        # memory before sorting, which grew with the entire archive size.
+        # This remains exact (O(n) scoring) while reducing ranking memory to O(k).
+        best_results = []
         for row in self.connection.execute(sql, params):
             stored = self._validate_vector(json.loads(row["embedding_json"]))
             score = self._cosine_similarity(query_vector, stored)
@@ -189,10 +194,14 @@ class SemanticSearchIndex:
                 for key in ("id", "video_id", "start", "end", "original_text", "speaker")
             }
             result["semantic_score"] = round(score, 6)
-            ranked.append((score, -row["id"], result))
+            candidate = (score, -row["id"], result)
+            if len(best_results) < limit:
+                heapq.heappush(best_results, candidate)
+            elif candidate[:2] > best_results[0][:2]:
+                heapq.heapreplace(best_results, candidate)
 
-        ranked.sort(key=lambda item: (-item[0], -item[1]))
-        return [item[2] for item in ranked[:limit]]
+        best_results.sort(key=lambda item: (-item[0], -item[1]))
+        return [item[2] for item in best_results]
 
     def close(self) -> None:
         self.connection.close()

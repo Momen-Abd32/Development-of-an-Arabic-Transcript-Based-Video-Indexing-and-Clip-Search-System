@@ -5,9 +5,11 @@ on:
     branches:
       - main
       - feature/dukkan-media-audio-ingestion
+      - 'feature/**'
   pull_request:
     branches:
       - main
+      - 'feature/**'
   workflow_dispatch:
 
 permissions:

@@ -144,3 +144,49 @@ def test_semantic_search_filters_unassigned_speakers(semantic_index):
         speaker="__UNSPECIFIED_SPEAKER__",
     )
     assert [item["id"] for item in results] == [2]
+
+
+def test_semantic_search_returns_exact_top_k_without_changing_tie_order(semantic_index):
+    provider = FakeEmbeddingProvider()
+    rows = [
+        (
+            index,
+            f"media-{index % 7}",
+            float(index),
+            float(index + 1),
+            "شرح البرمجة",
+            "شرح البرمجة",
+            None,
+        )
+        for index in range(100, 1300)
+    ]
+    semantic_index.connection.executemany(
+        """
+        INSERT INTO segments
+            (id, video_id, start, end, original_text, normalized_text, speaker)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
+    semantic_index.connection.commit()
+    semantic_index.index_media("media-0", provider)
+    results = semantic_index.search("برمجة", provider, limit=5)
+
+    assert [item["id"] for item in results] == [105, 112, 119, 126, 133]
+    assert all(item["semantic_score"] == 1.0 for item in results)
+
+
+def test_semantic_search_top_k_respects_media_and_speaker_filters(semantic_index):
+    provider = FakeEmbeddingProvider()
+    semantic_index.index_media("media-a", provider)
+    semantic_index.index_media("media-b", provider)
+
+    results = semantic_index.search(
+        "برمجة",
+        provider,
+        limit=1,
+        media_ids=["media-a"],
+        speaker="SPEAKER_01",
+    )
+
+    assert [item["id"] for item in results] == [3]
