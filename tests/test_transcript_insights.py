@@ -132,3 +132,13 @@ def test_empty_text_segments_do_not_create_topics_or_keywords():
     assert result["summary"] == ""
     assert result["keywords"] == []
     assert result["topic_candidates"] == []
+
+
+
+def test_arabic_stopwords_are_removed_after_normalization():
+    result = TranscriptInsights.generate([
+        {"start": 0, "end": 1, "text": "إِلَى أَيْنَ؟"}
+    ])
+
+    assert result["keywords"] == []
+    assert result["summary"] == ""
