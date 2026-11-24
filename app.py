@@ -15,6 +15,7 @@ from src.media.processing_queue import ProcessingQueue
 from src.media.batch_processor import MediaBatchProcessor
 from src.media.archive_metrics import ArchiveMetrics
 from src.security.auth_manager import AuthManager, AuthRateLimitError
+from src.security.permissions import has_role_permission
 from src.transcription.faster_whisper_engine import FasterWhisperEngine
 from src.transcription.transcript_manager import TranscriptManager
 from src.transcription.speaker_diarizer import PyannoteSpeakerDiarizer, apply_speaker_turns
@@ -924,24 +925,13 @@ else:
         "is_active": True,
     }
 
-ROLE_PERMISSIONS = {
-    "administrator": {
-        "upload", "transcript", "search", "visual", "cross_modal",
-        "qa", "evaluation", "notes", "clips", "archive", "queue", "dashboard",
-        "audit", "users",
-    },
-    "editor": {
-        "upload", "transcript", "search", "visual", "cross_modal",
-        "qa", "evaluation", "notes", "clips", "archive", "queue", "dashboard", "audit",
-    },
-    "search_only": {"search", "visual", "cross_modal", "qa", "dashboard"},
-}
-
-
 def has_permission(permission: str) -> bool:
-    if permission == "users" and not auth_enabled:
-        return False
-    return permission in ROLE_PERMISSIONS.get(current_user["role"], set())
+    return has_role_permission(
+        current_user["role"],
+        permission,
+        authentication_enabled=auth_enabled,
+    )
+
 
 
 st.markdown(
