@@ -40,3 +40,27 @@ def test_load_evaluation_dataset_rejects_invalid_judgments(tmp_path, data):
     path.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(ValueError):
         load_dataset(path)
+
+
+
+def test_collect_rankings_supports_standalone_semantic_mode():
+    from scripts.evaluate_search import collect_rankings
+
+    class FakeEngine:
+        def semantic_search(self, query, provider, limit):
+            return [{"query": query, "limit": limit, "provider": provider}]
+
+    provider = object()
+    cases = [{"query": "البحث الدلالي"}]
+    results = collect_rankings(FakeEngine(), cases, "semantic", 7, provider)
+
+    assert results[0][0]["query"] == "البحث الدلالي"
+    assert results[0][0]["limit"] == 7
+    assert results[0][0]["provider"] is provider
+
+
+def test_collect_rankings_requires_provider_for_semantic_mode():
+    from scripts.evaluate_search import collect_rankings
+
+    with pytest.raises(ValueError, match="provider"):
+        collect_rankings(object(), [{"query": "بحث"}], "semantic", 5)
