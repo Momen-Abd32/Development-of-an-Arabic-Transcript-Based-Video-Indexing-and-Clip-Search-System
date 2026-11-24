@@ -14,7 +14,7 @@ from collections import Counter
 from pathlib import Path
 
 
-_TOKEN_PATTERN = re.compile(r"[\u0600-\u06FF]+|[A-Za-z][A-Za-z0-9]+")
+_TOKEN_PATTERN = re.compile(r"[\u0621-\u064A\u064B-\u065F\u0670]+|[A-Za-z][A-Za-z0-9]+")
 _ARABIC_DIACRITICS = re.compile(r"[\u064B-\u065F\u0670\u0640]")
 _ARABIC_ALEF = str.maketrans({"أ": "ا", "إ": "ا", "آ": "ا", "ٱ": "ا", "ى": "ي"})
 _STOPWORDS = {
