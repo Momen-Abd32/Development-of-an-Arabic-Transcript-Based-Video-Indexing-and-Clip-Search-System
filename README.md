@@ -57,7 +57,7 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - **Arabic speech recognition:** Generate timestamped transcript segments with Faster-Whisper.
 - **Transcript review and editing:** Review generated segments, correct their text, and save the updated transcript. Each segment shows its start/end time and speaker label; its play action opens the source media at that segment's start time. Editing preserves segment metadata such as speaker and confidence.
 - **Timestamp-based transcript playback:** Start video or audio preview from a selected transcript segment.
-- **Optional speaker diarization:** Attach speaker labels to transcript segments using pyannote.audio when model access is configured.
+- **Optional speaker diarization:** Attach speaker labels to transcript segments using pyannote.audio when model access is configured; validated timestamp overlap assigns the best-matching speaker, and missing/ambiguous matches or unavailable optional model initialization fall back to `UNKNOWN` without rewriting transcript text.
 - **Extractive transcript insights:** Select representative original transcript sentences, rank Arabic/Latin keywords using a term-frequency/document-frequency weighting, normalize Arabic diacritics and Alef variants for matching without changing the source transcript, and group segments into explainable topic candidates using keyword co-occurrence. Topic candidates retain source timestamps and are explicitly heuristic (not semantic topic modeling); insights are stored separately from the verbatim transcript and never rewrite dialect.
 - **Video keyframes:** Extract sampled JPEG thumbnails with FFmpeg, preserve the actual frame presentation timestamps, safely replace prior generated frames, and preview them in the transcript workspace.
 - **Visual keyframe search:** Index extracted frames in SQLite and search across them using Arabic text descriptions or a reference image with an optional multilingual CLIP model; results include the source media and frame timestamp, with an option to preview the original video at the matched time.
@@ -704,7 +704,7 @@ For more detailed output:
 python -m pytest tests -v
 ```
 
-The complete test suite should be run after pulling the current development branch. Automated tests help verify individual components and expected behavior; they do not by themselves establish real-world transcription accuracy or replace end-to-end testing with varied video and audio inputs.
+The complete test suite should be run after pulling the current development branch. Automated tests cover Arabic token normalization and weighted insight ranking, source-linked topic extraction, malformed timestamp rejection, diarization adapter behavior, speaker-overlap assignment, and UNKNOWN fallback. They do not by themselves establish real-world transcription accuracy or replace end-to-end testing with varied video and audio inputs.
 
 ## Timestamped Review Notes
 
