@@ -67,6 +67,16 @@ class TranscriptInsights:
             all_tokens.extend(tokens)
 
         counts = Counter(all_tokens)
+        document_frequency = Counter()
+        for _, _, tokens in valid_segments:
+            document_frequency.update(set(tokens))
+        term_weights = {
+            term: frequency * (
+                math.log((len(valid_segments) + 1) / (document_frequency[term] + 1))
+                + 0.1
+            )
+            for term, frequency in counts.items()
+        }
         keywords = [
             {"term": term, "frequency": frequency}
             for term, frequency in sorted(
@@ -89,10 +99,56 @@ class TranscriptInsights:
                 key=lambda item: item[1],
             )
 
+        topic_groups = {}
+        for index, segment, tokens in valid_segments:
+            if not tokens:
+                continue
+            local_counts = Counter(tokens)
+            primary_term = max(
+                local_counts,
+                key=lambda term: (
+                    local_counts[term] * term_weights[term],
+                    term,
+                ),
+            )
+            topic_groups.setdefault(primary_term, []).append(
+                (index, segment, tokens)
+            )
+
+        topic_candidates = []
+        for primary_term, members in topic_groups.items():
+            topic_terms = Counter(
+                token for _, _, tokens in members for token in tokens
+            )
+            topic_candidates.append({
+                "label": primary_term,
+                "keywords": [
+                    term for term, _ in sorted(
+                        topic_terms.items(),
+                        key=lambda item: (-item[1], item[0]),
+                    )[:5]
+                ],
+                "segment_count": len(members),
+                "source_segments": [
+                    {
+                        "index": index,
+                        "start": float(segment["start"]),
+                        "end": float(segment["end"]),
+                        "text": segment["text"],
+                    }
+                    for index, segment, _ in members
+                ],
+            })
+        topic_candidates.sort(
+            key=lambda topic: (-topic["segment_count"], topic["label"])
+        )
+
         return {
             "method": "extractive",
             "summary": " ".join(item[2]["text"].strip() for item in selected),
             "keywords": keywords,
+            "topic_method": "segment_keyword_cooccurrence",
+            "topic_candidates": topic_candidates[:5],
             "source_segments": [
                 {
                     "index": index,
@@ -140,6 +196,10 @@ class TranscriptInsights:
             or not isinstance(data.get("summary"), str)
             or not isinstance(data.get("keywords"), list)
             or not isinstance(data.get("source_segments"), list)
+            or (
+                "topic_candidates" in data
+                and not isinstance(data["topic_candidates"], list)
+            )
         ):
             raise ValueError("Invalid transcript insights file.")
         return data
