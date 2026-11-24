@@ -677,7 +677,7 @@ $env:ARCHIVE_ADMIN_DISPLAY_NAME = "Archive Administrator"
 python -m streamlit run app.py
 ```
 
-On first startup, the app creates the initial administrator only if the user table is empty. There is no built-in default account or password. Keep these environment variables out of source control and rotate/remove the bootstrap password after the account is created.
+On first startup, the app creates the initial administrator only if the user table is empty. Bootstrap uses a SQLite write transaction, so concurrent application starts cannot both claim to create the first administrator. Role changes and account activation also protect the last active administrator atomically across concurrent admin sessions. There is no built-in default account or password. Keep these environment variables out of source control and rotate/remove the bootstrap password after the account is created.
 
 | Role | Access |
 |---|---|
@@ -727,7 +727,7 @@ For more detailed output:
 python -m pytest tests -v
 ```
 
-The complete test suite should be run after pulling the current development branch. Automated tests cover Arabic token normalization and weighted insight ranking, source-linked topic extraction, malformed timestamp rejection, diarization adapter behavior, speaker-overlap assignment, and UNKNOWN fallback. They do not by themselves establish real-world transcription accuracy or replace end-to-end testing with varied video and audio inputs.
+The complete test suite should be run after pulling the current development branch. Automated tests cover concurrent catalog writes, atomic administrator bootstrap and last-admin protection, S3 object-ingestion validation and queue handoff, as well as Arabic token normalization and weighted insight ranking, source-linked topic extraction, malformed timestamp rejection, diarization adapter behavior, speaker-overlap assignment, and UNKNOWN fallback. They do not by themselves establish real-world transcription accuracy or replace end-to-end testing with varied video and audio inputs.
 
 ## Timestamped Review Notes
 
