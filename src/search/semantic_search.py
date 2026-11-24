@@ -73,6 +73,13 @@ class SemanticSearchIndex:
             return None
 
         table = self._vector_table_name(model_name)
+        existing = self.connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table,),
+        ).fetchone()
+        if existing is not None and f"FLOAT[{dimension}]" not in (existing["sql"] or ""):
+            self.connection.execute(f'DROP TABLE "{table}"')
+
         self.connection.execute(
             f"""
             CREATE VIRTUAL TABLE IF NOT EXISTS "{table}" USING vec0(
