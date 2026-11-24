@@ -2,10 +2,50 @@ import json
 import os
 import re
 import tempfile
+from contextlib import contextmanager
+from functools import wraps
 from datetime import date, datetime, timezone
 from pathlib import Path
 
 from src.media.audit_log import AuditLog
+
+
+@contextmanager
+def _catalog_file_lock(catalog_path: Path):
+    """Serialize catalog reads and read-modify-write operations across processes."""
+    lock_path = catalog_path.with_name(catalog_path.name + ".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+b") as lock_file:
+        lock_file.seek(0, os.SEEK_END)
+        if lock_file.tell() == 0:
+            lock_file.write(b"0")
+            lock_file.flush()
+        lock_file.seek(0)
+        if os.name == "nt":
+            import msvcrt
+
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+            try:
+                yield
+            finally:
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def _catalog_locked(method):
+    @wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with _catalog_file_lock(self.catalog_path):
+            return method(self, *args, **kwargs)
+    return wrapper
 
 
 class MediaCatalog:
@@ -170,6 +210,7 @@ class MediaCatalog:
         if not isinstance(status, str) or status not in MediaCatalog.VALID_STATUSES:
             raise ValueError("Invalid media processing status.")
 
+    @_catalog_locked
     def register_media(
         self,
         media_id: str,
@@ -224,6 +265,7 @@ class MediaCatalog:
         )
         return dict(record)
 
+    @_catalog_locked
     def update_status(
         self,
         media_id: str,
@@ -259,6 +301,7 @@ class MediaCatalog:
         self._record_audit("media_status_updated", media_id, before, dict(record), actor)
         return dict(record)
 
+    @_catalog_locked
     def get_by_id(self, media_id: str) -> dict | None:
         return next(
             (
@@ -269,6 +312,7 @@ class MediaCatalog:
             None,
         )
 
+    @_catalog_locked
     def get_all(self) -> list[dict]:
         return [dict(item) for item in self._load()]
 
@@ -289,6 +333,7 @@ class MediaCatalog:
                 seen.add(key)
         return normalized
 
+    @_catalog_locked
     def update_archive_metadata(
         self,
         media_id: str,
@@ -329,6 +374,7 @@ class MediaCatalog:
         )
         return dict(record)
 
+    @_catalog_locked
     def get_collections(self) -> list[str]:
         return sorted({
             item["collection"]
@@ -336,6 +382,7 @@ class MediaCatalog:
             if item.get("collection")
         }, key=str.casefold)
 
+    @_catalog_locked
     def get_all_tags(self) -> list[str]:
         tags = {}
         for item in self._load():
@@ -343,6 +390,7 @@ class MediaCatalog:
                 tags.setdefault(tag.casefold(), tag)
         return sorted(tags.values(), key=str.casefold)
 
+    @_catalog_locked
     def filter_media(
         self,
         collection: str | None = None,
