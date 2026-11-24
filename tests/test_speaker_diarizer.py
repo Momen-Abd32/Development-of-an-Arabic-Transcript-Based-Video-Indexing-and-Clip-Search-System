@@ -43,3 +43,45 @@ def test_rejects_invalid_transcript_timestamps():
             [{"start": 1.0, "end": 1.0, "text": "نص"}],
             [],
         )
+
+
+
+@pytest.mark.parametrize(
+    "turn",
+    [
+        {"start": float("nan"), "end": 2, "speaker": "SPEAKER_00"},
+        {"start": 0, "end": float("inf"), "speaker": "SPEAKER_00"},
+        {"start": True, "end": 2, "speaker": "SPEAKER_00"},
+        {"start": 0, "end": 2, "speaker": "  "},
+        {"start": 0, "speaker": "SPEAKER_00"},
+    ],
+)
+def test_rejects_non_finite_or_malformed_speaker_turns(turn):
+    with pytest.raises((ValueError, TypeError)):
+        apply_speaker_turns(
+            [{"start": 0, "end": 1, "text": "نص"}],
+            [turn],
+        )
+
+
+@pytest.mark.parametrize("start,end", [
+    (float("nan"), 2),
+    (0, float("inf")),
+    (True, 2),
+])
+def test_rejects_non_finite_or_boolean_transcript_timestamps(start, end):
+    with pytest.raises(ValueError):
+        apply_speaker_turns(
+            [{"start": start, "end": end, "text": "نص"}],
+            [],
+        )
+
+
+def test_preserves_original_transcript_and_existing_metadata():
+    segment = {"start": 0, "end": 1, "text": "إزيك؟", "confidence": 0.92}
+    result = apply_speaker_turns([segment], [])
+
+    assert result[0]["text"] == "إزيك؟"
+    assert result[0]["confidence"] == 0.92
+    assert result[0]["speaker"] == "UNKNOWN"
+    assert "speaker" not in segment
