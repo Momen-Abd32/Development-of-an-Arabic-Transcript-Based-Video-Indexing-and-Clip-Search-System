@@ -744,6 +744,8 @@ python scripts/evaluate_search.py --mode all --dataset data/evaluation/search_qu
 
 Standalone semantic and hybrid evaluation require the optional semantic dependencies and an existing semantic index. Add `--build-semantic-index` to build/refresh embeddings before either evaluation mode. The `semantic` mode measures vector retrieval by itself; `hybrid` measures the fused lexical, fuzzy, and semantic ranking. Use `--output reports/semantic-evaluation.json` or `--output reports/hybrid-evaluation.json` to save individual reports. The `all` mode emits a `results` object containing all four metric summaries, making side-by-side comparison reproducible. Semantic and hybrid modes require the optional semantic dependencies and an existing semantic index; `--build-semantic-index` builds/refreshes it before evaluation.
 
+Before any search runs, the evaluator validates every human-labeled segment: it must include a non-empty media ID (media_id or video_id), finite numeric timestamps, and a valid non-negative interval where 0 <= start < end. Invalid labels are rejected with the query and segment index so malformed judgments do not silently distort the metrics.
+
 The checked-in file is a template, not a measured benchmark. Do not report its results as real archive performance until the relevance judgments have been reviewed and populated using representative Dukkan Media content.
 
 ## Evaluation Metrics
