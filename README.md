@@ -63,8 +63,9 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - **Video keyframes:** Extract sampled JPEG thumbnails with FFmpeg, preserve the actual frame presentation timestamps, safely replace prior generated frames, and preview them in the transcript workspace.
 - **Visual keyframe search:** Index extracted frames in SQLite and search across them using Arabic text descriptions or a reference image with an optional multilingual CLIP model; results include the source media and frame timestamp, with an option to preview the original video at the matched time.
 - **Unified cross-modal search:** Combine exact and fuzzy transcript matches with CLIP keyframe matches in one timestamped result list using Reciprocal Rank Fusion (RRF). The system fuses ranks rather than comparing uncalibrated text and image similarity scores; reference-image queries return visually similar frames.
-- **Evidence-first archive Q&A:** Ask questions over indexed transcripts, scope retrieval by current media or the entire archive, filter by media type, source name, added-date range, collection, tags, and speaker (including unassigned speakers), retrieve and rank verbatim transcript passages, cite the media ID, segment ID, speaker, and timestamps, and abstain when no evidence is found. Optional semantic retrieval and local Ollama multi-passage answer generation can supplement exact and fuzzy search.
-- **Timestamped review notes:** Create, edit, delete, and play back notes attached to a media item and timestamp. Note changes are recorded in the append-only audit history.
+- **Evidence-first archive Q&A:** Ask questions over indexed transcripts, scope retrieval by current media or the entire archive, filter by media type, source name, added-date range, collection, tags, and speaker (including unassigned speakers), retrieve and rank verbatim transcript passages, cite the media ID, segment ID, speaker, and timestamps, and abstain when no evidence is found. Optional semantic retrieval and local Ollama multi-passage answer generation can supplement exact and fuzzy search. Generated claims must cite retrieved segments and pass a conservative Arabic/Latin lexical-overlap and negation-consistency guard; this guard is not a semantic entailment proof, and rejected answers fall back to the verbatim quote.
+- **Visual-only archive Q&A:** Retrieve relevant keyframes with multilingual CLIP, ask an optional local Ollama vision-language model to describe only the supplied frames, and cite exact media IDs, frame indices, and timestamps. The adapter is loopback-only, sends at most four frames of up to 5 MiB each, and abstains when citations are missing or invalid.
+- **Timestamped review notes:** Create, edit, delete, and play back notes attached to a media item and timestamp. Note changes are recorded in the append-only audit history. Revision-based compare-and-swap updates prevent one reviewer from silently overwriting another reviewer’s newer edit.
 - **Arabic text normalization:** Normalize common Arabic character variations, remove diacritics and tatweel, and standardize whitespace to improve search consistency.
 - **Exact full-text search:** Find transcript segments using SQLite FTS5.
 - **Fuzzy search:** Find approximate matches using RapidFuzz.
@@ -341,6 +342,8 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   ├── search/
 │   │   ├── archive_qa.py
 │   │   ├── local_answer_provider.py
+│   │   ├── local_vision_answer_provider.py
+│   │   ├── visual_archive_qa.py
 │   │   ├── cross_modal_evaluation.py
 │   │   ├── cross_modal_evaluation_dataset.py
 │   │   ├── cross_modal_search.py
@@ -353,7 +356,8 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   │   └── visual_evaluation.py
 │   │
 │   ├── security/
-│   │   └── auth_manager.py
+│   │   ├── auth_manager.py
+│   │   └── permissions.py
 │   └── transcription/
 │       ├── faster_whisper_engine.py
 │       ├── transcript_exporter.py
@@ -363,6 +367,9 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 ├── tests/
 │   ├── test_archive_metrics.py
 │   ├── test_archive_qa.py
+│   ├── test_visual_archive_qa.py
+│   ├── test_local_vision_answer_provider.py
+│   ├── test_permissions.py
 │   ├── test_evaluation_dataset.py
 │   ├── test_local_answer_provider.py
 │   ├── test_auth_manager.py
@@ -752,7 +759,17 @@ The default mode is extractive and requires no local language model. For optiona
 ollama pull qwen2.5:3b
 ```
 
-Enable **Generate a multi-passage answer with local Ollama** in the Q&A workspace and enter the installed model name if it differs. The adapter connects only to the loopback Ollama service at `127.0.0.1:11434`; it does not send transcript evidence to a remote model endpoint. Every generated claim must cite media and segment IDs present in the retrieved evidence, otherwise the UI falls back to the verbatim extractive quote. This validates citation membership, not logical entailment: users must still review the cited context. Visual-only question answering is not implemented.
+Enable **Generate a multi-passage answer with local Ollama** in the Q&A workspace and enter the installed model name if it differs. The adapter connects only to the loopback Ollama service at `127.0.0.1:11434`; it does not send transcript evidence to a remote model endpoint. Every generated claim must cite media and segment IDs present in the retrieved evidence and pass a conservative normalized-token overlap and negation-consistency check. If a claim fails, the UI falls back to the verbatim extractive quote. This lexical guard reduces unsupported output but is not a semantic entailment model or proof; users must still review the cited context.
+
+### Visual-only question answering
+
+Visual Q&A first retrieves up to four candidate keyframes using the optional multilingual CLIP index, then sends only those local images and their media/frame/timestamp metadata to a local Ollama vision model. Install a vision-capable model:
+
+```bash
+ollama pull qwen2.5vl:3b
+```
+
+In **Ask the Archive**, use **Ask Questions About Visual Scenes** and select the local model name. The adapter accepts only the loopback Ollama endpoint, rejects redirects, limits the request to four images of at most 5 MiB each, and requires every answer to cite an exact retrieved `(media_id, frame_index)` pair. Invalid or missing citations cause abstention. The UI displays the cited frame thumbnails and source timestamps. The answer can describe only what is visible in the retrieved frames; it cannot establish events between sampled frames or prove facts outside the images. A CLIP match is a retrieval candidate, not a calibrated confidence score.
 
 ## Search Retrieval Evaluation
 
@@ -819,10 +836,10 @@ Uploaded videos, original audio files, normalized audio, transcript JSON files, 
 - Semantic and hybrid transcript search are optional and require installing `requirements-semantic.txt` and explicitly building the semantic index. An additional optional `sqlite-vec` backend can execute KNN retrieval inside SQLite; the JSON embedding table remains authoritative and the existing exact heap implementation remains the fallback. Visual keyframe search separately requires `requirements-visual.txt`, extracted keyframes, and a built visual index.
 - Speaker diarization is optional, requires a Hugging Face token and access to the gated pyannote model, and has not yet been evaluated on Dukkan Media recordings.
 - The optional `sqlite-vec` backend currently provides SQLite-native KNN execution for unfiltered or single-media semantic queries; multi-media and speaker-filtered queries retain the exact heap fallback. It is not an approximate HNSW/ANN index, so large-archive latency and scaling gains are not yet established. A true ANN backend and retrieval-performance/recall benchmarks remain future work.
-- Archive Q&A defaults to a verbatim transcript quote and can optionally use a local Ollama model to generate multi-passage claims with references to retrieved segments. Citation IDs are checked against retrieved evidence, but this does not prove logical entailment; visual-only question answering is not implemented.
+- Transcript archive Q&A defaults to a verbatim quote. Optional local Ollama claims must cite retrieved segments and pass a conservative lexical-overlap/negation guard; this is not a semantic entailment proof. Visual-only Q&A is optional and requires a local vision-capable Ollama model plus the CLIP keyframe index. It validates frame citation membership but cannot prove that a generated description is visually correct.
 - Visual search uses multilingual CLIP embeddings, but its retrieval quality has not yet been measured against a human-judged Dukkan Media visual-search dataset. Keyframes are sampled every 30 seconds and capped at 300 frames per video by default, so very long recordings may need a configurable sampling policy to cover their full duration. Frame timestamps are sampled from FFmpeg presentation timestamps.
-- The application currently uses local file storage and a local SQLite database; it is not designed as a multi-user hosted service.
-- Timestamped notes provide a local review workflow with audit events. Author/editor values are authenticated when optional account authentication is enabled and are user-entered labels otherwise; simultaneous multi-instance collaboration is not implemented.
+- The application currently uses local file storage and a local SQLite database; it is not designed as a multi-user hosted service. Role permissions are centralized and tested for the local Streamlit UI, but this is not a substitute for a hardened public API authorization boundary.
+- Timestamped notes provide a local review workflow with audit events. Note revisions use optimistic concurrency checks so stale edits fail instead of overwriting a newer review. Author/editor values are authenticated when optional account authentication is enabled and are user-entered labels otherwise. This is conflict-safe shared-database editing, not live push synchronization or real-time multi-instance collaboration.
 - Batch import reads local or mounted folders. The polling watcher supports continuous monitoring of local/mounted folders, direct-media URL ingestion supports HTTPS files from explicitly allowlisted hosts, and optional S3 ingestion supports exact allowlisted buckets. Provider-specific Google Drive/Azure integrations, remote deletion synchronization, authenticated streaming pages, and playlist downloads are not implemented.
 - The SQLite segment table retains the legacy `video_id` column name; for audio records, it stores the SHA-256 media identifier as well.
 - The media catalog remains a backward-compatible local JSON file. An OS-level advisory lock serializes catalog reads and updates between processes on the same host; this is not distributed locking for multiple hosts sharing an unreliable network filesystem, nor does it provide live multi-instance UI synchronization.
