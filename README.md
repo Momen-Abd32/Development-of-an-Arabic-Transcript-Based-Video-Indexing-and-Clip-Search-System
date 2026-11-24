@@ -49,7 +49,7 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - **Archive backup and restore:** Create checksummed snapshots of data and exports, use SQLite's online backup API for live databases, verify every file before restore, and restore only into a new directory without overwriting existing data.
 - **Optional account authentication and RBAC:** Administrator, editor, and search-only roles; salted PBKDF2 password hashes; account activation and role management; failed-login throttling; and user-attributed note/audit actions.
 - **Media catalog:** Persist each media file's type, original filename, stored path, and processing status.
-- **Archive collections and tags:** Organize media with optional collection names and deduplicated tags; filter the archive by collection and selected tags.
+- **Archive collections and tags:** Organize media with optional collection names and deduplicated tags; filter the archive by collection and selected tags. Catalog reads and updates use an OS-level lock around the atomic JSON replacement so concurrent processes on the same host do not silently overwrite each other's metadata changes.
 - **Archive-wide search:** Search transcript segments across all imported media or limit the search to the currently selected file.
 - **Search filters:** Narrow exact, fuzzy, and hybrid results by media type, source filename, added-date range, collection, tags, and speaker (including segments without a speaker label).
 - **Duplicate detection:** Identify identical files using SHA-256 and avoid processing duplicate content within the same batch.
@@ -797,7 +797,7 @@ Uploaded videos, original audio files, normalized audio, transcript JSON files, 
 - Timestamped notes provide a local review workflow with audit events. Author/editor values are authenticated when optional account authentication is enabled and are user-entered labels otherwise; simultaneous multi-instance collaboration is not implemented.
 - Batch import reads local or mounted folders. The polling watcher supports continuous monitoring of local/mounted folders, and direct-media URL ingestion supports HTTPS files from explicitly allowlisted hosts. Direct cloud-provider APIs, authenticated streaming pages, and playlist downloads are not implemented.
 - The SQLite segment table retains the legacy `video_id` column name; for audio records, it stores the SHA-256 media identifier as well.
-- The media catalog is a local JSON file intended for the current single-instance application; concurrent multi-process writes are not coordinated.
+- The media catalog remains a backward-compatible local JSON file. An OS-level advisory lock serializes catalog reads and updates between processes on the same host; this is not distributed locking for multiple hosts sharing an unreliable network filesystem, nor does it provide live multi-instance UI synchronization.
 - Active application session state is not automatically reconstructed after a process restart.
 - WER and CER require reference transcripts and are not standalone measures of application quality.
 
