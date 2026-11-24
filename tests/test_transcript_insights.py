@@ -95,3 +95,40 @@ def test_loads_legacy_insights_without_topic_candidates(tmp_path):
 
     loaded = TranscriptInsights.load(path)
     assert loaded["summary"] == "ملخص قديم"
+
+
+
+def test_normalizes_arabic_diacritics_and_alef_variants_for_keywords():
+    result = TranscriptInsights.generate([
+        {"start": 0, "end": 1, "text": "إِدارة البيانات"},
+        {"start": 1, "end": 2, "text": "ادارة البيانات"},
+    ])
+
+    terms = {item["term"] for item in result["keywords"]}
+    assert "ادارة" in terms
+    assert "إِدارة" not in terms
+    assert next(item for item in result["keywords"] if item["term"] == "ادارة")["frequency"] == 2
+
+
+def test_keyword_ranking_exposes_document_frequency_and_weight():
+    result = TranscriptInsights.generate([
+        {"start": 0, "end": 1, "text": "البيانات المشتركة المشتركة"},
+        {"start": 1, "end": 2, "text": "البيانات المختلفة"},
+        {"start": 2, "end": 3, "text": "البيانات النادرة"},
+    ])
+
+    terms = {item["term"]: item for item in result["keywords"]}
+    assert terms["البيانات"]["document_frequency"] == 3
+    assert terms["النادرة"]["document_frequency"] == 1
+    assert terms["النادرة"]["score"] > terms["البيانات"]["score"]
+
+
+def test_empty_text_segments_do_not_create_topics_or_keywords():
+    result = TranscriptInsights.generate([
+        {"start": 0, "end": 1, "text": "   "},
+        {"start": 1, "end": 2, "text": "في من على"},
+    ])
+
+    assert result["summary"] == ""
+    assert result["keywords"] == []
+    assert result["topic_candidates"] == []
