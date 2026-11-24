@@ -336,3 +336,46 @@ def test_archive_qa_supports_multiple_cited_claims_from_distinct_segments():
     assert result["answer_citation"] is None
     assert [item["segment_id"] for item in result["answer_citations"]] == [21, 22]
     assert result["claims"][1]["citations"][0]["start"] == 42.0
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "تم إلغاء جميع الصفقات في مدينة العقبة.",
+        "لا توجد شحنة وصلت إلى عمّان.",
+    ],
+)
+def test_archive_qa_rejects_claims_without_lexical_or_negation_support(claim):
+    engine = FakeSearchEngine(exact=[
+        segment(31, "وصلت الشحنة إلى عمّان صباح اليوم.", start=30)
+    ])
+    provider = FakeAnswerProvider({
+        "abstain": False,
+        "claims": [{
+            "text": claim,
+            "citations": [{"media_id": "media-a", "segment_id": 31}],
+        }],
+    })
+
+    result = ArchiveQA(engine).ask("ما الذي حدث؟", answer_provider=provider)
+
+    assert result["answer_type"] == "extractive_quote"
+    assert result["answer"] == "وصلت الشحنة إلى عمّان صباح اليوم."
+    assert result["warnings"]
+
+
+def test_archive_qa_accepts_claim_with_normalized_arabic_overlap():
+    engine = FakeSearchEngine(exact=[
+        segment(32, "وصلت الشحنة إلى عمّان صباح اليوم.", start=30)
+    ])
+    provider = FakeAnswerProvider({
+        "abstain": False,
+        "claims": [{
+            "text": "وصلت الشحنة الى عمان صباحا.",
+            "citations": [{"media_id": "media-a", "segment_id": 32}],
+        }],
+    })
+
+    result = ArchiveQA(engine).ask("أين وصلت الشحنة؟", answer_provider=provider)
+
+    assert result["answer_type"] == "cited_generated_claims"
