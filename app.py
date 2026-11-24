@@ -2827,7 +2827,8 @@ with tab_notes:
                     ):
                         st.caption(
                             f'{t["archive_notes_created"]}: {note["created_at"]} · '
-                            f'{t["archive_notes_updated_by"]}: {note["updated_by"]}'
+                            f'{t["archive_notes_updated_by"]}: {note["updated_by"]} · '
+                            f'Version: {note.get("revision", 1)}'
                         )
                         with st.form(f'archive_note_edit_form_{note["note_id"]}'):
                             edited_timestamp = st.number_input(
@@ -2858,7 +2859,8 @@ with tab_notes:
                                     note["note_id"],
                                     timestamp_seconds=edited_timestamp,
                                     note_text=edited_text,
-                                    updated_by=edited_by,
+                                    updated_by=current_user["username"],
+                                    expected_version=note.get("revision", 1),
                                 )
                                 st.success(t["archive_notes_updated"])
                                 st.rerun()
