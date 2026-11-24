@@ -2873,7 +2873,8 @@ with tab_notes:
                 )
                 new_note_author = st.text_input(
                     t["archive_notes_author"],
-                    value="local_user",
+                    value=current_user["username"],
+                    disabled=auth_enabled,
                     key="archive_note_new_author",
                 )
                 new_note_text = st.text_area(
@@ -2893,7 +2894,9 @@ with tab_notes:
                         selected_note_media_id,
                         new_note_timestamp,
                         new_note_text,
-                        author=new_note_author,
+                        author=(
+                            current_user["username"] if auth_enabled else new_note_author
+                        ),
                     )
                     st.success(t["archive_notes_saved"])
                 except Exception as error:
@@ -2937,7 +2940,8 @@ with tab_notes:
                             )
                             edited_by = st.text_input(
                                 t["archive_notes_updated_by"],
-                                value="local_user",
+                                value=current_user["username"],
+                                disabled=auth_enabled,
                                 key=f'archive_note_editor_{note["note_id"]}',
                             )
                             update_note = st.form_submit_button(
@@ -2950,7 +2954,9 @@ with tab_notes:
                                     note["note_id"],
                                     timestamp_seconds=edited_timestamp,
                                     note_text=edited_text,
-                                    updated_by=current_user["username"],
+                                    updated_by=(
+                                        current_user["username"] if auth_enabled else edited_by
+                                    ),
                                     expected_version=note.get("revision", 1),
                                 )
                                 st.success(t["archive_notes_updated"])
