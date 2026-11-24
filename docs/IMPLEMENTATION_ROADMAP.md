@@ -35,7 +35,7 @@ Evolve the existing Arabic media archiving, transcription, indexing, and clip-se
 2. Processing queue with explicit stages, retries, progress, cancellation, and recovery after restart.
 3. Dashboard for archive size, media counts, processing states, failures, and model/runtime health.
 4. Processing/event history and auditable metadata changes.
-5. Role-based access control (administrator, editor, search-only user) before exposing the archive to multiple users.
+5. Role-based access control (administrator, editor, search-only user), with atomic first-admin bootstrap and last-active-admin safeguards, before exposing the archive to multiple users.
 6. Modular ingestion adapters: local folders, watched folders/shared NAS, exact-allowlisted S3-compatible object storage, and supported direct HTTPS URLs. Each adapter validates sources and hands local staged files to the same deduplication and processing pipeline.
 7. Verified archive backup and restore with consistent SQLite snapshots, checksums, and safe non-overwriting restoration.
 8. Optional local account authentication and role-based permissions before enabling multi-user collaboration.
