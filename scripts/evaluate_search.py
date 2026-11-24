@@ -45,6 +45,18 @@ def collect_rankings(engine, cases, mode, top_k, provider=None):
     raise ValueError("Unsupported search mode: " + mode)
 
 
+def evaluate_modes(engine, cases, modes, top_k, provider=None):
+    """Evaluate multiple rankers against the same human judgments."""
+    return {
+        mode: evaluate_rankings(
+            cases,
+            collect_rankings(engine, cases, mode, top_k, provider),
+            k=top_k,
+        )
+        for mode in modes
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -55,7 +67,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--mode",
-        choices=("exact", "fuzzy", "semantic", "hybrid"),
+        choices=("exact", "fuzzy", "semantic", "hybrid", "all"),
         default="exact",
     )
     parser.add_argument("--database", default="data/database/videos.db")
@@ -75,7 +87,7 @@ def main() -> int:
     engine = SearchEngine(args.database)
     try:
         provider = None
-        if args.mode in ("semantic", "hybrid"):
+        if args.mode in ("semantic", "hybrid", "all"):
             from src.search.embedding_provider import SentenceTransformerProvider
 
             provider = SentenceTransformerProvider()
@@ -88,7 +100,10 @@ def main() -> int:
                 ]
                 for media_id in media_ids:
                     engine.index_semantic_media(media_id, provider)
-        rankings = collect_rankings(engine, cases, args.mode, args.top_k, provider)
+        modes = ("exact", "fuzzy", "semantic", "hybrid") if args.mode == "all" else (args.mode,)
+        mode_reports = evaluate_modes(
+            engine, cases, modes, args.top_k, provider=provider
+        )
     finally:
         engine.close()
 
@@ -97,7 +112,7 @@ def main() -> int:
         "database": args.database,
         "dataset": str(args.dataset),
         "top_k": args.top_k,
-        **evaluate_rankings(cases, rankings, k=args.top_k),
+        "results": mode_reports if args.mode == "all" else mode_reports[args.mode],
     }
     serialized = json.dumps(report, ensure_ascii=False, indent=2)
     print(serialized)
