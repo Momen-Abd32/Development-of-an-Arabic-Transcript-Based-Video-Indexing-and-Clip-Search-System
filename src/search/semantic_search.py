@@ -24,6 +24,8 @@ class SemanticSearchIndex:
         self.connection = sqlite3.connect(self.database_path, timeout=10)
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA busy_timeout = 10000")
+        self._sqlite_vec_checked = False
+        self._sqlite_vec_module = None
         self.connection.execute(
             """
             CREATE TABLE IF NOT EXISTS segment_embeddings (
@@ -49,7 +51,10 @@ class SemanticSearchIndex:
         return f"semantic_vec_{digest}"
 
     def _load_vector_extension(self):
-        """Load sqlite-vec when installed; the core SQLite path stays optional."""
+        """Load sqlite-vec once per connection; the core path stays optional."""
+        if self._sqlite_vec_checked:
+            return self._sqlite_vec_module
+        self._sqlite_vec_checked = True
         try:
             import sqlite_vec
             self.connection.enable_load_extension(True)
@@ -57,7 +62,8 @@ class SemanticSearchIndex:
                 sqlite_vec.load(self.connection)
             finally:
                 self.connection.enable_load_extension(False)
-            return sqlite_vec
+            self._sqlite_vec_module = sqlite_vec
+            return self._sqlite_vec_module
         except (ImportError, AttributeError, sqlite3.Error, RuntimeError, OSError):
             return None
 
