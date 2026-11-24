@@ -190,3 +190,30 @@ def test_semantic_search_top_k_respects_media_and_speaker_filters(semantic_index
     )
 
     assert [item["id"] for item in results] == [3]
+
+
+def test_optional_sqlite_vec_backend_returns_semantic_matches(semantic_index):
+    pytest.importorskip("sqlite_vec")
+    provider = FakeEmbeddingProvider()
+    semantic_index.index_media("media-a", provider)
+
+    results = semantic_index.search("برمجة", provider, limit=2)
+
+    assert [item["id"] for item in results] == [1, 3]
+    assert all(item["semantic_score"] == 1.0 for item in results)
+
+
+def test_optional_sqlite_vec_backend_applies_single_media_filter(semantic_index):
+    pytest.importorskip("sqlite_vec")
+    provider = FakeEmbeddingProvider()
+    semantic_index.index_media("media-a", provider)
+    semantic_index.index_media("media-b", provider)
+
+    results = semantic_index.search(
+        "برمجة",
+        provider,
+        limit=5,
+        media_ids=["media-b"],
+    )
+
+    assert results == []
