@@ -158,7 +158,7 @@ def test_semantic_search_returns_exact_top_k_without_changing_tie_order(semantic
             "شرح البرمجة",
             None,
         )
-        for index in range(1, 1201)
+        for index in range(100, 1300)
     ]
     semantic_index.connection.executemany(
         """
@@ -172,7 +172,7 @@ def test_semantic_search_returns_exact_top_k_without_changing_tie_order(semantic
     semantic_index.index_media("media-0", provider)
     results = semantic_index.search("برمجة", provider, limit=5)
 
-    assert [item["id"] for item in results] == [7, 14, 21, 28, 35]
+    assert [item["id"] for item in results] == [105, 112, 119, 126, 133]
     assert all(item["semantic_score"] == 1.0 for item in results)
 
 
