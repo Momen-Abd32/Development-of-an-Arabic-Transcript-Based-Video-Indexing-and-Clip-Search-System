@@ -183,15 +183,39 @@ class AuthManager:
         password: str,
         display_name: str = "Archive Administrator",
     ) -> bool:
-        """Create the first administrator only when the user store is empty."""
-        if self.has_users():
-            return False
-        self.create_user(
+        """Atomically create the first administrator across concurrent starters."""
+        username = self._normalize_username(username)
+        password = self._validate_password(password)
+        display_name = self._validate_display_name(display_name)
+        salt = secrets.token_bytes(16)
+        password_hash = self._hash_password(password, salt)
+        now = self._now()
+
+        self.connection.execute("BEGIN IMMEDIATE")
+        try:
+            if self.has_users():
+                self.connection.execute("COMMIT")
+                return False
+            self.connection.execute(
+                """
+                INSERT INTO archive_users (
+                    username, display_name, password_salt, password_hash,
+                    password_iterations, role, is_active, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, 'administrator', 1, ?, ?)
+                """,
+                (username, display_name, salt, password_hash, self.iterations, now, now),
+            )
+            self.connection.execute("COMMIT")
+        except Exception:
+            if self.connection.in_transaction:
+                self.connection.execute("ROLLBACK")
+            raise
+
+        self._record_audit(
+            "user_created",
             username,
-            password,
-            display_name=display_name,
-            role="administrator",
-            actor="bootstrap",
+            "bootstrap",
+            {"display_name": display_name, "role": "administrator"},
         )
         return True
 
@@ -333,33 +357,42 @@ class AuthManager:
         username = self._normalize_username(username)
         role = self._validate_role(role)
         actor = self._normalize_username(actor)
-        row = self.connection.execute(
-            "SELECT * FROM archive_users WHERE username = ?",
-            (username,),
-        ).fetchone()
-        if row is None:
-            raise KeyError(f"User not found: {username}")
-        previous_role = row["role"]
-        if actor == username and role != "administrator":
-            raise ValueError("You cannot remove administrator access from your own account.")
-        if previous_role == "administrator" and role != "administrator" and row["is_active"]:
-            active_admins = self.connection.execute(
+
+        self.connection.execute("BEGIN IMMEDIATE")
+        try:
+            row = self.connection.execute(
+                "SELECT * FROM archive_users WHERE username = ?",
+                (username,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"User not found: {username}")
+            previous_role = row["role"]
+            if actor == username and role != "administrator":
+                raise ValueError("You cannot remove administrator access from your own account.")
+            if previous_role == "administrator" and role != "administrator" and row["is_active"]:
+                active_admins = self.connection.execute(
+                    """
+                    SELECT COUNT(*) FROM archive_users
+                    WHERE role = 'administrator' AND is_active = 1
+                    """
+                ).fetchone()[0]
+                if active_admins <= 1:
+                    raise ValueError("The last active administrator cannot be demoted.")
+            now = self._now()
+            self.connection.execute(
                 """
-                SELECT COUNT(*) FROM archive_users
-                WHERE role = 'administrator' AND is_active = 1
-                """
-            ).fetchone()[0]
-            if active_admins <= 1:
-                raise ValueError("The last active administrator cannot be demoted.")
-        now = self._now()
-        self.connection.execute(
-            """
-            UPDATE archive_users
-            SET role = ?, session_version = session_version + ?, updated_at = ?
-            WHERE username = ?
-            """,
-            (role, int(previous_role != role), now, username),
-        )
+                UPDATE archive_users
+                SET role = ?, session_version = session_version + ?, updated_at = ?
+                WHERE username = ?
+                """,
+                (role, int(previous_role != role), now, username),
+            )
+            self.connection.execute("COMMIT")
+        except Exception:
+            if self.connection.in_transaction:
+                self.connection.execute("ROLLBACK")
+            raise
+
         self._record_audit(
             "user_role_updated",
             username,
@@ -379,33 +412,42 @@ class AuthManager:
         actor = self._normalize_username(actor)
         if not isinstance(is_active, bool):
             raise TypeError("Active status must be a boolean.")
-        row = self.connection.execute(
-            "SELECT * FROM archive_users WHERE username = ?",
-            (username,),
-        ).fetchone()
-        if row is None:
-            raise KeyError(f"User not found: {username}")
-        if not is_active and actor == username:
-            raise ValueError("You cannot deactivate your own signed-in account.")
-        if not is_active and row["role"] == "administrator" and row["is_active"]:
-            active_admins = self.connection.execute(
+
+        self.connection.execute("BEGIN IMMEDIATE")
+        try:
+            row = self.connection.execute(
+                "SELECT * FROM archive_users WHERE username = ?",
+                (username,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"User not found: {username}")
+            if not is_active and actor == username:
+                raise ValueError("You cannot deactivate your own signed-in account.")
+            if not is_active and row["role"] == "administrator" and row["is_active"]:
+                active_admins = self.connection.execute(
+                    """
+                    SELECT COUNT(*) FROM archive_users
+                    WHERE role = 'administrator' AND is_active = 1
+                    """
+                ).fetchone()[0]
+                if active_admins <= 1:
+                    raise ValueError("The last active administrator cannot be deactivated.")
+            previous_active = bool(row["is_active"])
+            now = self._now()
+            self.connection.execute(
                 """
-                SELECT COUNT(*) FROM archive_users
-                WHERE role = 'administrator' AND is_active = 1
-                """
-            ).fetchone()[0]
-            if active_admins <= 1:
-                raise ValueError("The last active administrator cannot be deactivated.")
-        now = self._now()
-        previous_active = bool(row["is_active"])
-        self.connection.execute(
-            """
-            UPDATE archive_users
-            SET is_active = ?, session_version = session_version + ?, updated_at = ?
-            WHERE username = ?
-            """,
-            (int(is_active), int(previous_active != is_active), now, username),
-        )
+                UPDATE archive_users
+                SET is_active = ?, session_version = session_version + ?, updated_at = ?
+                WHERE username = ?
+                """,
+                (int(is_active), int(previous_active != is_active), now, username),
+            )
+            self.connection.execute("COMMIT")
+        except Exception:
+            if self.connection.in_transaction:
+                self.connection.execute("ROLLBACK")
+            raise
+
         self._record_audit(
             "user_activated" if is_active else "user_deactivated",
             username,
