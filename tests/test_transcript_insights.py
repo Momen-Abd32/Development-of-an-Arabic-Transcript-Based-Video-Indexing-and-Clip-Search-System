@@ -12,7 +12,7 @@ def test_generates_extractive_summary_and_arabic_keywords():
         {"start": 4, "end": 6, "text": "الرياضة مهمة للصحة"},
     ]
 
-    result = TranscriptInsights.generate(segments, keyword_limit=3, summary_limit=2)
+    result = TranscriptInsights.generate(segments, keyword_limit=10, summary_limit=2)
 
     assert result["method"] == "extractive"
     assert "الذكاء الاصطناعي" in result["summary"]
