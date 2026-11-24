@@ -490,6 +490,14 @@ The semantic search index will create and rebuild its derived `vec0` table autom
 
 This backend is an optional native KNN path, **not an approximate HNSW/ANN index**; do not interpret it as eliminating linear-scan behavior or as a measured latency improvement until benchmarked on representative archive sizes.
 
+A reproducible synthetic benchmark compares steady-state SQLite KNN latency with the exact heap fallback and checks top-k ID agreement (it excludes one-time vector-table construction):
+
+```bash
+python scripts/benchmark_semantic_search.py --segments 10000 --dimension 64 --queries 10 --top-k 10
+```
+
+The benchmark uses deterministic generated vectors and does not download models or claim real Dukkan Media relevance quality. Run it at several archive sizes and retain the JSON output when collecting performance evidence.
+
 ### Optional: enable visual keyframe search
 
 Visual search requires extracted video keyframes and two aligned optional CLIP encoders: the original image encoder and a multilingual text encoder that supports 50+ languages, including Arabic. The provider deliberately uses the image model for frames and the multilingual model for text queries:
