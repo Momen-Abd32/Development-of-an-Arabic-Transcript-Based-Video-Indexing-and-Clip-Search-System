@@ -661,9 +661,9 @@ The worker claims jobs transactionally, reports per-file progress, retries faile
 
 ## Audit History
 
-The application stores an append-only audit trail in `data/database/processing_queue.db`. It records media registration and metadata/status changes, timestamped note creation/updates/deletions, plus processing-job enqueue, start, retry scheduling, failure, cancellation, manual retry, and completion events. Each event includes a UTC timestamp, actor (defaults to `system` until authentication is introduced), entity identity, and JSON before/after details where applicable.
+The application stores an append-only audit trail in `data/database/processing_queue.db`. SQLite triggers reject ordinary `UPDATE` and `DELETE` statements against existing audit events, and the triggers are added when opening older databases. It records media registration and metadata/status changes, timestamped note creation/updates/deletions, plus processing-job enqueue, start, retry scheduling, failure, cancellation, manual retry, and completion events. Each event includes a UTC timestamp, actor (defaults to `system` until authentication is introduced), entity identity, and JSON before/after details where applicable.
 
-Use the `AuditLog` service to query recent events or filter by entity type, entity ID, and actor. The audit history is local to this application instance; it is not yet a tamper-proof compliance log or a substitute for authenticated user identity.
+Use the `AuditLog` service to query recent events or filter by entity type, entity ID, and actor. The audit history is local to this application instance. Database-level triggers prevent routine mutation, but a privileged database operator can still alter the schema or file; this is not a tamper-proof compliance log or a substitute for authenticated user identity.
 
 ## Authentication and Role-Based Access
 
@@ -727,7 +727,7 @@ For more detailed output:
 python -m pytest tests -v
 ```
 
-The complete test suite should be run after pulling the current development branch. Automated tests cover concurrent catalog writes, atomic administrator bootstrap and last-admin protection, S3 object-ingestion validation and queue handoff, as well as Arabic token normalization and weighted insight ranking, source-linked topic extraction, malformed timestamp rejection, diarization adapter behavior, speaker-overlap assignment, and UNKNOWN fallback. They do not by themselves establish real-world transcription accuracy or replace end-to-end testing with varied video and audio inputs.
+The complete test suite should be run after pulling the current development branch. Automated tests cover concurrent catalog writes, immutable audit-event enforcement, atomic administrator bootstrap and last-admin protection, S3 object-ingestion validation and queue handoff, as well as Arabic token normalization and weighted insight ranking, source-linked topic extraction, malformed timestamp rejection, diarization adapter behavior, speaker-overlap assignment, and UNKNOWN fallback. They do not by themselves establish real-world transcription accuracy or replace end-to-end testing with varied video and audio inputs.
 
 ## Timestamped Review Notes
 
