@@ -27,6 +27,8 @@ from src.search.archive_qa import ArchiveQA
 from src.search.evaluation_dataset import EvaluationDatasetStore
 from src.search.cross_modal_evaluation_dataset import CrossModalEvaluationDatasetStore
 from src.search.local_answer_provider import OllamaAnswerProvider
+from src.search.local_vision_answer_provider import OllamaVisionAnswerProvider
+from src.search.visual_archive_qa import VisualArchiveQA
 from src.search.keyframe_search import KeyframeSearchIndex
 from src.search.visual_embedding_provider import SentenceTransformerVisualProvider
 from src.search.embedding_provider import SentenceTransformerProvider
@@ -305,6 +307,15 @@ TEXT = {
         "archive_qa_model": "اسم نموذج Ollama المحلي",
         "archive_qa_generated_note": "إجابة مولّدة محلياً؛ كل ادعاء مرتبط بمقطع مسترجع. تحقق من السياق لأن وجود الاستشهاد لا يثبت صحة الاستنتاج منطقياً.",
         "archive_qa_citations": "استشهادات الإجابة",
+        "visual_qa_title": "اسأل الأرشيف عن محتوى المشاهد",
+        "visual_qa_desc": "استرجاع لقطات مرشحة عبر CLIP ثم تحليلها بنموذج رؤية محلي من Ollama. تُعرض الإجابة فقط مع معرّفات الإطارات وتوقيتها، ويُمتنع عند غياب الدليل.",
+        "visual_qa_question": "ما الذي يظهر في هذه المشاهد؟",
+        "visual_qa_model": "نموذج الرؤية المحلي (مثال: qwen2.5vl:3b)",
+        "visual_qa_button": "اسأل عن المشاهد",
+        "visual_qa_answer": "الإجابة البصرية المستندة إلى اللقطات",
+        "visual_qa_abstain": "لم تتوفر أدلة بصرية كافية للإجابة ضمن النطاق المحدد.",
+        "visual_qa_citations": "مصادر اللقطات",
+        "visual_qa_note": "الإجابة تصف ما يظهر في الإطارات المسترجعة فقط؛ لا تثبت أحداثاً خارج الإطارات ولا تضمن صحة الاستنتاجات غير المرئية.",
         "cross_modal_tab": "البحث الموحّد",
         "cross_modal_title": "بحث موحّد في النصوص واللقطات",
         "cross_modal_desc": "اجمع نتائج التفريغ النصي واللقطات البصرية في قائمة مرتبة واحدة. تُدمج الرتب ولا تُقارن درجات التشابه الخام بين النماذج.",
@@ -499,6 +510,15 @@ TEXT = {
         "archive_qa_model": "Local Ollama model name",
         "archive_qa_generated_note": "Locally generated answer; each claim references a retrieved segment. Review the context because citation membership does not prove logical entailment.",
         "archive_qa_citations": "Answer citations",
+        "visual_qa_title": "Ask Questions About Visual Scenes",
+        "visual_qa_desc": "Retrieve candidate keyframes with CLIP, then analyze them with a local Ollama vision model. Answers cite exact frame IDs and timestamps and abstain without visual evidence.",
+        "visual_qa_question": "What appears in these scenes?",
+        "visual_qa_model": "Local vision model (for example: qwen2.5vl:3b)",
+        "visual_qa_button": "Ask About the Scenes",
+        "visual_qa_answer": "Visual answer grounded in keyframes",
+        "visual_qa_abstain": "No sufficient visual evidence was found in the selected scope.",
+        "visual_qa_citations": "Keyframe sources",
+        "visual_qa_note": "The answer describes only the retrieved frames; it cannot establish events outside those frames or guarantee unseen conclusions.",
         "clips_tab": "Saved Clips",
         "archive_tab": "Archive Management",
         "dashboard_tab": "Dashboard",
@@ -2476,6 +2496,77 @@ with tab_qa:
                                 )
             else:
                 st.info(t["archive_qa_abstain"])
+
+
+        st.divider()
+        st.markdown(f'### {t["visual_qa_title"]}')
+        st.caption(t["visual_qa_desc"])
+        visual_qa_question = st.text_area(
+            t["visual_qa_question"],
+            key="visual_qa_question_input",
+            height=80,
+        )
+        visual_qa_model = st.text_input(
+            t["visual_qa_model"],
+            value="qwen2.5vl:3b",
+            key="visual_qa_model_input",
+        )
+        if st.button(
+            t["visual_qa_button"],
+            key="run_visual_archive_qa",
+        ):
+            if not visual_qa_question.strip():
+                st.warning(t["empty_query"])
+            elif not visual_qa_model.strip():
+                st.warning(t["visual_qa_model"])
+            else:
+                visual_index = None
+                try:
+                    visual_provider = SentenceTransformerVisualProvider()
+                    vision_answer_provider = OllamaVisionAnswerProvider(
+                        model=visual_qa_model.strip()
+                    )
+                    visual_index = KeyframeSearchIndex()
+                    visual_result = VisualArchiveQA(visual_index).ask(
+                        visual_qa_question,
+                        visual_provider=visual_provider,
+                        answer_provider=vision_answer_provider,
+                        media_ids=qa_media_ids,
+                        limit=4,
+                    )
+                    st.session_state.visual_archive_qa_result = visual_result
+                except Exception as error:
+                    st.error(f'{t["search_failed"]}: {error}')
+                finally:
+                    if visual_index is not None:
+                        visual_index.close()
+
+        visual_result = st.session_state.get("visual_archive_qa_result")
+        if visual_result:
+            if visual_result["status"] == "evidence_found":
+                st.markdown(f'#### {t["visual_qa_answer"]}')
+                st.success(visual_result["answer"])
+                st.caption(t["visual_qa_note"])
+                st.caption(
+                    f'{t["visual_qa_citations"]}: '
+                    + ", ".join(
+                        f'{item["media_id"]} · frame #{item["frame_index"]} '
+                        f'({item["timestamp_seconds"]:.2f}s)'
+                        for item in visual_result["citations"]
+                    )
+                )
+                for frame in visual_result["evidence"]:
+                    with st.container(border=True):
+                        st.caption(
+                            f'{frame["media_id"]} · frame #{frame["frame_index"]} · '
+                            f'{frame["timestamp_seconds"]:.2f}s · '
+                            f'CLIP {frame["visual_score"]:.3f}'
+                        )
+                        frame_path = Path(frame["image_path"])
+                        if frame_path.is_file():
+                            st.image(str(frame_path), use_container_width=True)
+            else:
+                st.info(visual_result["message"] or t["visual_qa_abstain"])
 
 
     # 7. Human-judged search evaluation
