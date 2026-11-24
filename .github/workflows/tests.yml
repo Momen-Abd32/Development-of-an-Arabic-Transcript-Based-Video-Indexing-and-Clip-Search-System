@@ -50,3 +50,6 @@ jobs:
         env:
           HF_HUB_DISABLE_TELEMETRY: "1"
         run: pytest -q tests
+
+      - name: Smoke-test semantic retrieval benchmark
+        run: python scripts/benchmark_semantic_search.py --segments 200 --dimension 8 --queries 2 --top-k 5
