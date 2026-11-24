@@ -237,6 +237,8 @@ TEXT = {
         "insights_saved": "تم إنشاء وحفظ الملخص والكلمات المفتاحية.",
         "insights_title": "ملخص استخراجي",
         "keywords_title": "الكلمات المفتاحية",
+        "topic_candidates_title": "محاور مستخلصة (مقترحة)",
+        "topic_candidates_note": "تجميع إرشادي حسب تكرار الكلمات وظهورها معاً في المقاطع، وليس نموذجاً دلالياً لفهم الموضوعات.",
         "extractive_note": "هذا ملخص استخراجي مكوّن من جمل أصلية من التفريغ؛ لا يعيد صياغة الكلام أو يحوّل اللهجة إلى الفصحى.",
         "extract_keyframes": "استخراج الصور المصغّرة من الفيديو",
         "keyframes_done": "تم استخراج الصور المصغّرة.",
@@ -613,6 +615,8 @@ TEXT = {
         "insights_saved": "Summary and keywords generated and saved.",
         "insights_title": "Extractive Summary",
         "keywords_title": "Keywords",
+        "topic_candidates_title": "Extracted Topic Candidates (Heuristic)",
+        "topic_candidates_note": "Groups segments by keyword frequency and co-occurrence; this is not semantic topic modeling.",
         "extractive_note": "This summary selects original transcript sentences. It does not rewrite speech or convert dialect into Modern Standard Arabic.",
         "extract_keyframes": "Extract Video Keyframes",
         "keyframes_done": "Video keyframes extracted.",
@@ -1388,6 +1392,13 @@ with tab_transcript:
                 if current_insights["keywords"]:
                     st.markdown(f'**{t["keywords_title"]}**')
                     st.write(", ".join(item["term"] for item in current_insights["keywords"]))
+                if current_insights.get("topic_candidates"):
+                    st.markdown(f'**{t["topic_candidates_title"]}**')
+                    st.caption(t["topic_candidates_note"])
+                    for topic in current_insights["topic_candidates"]:
+                        st.markdown(f'**{topic["label"]}**')
+                        st.write(", ".join(topic["keywords"]))
+                        st.caption(f'{topic["segment_count"]} segments')
 
             if st.session_state.get("media_type") == "video":
                 keyframe_dir = Path("data/keyframes") / video_id
