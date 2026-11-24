@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+import math
 
 
 def _segment_key(segment: dict) -> tuple[str, float, float]:
@@ -15,7 +16,16 @@ def _segment_key(segment: dict) -> tuple[str, float, float]:
         ) from error
     if not isinstance(media_id, str) or not media_id.strip():
         raise ValueError("Relevant segment media ID cannot be empty.")
+    if not math.isfinite(start) or not math.isfinite(end):
+        raise ValueError("Relevant segment timestamps must be finite numbers.")
+    if start < 0 or end <= start:
+        raise ValueError("Relevant segment timestamps must satisfy 0 <= start < end.")
     return media_id, round(start, 3), round(end, 3)
+
+
+def validate_relevant_segment(segment: dict) -> None:
+    """Validate one human-labeled segment before running retrieval evaluation."""
+    _segment_key(segment)
 
 
 def _result_key(result: dict) -> tuple[str, float, float]:
