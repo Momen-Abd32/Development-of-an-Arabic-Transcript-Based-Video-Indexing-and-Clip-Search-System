@@ -102,3 +102,29 @@ def test_invalid_limit_is_rejected(search_engine):
 def test_invalid_threshold_is_rejected(search_engine):
     with pytest.raises(ValueError):
         search_engine.fuzzy_search("البرمجة", threshold=101)
+
+
+def test_bm25_search_matches_any_query_term(search_engine):
+    results = search_engine.bm25_search("البرمجة بايثون")
+
+    assert len(results) == 3
+    assert all("score" in result for result in results)
+
+
+def test_bm25_search_filters_by_video(search_engine):
+    results = search_engine.bm25_search(
+        "البرمجة هبة",
+        video_id="video2",
+    )
+
+    assert len(results) == 2
+    assert all(result["video_id"] == "video2" for result in results)
+
+
+def test_bm25_search_empty_query_returns_empty(search_engine):
+    assert search_engine.bm25_search("   ") == []
+
+
+def test_bm25_search_invalid_limit_is_rejected(search_engine):
+    with pytest.raises(ValueError):
+        search_engine.bm25_search("البرمجة", limit=0)
