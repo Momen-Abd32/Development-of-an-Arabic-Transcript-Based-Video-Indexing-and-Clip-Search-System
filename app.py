@@ -84,6 +84,7 @@ TEXT = {
         "search_type": "نوع البحث",
         "exact": "بحث دقيق",
         "fuzzy": "بحث تقريبي",
+        "bm25": "بحث ذكي (BM25)",
         "search_button": "بحث",
         "empty_query": "اكتب كلمة أو عبارة قبل بدء البحث.",
         "search_failed": "فشل البحث",
@@ -159,6 +160,7 @@ TEXT = {
         "search_type": "Search type",
         "exact": "Exact Search",
         "fuzzy": "Fuzzy Search",
+        "bm25": "BM25 Search",
         "search_button": "Search",
         "empty_query": "Enter a word or phrase before searching.",
         "search_failed": "Search failed",
@@ -622,7 +624,7 @@ with tab_search:
         query = st.text_input(t["query"], key=f"search_query_{video_id}")
         search_type = st.radio(
             t["search_type"],
-            [t["exact"], t["fuzzy"]],
+            [t["exact"], t["fuzzy"], t["bm25"]],
             horizontal=True,
             key=f"search_type_{video_id}",
         )
@@ -636,8 +638,10 @@ with tab_search:
                     search_engine = SearchEngine()
                     if search_type == t["exact"]:
                         results = search_engine.exact_search(query, video_id=video_id)
-                    else:
+                    elif search_type == t["fuzzy"]:
                         results = search_engine.fuzzy_search(query, video_id=video_id)
+                    else:
+                        results = search_engine.bm25_search(query, video_id=video_id)
 
                     st.session_state.search_results = results
                 except Exception as error:
