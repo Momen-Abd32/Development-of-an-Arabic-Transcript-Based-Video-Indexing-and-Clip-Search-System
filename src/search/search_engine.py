@@ -157,5 +157,50 @@ class SearchEngine:
 
         return results[:limit]
 
+
+    def hybrid_search(
+        self,
+        query: str,
+        limit: int = 20,
+        video_id: str | None = None,
+        fuzzy_threshold: int = 75,
+        rrf_k: int = 60,
+    ) -> list[dict]:
+        """Fuse BM25 and fuzzy rankings using Reciprocal Rank Fusion."""
+        self._validate_limit(limit)
+        if not isinstance(rrf_k, int) or rrf_k <= 0:
+            raise ValueError("RRF k must be a positive integer.")
+
+        bm25_results = self.bm25_search(
+            query, limit=limit, video_id=video_id
+        )
+        fuzzy_results = self.fuzzy_search(
+            query,
+            threshold=fuzzy_threshold,
+            limit=limit,
+            video_id=video_id,
+        )
+
+        fused = {}
+        for ranked_results, source in (
+            (bm25_results, "bm25"),
+            (fuzzy_results, "fuzzy"),
+        ):
+            for rank, result in enumerate(ranked_results, start=1):
+                segment_id = result["id"]
+                if segment_id not in fused:
+                    fused[segment_id] = dict(result)
+                    fused[segment_id]["hybrid_score"] = 0.0
+                    fused[segment_id]["matched_by"] = []
+                fused[segment_id]["hybrid_score"] += 1.0 / (rrf_k + rank)
+                fused[segment_id]["matched_by"].append(source)
+
+        results = sorted(
+            fused.values(),
+            key=lambda item: item["hybrid_score"],
+            reverse=True,
+        )
+        return results[:limit]
+
     def close(self):
         self.db.close()
