@@ -128,3 +128,27 @@ def test_bm25_search_empty_query_returns_empty(search_engine):
 def test_bm25_search_invalid_limit_is_rejected(search_engine):
     with pytest.raises(ValueError):
         search_engine.bm25_search("البرمجة", limit=0)
+
+
+
+def test_hybrid_search_combines_bm25_and_fuzzy_results(search_engine):
+    results = search_engine.hybrid_search("البرمجة جميله")
+
+    assert results
+    assert all("hybrid_score" in result for result in results)
+    assert all("matched_by" in result for result in results)
+    assert results[0]["hybrid_score"] >= results[-1]["hybrid_score"]
+
+
+def test_hybrid_search_filters_by_video(search_engine):
+    results = search_engine.hybrid_search(
+        "البرمجة هبة",
+        video_id="video2",
+    )
+
+    assert results
+    assert all(result["video_id"] == "video2" for result in results)
+
+
+def test_hybrid_search_empty_query_returns_empty(search_engine):
+    assert search_engine.hybrid_search("   ") == []
