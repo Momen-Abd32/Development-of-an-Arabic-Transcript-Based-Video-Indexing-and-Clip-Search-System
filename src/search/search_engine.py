@@ -45,6 +45,14 @@ class SearchEngine:
                 segments.end,
                 segments.original_text,
                 segments.speaker,
+                segments.speaker_age,
+                segments.speaker_gender,
+                segments.speaker_dialect,
+                segments.environment,
+                segments.category,
+                segments.show_name,
+                segments.source_segment_id,
+                segments.segment_length,
                 bm25(segments_fts) AS score
             FROM segments_fts
             JOIN segments ON segments.id = segments_fts.rowid
@@ -99,7 +107,9 @@ class SearchEngine:
 
         sql = """
             SELECT id, video_id, start, end, original_text,
-                   normalized_text, speaker
+                   normalized_text, speaker, speaker_age, speaker_gender,
+                   speaker_dialect, environment, category, show_name,
+                   source_segment_id, segment_length
             FROM segments
         """
 
