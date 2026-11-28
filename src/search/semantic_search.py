@@ -359,14 +359,35 @@ class SemanticSearchIndex:
         if vector_results is not None:
             return vector_results
 
-        sql = """
-            SELECT s.id, s.video_id, s.start, s.end, s.original_text,
-                   s.speaker, s.speaker_age, s.speaker_gender, s.speaker_dialect,
-                   s.environment, s.category, s.show_name, e.embedding_json
-            FROM segment_embeddings e
-            JOIN segments s ON s.id = e.segment_id
-            WHERE e.model_name = ?
-        """
+        segment_columns = {
+            row["name"]
+            for row in self.connection.execute("PRAGMA table_info(segments)")
+        }
+        metadata_fields = {
+            "speaker_age", "speaker_gender", "speaker_dialect",
+            "environment", "category", "show_name",
+        }
+        if metadata_filters is not None and not isinstance(metadata_filters, dict):
+            raise TypeError("metadata_filters must be a dictionary.")
+        for field, value in (metadata_filters or {}).items():
+            if field not in metadata_fields:
+                raise ValueError(f"Unsupported metadata filter: {field}")
+            if value not in (None, "", []) and field not in segment_columns:
+                raise ValueError(
+                    f"Metadata column '{field}' is not available in the segments table."
+                )
+
+        selected_metadata = sorted(metadata_fields & segment_columns)
+        select_columns = [
+            "s.id", "s.video_id", "s.start", "s.end",
+            "s.original_text", "s.speaker",
+        ] + [f"s.{field}" for field in selected_metadata]
+        sql = (
+            "SELECT " + ", ".join(select_columns) + ", e.embedding_json "
+            "FROM segment_embeddings e "
+            "JOIN segments s ON s.id = e.segment_id "
+            "WHERE e.model_name = ?"
+        )
         params: list[object] = [provider.model_name]
         if media_id is not None:
             sql += " AND e.video_id = ?"
@@ -379,15 +400,7 @@ class SemanticSearchIndex:
         elif speaker is not None:
             sql += " AND s.speaker = ?"
             params.append(speaker)
-        allowed_fields = {
-            "speaker_age", "speaker_gender", "speaker_dialect",
-            "environment", "category", "show_name",
-        }
-        if metadata_filters is not None and not isinstance(metadata_filters, dict):
-            raise TypeError("metadata_filters must be a dictionary.")
         for field, value in (metadata_filters or {}).items():
-            if field not in allowed_fields:
-                raise ValueError(f"Unsupported metadata filter: {field}")
             if value is None or value == "":
                 continue
             if isinstance(value, (list, tuple, set)):
