@@ -407,6 +407,12 @@ TEXT = {
         "filter_date": "تاريخ الإضافة",
         "filter_speaker": "المتحدث",
         "filter_no_speaker": "غير محدد",
+        "filter_speaker_age": "عمر المتحدث",
+        "filter_speaker_gender": "جنس المتحدث",
+        "filter_speaker_dialect": "لهجة المتحدث",
+        "filter_environment": "البيئة الصوتية",
+        "filter_category": "التصنيف",
+        "filter_show_name": "اسم البرنامج",
     },
     "en": {
         "page_title": "Arabic Media Archiving & Search",
@@ -740,6 +746,12 @@ TEXT = {
         "filter_date": "Added date range",
         "filter_speaker": "Speaker",
         "filter_no_speaker": "Unspecified",
+        "filter_speaker_age": "Speaker age",
+        "filter_speaker_gender": "Speaker gender",
+        "filter_speaker_dialect": "Speaker dialect",
+        "filter_environment": "Audio environment",
+        "filter_category": "Category",
+        "filter_show_name": "Show name",
     },
 }
 
@@ -1664,6 +1676,25 @@ with tab_search:
                     [t["filter_all"], t["filter_no_speaker"]] + speaker_values,
                     key=f"search_speaker_{scope_key}",
                 )
+                filter_db = SearchEngine()
+                try:
+                    metadata_choices = {}
+                    metadata_labels = {
+                        "speaker_age": "filter_speaker_age",
+                        "speaker_gender": "filter_speaker_gender",
+                        "speaker_dialect": "filter_speaker_dialect",
+                        "environment": "filter_environment",
+                        "category": "filter_category",
+                        "show_name": "filter_show_name",
+                    }
+                    for field, label_key in metadata_labels.items():
+                        metadata_choices[field] = st.multiselect(
+                            t[label_key],
+                            filter_db.list_metadata_values(field),
+                            key=f"search_metadata_{field}_{scope_key}",
+                        )
+                finally:
+                    filter_db.close()
 
             selected_media_type = (
                 None if media_type_choice == t["filter_all"]
@@ -1705,6 +1736,11 @@ with tab_search:
                 else speaker_choice
             )
             only_unspecified_speaker = speaker_choice == t["filter_no_speaker"]
+            metadata_filters = {
+                field: values
+                for field, values in metadata_choices.items()
+                if values
+            }
 
             if search_type == t["hybrid"]:
                 st.caption(t["semantic_index_hint"])
@@ -1747,6 +1783,7 @@ with tab_search:
                             "video_id": media_filter,
                             "media_ids": allowed_media_ids,
                             "speaker": speaker_filter,
+                            "metadata_filters": metadata_filters,
                         }
                         if search_type == t["exact"]:
                             results = search_engine.exact_search(query, **search_options)
