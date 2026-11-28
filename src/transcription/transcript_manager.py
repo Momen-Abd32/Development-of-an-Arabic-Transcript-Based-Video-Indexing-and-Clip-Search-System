@@ -1,4 +1,8 @@
+
 import json
+import math
+import os
+import tempfile
 from pathlib import Path
 
 
@@ -34,6 +38,18 @@ class TranscriptManager:
                     f"Segment {index} timestamps must be numbers."
                 )
 
+            try:
+                timestamps_are_finite = (
+                    math.isfinite(start) and math.isfinite(end)
+                )
+            except OverflowError:
+                timestamps_are_finite = False
+
+            if not timestamps_are_finite:
+                raise ValueError(
+                    f"Segment {index} timestamps must be finite numbers."
+                )
+
             if start < 0 or end <= start:
                 raise ValueError(
                     f"Segment {index} has invalid timestamps."
@@ -55,11 +71,27 @@ class TranscriptManager:
             "segments": segments,
             "total_segments": len(segments),
         }
+        serialized = json.dumps(data, ensure_ascii=False, indent=4)
 
-        output.write_text(
-            json.dumps(data, ensure_ascii=False, indent=4),
-            encoding="utf-8",
-        )
+        temporary_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=output.parent,
+                prefix=f".{output.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temporary_file:
+                temporary_path = Path(temporary_file.name)
+                temporary_file.write(serialized)
+                temporary_file.flush()
+                os.fsync(temporary_file.fileno())
+
+            os.replace(temporary_path, output)
+        finally:
+            if temporary_path is not None and temporary_path.exists():
+                temporary_path.unlink()
 
         return output
 

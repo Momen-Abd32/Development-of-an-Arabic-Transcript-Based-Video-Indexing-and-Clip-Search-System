@@ -1,0 +1,17 @@
+{
+  "description": "Human-judged Arabic transcript-search relevance set. Replace the example media IDs and timestamps with real indexed segments from the target archive. Do not treat placeholder judgments as measured system performance.",
+  "language_coverage": ["Modern Standard Arabic", "Arabic spelling variants", "diacritics", "mixed Arabic and English terms"],
+  "queries": [
+    {
+      "query": "اجتماع مجلس الإدارة",
+      "notes": "Example query; replace this judgment with a real archive segment.",
+      "relevant_segments": [
+        {
+          "media_id": "REPLACE_WITH_MEDIA_SHA256",
+          "start": 0.0,
+          "end": 5.0
+        }
+      ]
+    }
+  ]
+}

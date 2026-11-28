@@ -122,6 +122,33 @@ def test_indexing_one_video_does_not_affect_another(tmp_path):
     indexer.close()
 
 
+def test_reindex_invalidates_old_semantic_embeddings(tmp_path):
+    indexer = TranscriptIndexer(str(tmp_path / "test.db"))
+    indexer.index_segments("video_1", sample_segments())
+
+    indexer.db.connection.execute(
+        """
+        INSERT INTO segment_embeddings
+            (segment_id, video_id, model_name, embedding_json)
+        VALUES (1, 'video_1', 'test-model', '[1.0, 0.0]')
+        """
+    )
+    indexer.db.connection.commit()
+
+    indexer.index_segments(
+        "video_1",
+        [{"start": 5, "end": 6, "text": "نص معدل"}],
+    )
+
+    remaining = indexer.db.connection.execute(
+        "SELECT COUNT(*) FROM segment_embeddings WHERE video_id = ?",
+        ("video_1",),
+    ).fetchone()[0]
+
+    assert remaining == 0
+    indexer.close()
+
+
 def test_empty_video_id_is_rejected(tmp_path):
     indexer = TranscriptIndexer(str(tmp_path / "test.db"))
 
@@ -178,4 +205,20 @@ def test_empty_segments_remove_previous_index(tmp_path):
     assert count == 0
     assert remaining == 0
 
+    indexer.close()
+
+
+def test_indexer_persists_speaker_labels(tmp_path):
+    indexer = TranscriptIndexer(str(tmp_path / "speaker.db"))
+    indexer.index_segments(
+        "video_1",
+        [
+            {"start": 0, "end": 1, "text": "مرحبا", "speaker": "SPEAKER_00"},
+            {"start": 1, "end": 2, "text": "أهلا"},
+        ],
+    )
+    rows = indexer.db.connection.execute(
+        "SELECT speaker FROM segments ORDER BY start"
+    ).fetchall()
+    assert [row["speaker"] for row in rows] == ["SPEAKER_00", None]
     indexer.close()

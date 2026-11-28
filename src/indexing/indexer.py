@@ -14,6 +14,12 @@ class TranscriptIndexer:
         try:
             cursor = self.db.connection.cursor()
 
+            # Transcript edits/re-indexing invalidate vectors for the old
+            # segment IDs. Remove them in the same transaction.
+            cursor.execute(
+                "DELETE FROM segment_embeddings WHERE video_id = ?",
+                (video_id,),
+            )
             cursor.execute(
                 "DELETE FROM segments WHERE video_id = ?",
                 (video_id,),
@@ -33,9 +39,18 @@ class TranscriptIndexer:
                         start,
                         end,
                         original_text,
-                        normalized_text
+                        normalized_text,
+                        speaker,
+                        speaker_age,
+                        speaker_gender,
+                        speaker_dialect,
+                        environment,
+                        category,
+                        show_name,
+                        source_segment_id,
+                        segment_length
                     )
-                    VALUES (?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         video_id,
@@ -43,6 +58,15 @@ class TranscriptIndexer:
                         segment["end"],
                         original_text,
                         normalized_text,
+                        segment.get("speaker"),
+                        segment.get("speaker_age"),
+                        segment.get("speaker_gender"),
+                        segment.get("speaker_dialect"),
+                        segment.get("environment"),
+                        segment.get("category"),
+                        segment.get("show_name"),
+                        segment.get("source_segment_id"),
+                        segment.get("segment_length", segment["end"] - segment["start"]),
                     ),
                 )
 

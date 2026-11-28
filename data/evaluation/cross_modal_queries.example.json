@@ -1,0 +1,22 @@
+{
+  "description": "Human-judged mixed transcript/keyframe relevance set. Replace all example IDs and timestamps with reviewed results from the real archive. These placeholders are not measured benchmark data.",
+  "queries": [
+    {
+      "query": "سيارة حمراء تسير في شارع مزدحم",
+      "notes": "Example Arabic query; judge both matching transcript passages and matching video frames.",
+      "relevant_results": [
+        {
+          "result_type": "transcript",
+          "media_id": "REPLACE_WITH_MEDIA_SHA256",
+          "start": 12.0,
+          "end": 18.5
+        },
+        {
+          "result_type": "keyframe",
+          "media_id": "REPLACE_WITH_MEDIA_SHA256",
+          "frame_index": 1
+        }
+      ]
+    }
+  ]
+}
