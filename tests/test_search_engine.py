@@ -271,3 +271,70 @@ def test_list_speakers_returns_distinct_labels_in_archive_scope(search_engine):
     ]
     assert search_engine.list_speakers(media_ids=["video2"]) == ["SPEAKER_01"]
     assert search_engine.list_speakers(media_ids=[]) == []
+
+
+def test_exact_search_filters_by_sada_metadata(search_engine):
+    search_engine.db.connection.execute(
+        "UPDATE segments SET speaker_dialect = 'Najdi', speaker_age = 'Adult' "
+        "WHERE video_id = 'video1'"
+    )
+    search_engine.db.connection.commit()
+
+    results = search_engine.exact_search(
+        "البرمجة", metadata_filters={"speaker_dialect": "Najdi"}
+    )
+    assert results
+    assert {item["video_id"] for item in results} == {"video1"}
+
+
+def test_fuzzy_search_filters_by_multiple_sada_metadata(search_engine):
+    search_engine.db.connection.execute(
+        "UPDATE segments SET speaker_dialect = 'Najdi', category = 'News' "
+        "WHERE id = 1"
+    )
+    search_engine.db.connection.commit()
+
+    results = search_engine.fuzzy_search(
+        "البرمجة", threshold=0,
+        metadata_filters={"speaker_dialect": "Najdi", "category": "News"},
+    )
+    assert len(results) == 1
+    assert results[0]["id"] == 1
+
+
+def test_metadata_filter_rejects_unknown_column(search_engine):
+    with pytest.raises(ValueError, match="Unsupported metadata filter"):
+        search_engine.exact_search(
+            "البرمجة", metadata_filters={"video_id; DROP TABLE segments": "x"}
+        )
+
+
+def test_list_metadata_values_is_distinct_and_scoped(search_engine):
+    search_engine.db.connection.execute(
+        "UPDATE segments SET speaker_dialect = 'Najdi' WHERE video_id = 'video1'"
+    )
+    search_engine.db.connection.execute(
+        "UPDATE segments SET speaker_dialect = 'Hijazi' WHERE video_id = 'video2'"
+    )
+    search_engine.db.connection.commit()
+
+    assert search_engine.list_metadata_values("speaker_dialect") == ["Hijazi", "Najdi"]
+    assert search_engine.list_metadata_values(
+        "speaker_dialect", media_ids=["video1"]
+    ) == ["Najdi"]
+
+
+def test_semantic_search_filters_by_sada_metadata(search_engine):
+    provider = FakeEmbeddingProvider()
+    search_engine.db.connection.execute(
+        "UPDATE segments SET speaker_dialect = 'Najdi' WHERE video_id = 'video1'"
+    )
+    search_engine.db.connection.commit()
+    search_engine.index_semantic_media("video1", provider)
+    search_engine.index_semantic_media("video2", provider)
+
+    results = search_engine.semantic_search(
+        "البرمجة", provider, metadata_filters={"speaker_dialect": "Najdi"}
+    )
+    assert results
+    assert {item["video_id"] for item in results} == {"video1"}
