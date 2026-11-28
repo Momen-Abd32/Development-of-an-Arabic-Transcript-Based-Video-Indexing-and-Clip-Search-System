@@ -70,6 +70,12 @@ def main() -> int:
 
     files = _first_files(csv_path, args.episodes)
     print(f"Selected {len(files)} SADA episodes from {args.split}.csv")
+    if args.dry_run:
+        for name in files:
+            print(f"[PLAN] {name}")
+        print("Dry run: no episode audio was downloaded or imported.")
+        return 0
+
     for name in files:
         target = dataset_dir / name
         if target.exists():
@@ -92,7 +98,7 @@ def main() -> int:
         split=args.split,
         max_episodes=args.episodes,
     )
-    results = importer.import_dataset(dry_run=args.dry_run)
+    results = importer.import_dataset()
     for item in results:
         print(f"[{item['status'].upper()}] {item['file']} — {item['segments']} segments")
         if item.get("error"):
