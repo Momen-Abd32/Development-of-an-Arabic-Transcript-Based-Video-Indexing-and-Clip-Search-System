@@ -378,8 +378,8 @@ TEXT = {
         "clip_saved": "تم حفظ المقطع بنجاح.",
         "clip_failed": "تعذر حفظ المقطع",
         "clips_title": "المقاطع المحفوظة",
-        "clips_desc": "شاهد المقاطع التي استخرجتها من الفيديو الحالي.",
-        "no_clips": "لا توجد مقاطع محفوظة لهذا الفيديو حتى الآن.",
+        "clips_desc": "شاهد المقاطع التي استخرجتها من الملف الحالي.",
+        "no_clips": "لا توجد مقاطع محفوظة لهذا الملف حتى الآن.",
         "clip": "المقطع",
         "missing_clip": "ملف المقطع غير موجود",
         "export_clips": "تجهيز قائمة المقاطع CSV",
@@ -391,7 +391,7 @@ TEXT = {
         "status_transcribed": "اكتمل التفريغ",
         "video_status": "حالة الملف",
         "duration_note": "تظهر نتائج البحث مع توقيتاتها لتسهيل الوصول إلى اللحظة المطلوبة.",
-        "audio_clip_unavailable": "استخراج المقاطع متاح للفيديوهات فقط؛ يمكن البحث في هذا التسجيل الصوتي وعرض توقيتاته.",
+        "audio_clip_unavailable": "يمكن استخراج مقاطع صوتية من التسجيل الحالي.",
         "search_scope": "نطاق البحث",
         "current_media": "الملف الحالي",
         "entire_archive": "كامل الأرشيف",
@@ -1819,13 +1819,19 @@ with tab_search:
                         else:
                             st.caption(t["missing_clip"])
 
-                        if media_type == "video" and media_path and media_path.exists():
+                        if media_type in ("video", "audio") and media_path and media_path.exists():
                             if st.button(
                                 "✂️ " + t["save_clip"],
                                 key=f"save_clip_{media_id}_{result['id']}",
                             ):
                                 try:
-                                    clip_path = ClipManager().create_clip(
+                                    clip_manager = ClipManager()
+                                    create_clip = (
+                                        clip_manager.create_clip
+                                        if media_type == "video"
+                                        else clip_manager.create_audio_clip
+                                    )
+                                    clip_path = create_clip(
                                         str(media_path),
                                         result["start"],
                                         result["end"],
@@ -1841,8 +1847,6 @@ with tab_search:
                                     st.success(t["clip_saved"])
                                 except Exception as error:
                                     st.error(f'{t["clip_failed"]}: {error}')
-                        elif media_type == "audio":
-                            st.caption(t["audio_clip_unavailable"])
             else:
                 st.info(t["no_results"])
 
@@ -3005,10 +3009,9 @@ with tab_clips:
 
         if not st.session_state.video_id:
             st.info(t["need_video"])
-        elif st.session_state.media_type != "video":
-            st.info(t["audio_clip_unavailable"])
         else:
             video_id = st.session_state.video_id
+            media_type = st.session_state.media_type
 
             try:
                 clips = ClipMetadata().get_all_clips()
@@ -3032,7 +3035,10 @@ with tab_clips:
                         clip_file = Path(clip["clip_path"])
 
                         if clip_file.exists():
-                            st.video(str(clip_file))
+                            if media_type == "video":
+                                st.video(str(clip_file))
+                            else:
+                                st.audio(str(clip_file))
                         else:
                             st.warning(f'{t["missing_clip"]}: {clip_file.name}')
 
