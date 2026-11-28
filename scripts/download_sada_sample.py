@@ -9,6 +9,7 @@ import argparse
 import csv
 import subprocess
 import sys
+import shutil
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -87,7 +88,7 @@ def main() -> int:
             matches = list(dataset_dir.rglob(Path(name).name))
             if len(matches) == 1:
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target = matches[0]
+                shutil.copy2(matches[0], target)
             else:
                 raise FileNotFoundError(
                     f"Kaggle download completed but {name} was not found under {dataset_dir}"
