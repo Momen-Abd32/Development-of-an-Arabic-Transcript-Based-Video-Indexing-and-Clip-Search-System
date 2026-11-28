@@ -19,6 +19,50 @@ class SearchEngine:
         if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
             raise ValueError("Limit must be a positive integer.")
 
+    METADATA_FIELDS = {
+        "speaker_age", "speaker_gender", "speaker_dialect",
+        "environment", "category", "show_name",
+    }
+
+    @classmethod
+    def _append_metadata_filters(cls, sql, params, metadata_filters, alias=""):
+        if metadata_filters is None:
+            return sql
+        if not isinstance(metadata_filters, dict):
+            raise TypeError("metadata_filters must be a dictionary.")
+        prefix = f"{alias}." if alias else ""
+        for field, value in metadata_filters.items():
+            if field not in cls.METADATA_FIELDS:
+                raise ValueError(f"Unsupported metadata filter: {field}")
+            if value is None or value == "":
+                continue
+            if isinstance(value, (list, tuple, set)):
+                values = list(value)
+                if not values:
+                    return sql + " AND 1 = 0"
+                sql += f" AND {prefix}{field} IN (" + ",".join("?" for _ in values) + ")"
+                params.extend(values)
+            else:
+                sql += f" AND {prefix}{field} = ?"
+                params.append(value)
+        return sql
+
+    def list_metadata_values(self, field: str, media_ids: list[str] | None = None) -> list[str]:
+        if field not in self.METADATA_FIELDS:
+            raise ValueError(f"Unsupported metadata field: {field}")
+        if media_ids == []:
+            return []
+        sql = (
+            f"SELECT DISTINCT {field} AS value FROM segments "
+            f"WHERE {field} IS NOT NULL AND TRIM({field}) <> ''"
+        )
+        params = []
+        if media_ids is not None:
+            sql += " AND video_id IN (" + ",".join("?" for _ in media_ids) + ")"
+            params.extend(media_ids)
+        sql += " ORDER BY value COLLATE NOCASE"
+        return [row["value"] for row in self.db.connection.execute(sql, params).fetchall()]
+
     def exact_search(
         self,
         query: str,
@@ -26,6 +70,7 @@ class SearchEngine:
         video_id: str | None = None,
         media_ids: list[str] | None = None,
         speaker: str | None = None,
+        metadata_filters: dict | None = None,
     ) -> list[dict]:
 
         self._validate_limit(limit)
@@ -45,6 +90,14 @@ class SearchEngine:
                 segments.end,
                 segments.original_text,
                 segments.speaker,
+                segments.speaker_age,
+                segments.speaker_gender,
+                segments.speaker_dialect,
+                segments.environment,
+                segments.category,
+                segments.show_name,
+                segments.source_segment_id,
+                segments.segment_length,
                 bm25(segments_fts) AS score
             FROM segments_fts
             JOIN segments ON segments.id = segments_fts.rowid
@@ -65,6 +118,7 @@ class SearchEngine:
         elif speaker is not None:
             sql += " AND segments.speaker = ?"
             params.append(speaker)
+        sql = self._append_metadata_filters(sql, params, metadata_filters, "segments")
 
         sql += " ORDER BY score LIMIT ?"
         params.append(limit)
@@ -81,6 +135,7 @@ class SearchEngine:
         video_id: str | None = None,
         media_ids: list[str] | None = None,
         speaker: str | None = None,
+        metadata_filters: dict | None = None,
     ) -> list[dict]:
 
         self._validate_limit(limit)
@@ -99,7 +154,9 @@ class SearchEngine:
 
         sql = """
             SELECT id, video_id, start, end, original_text,
-                   normalized_text, speaker
+                   normalized_text, speaker, speaker_age, speaker_gender,
+                   speaker_dialect, environment, category, show_name,
+                   source_segment_id, segment_length
             FROM segments
         """
 
@@ -117,6 +174,20 @@ class SearchEngine:
         elif speaker is not None:
             conditions.append("speaker = ?")
             params.append(speaker)
+        for field, value in (metadata_filters or {}).items():
+            if field not in self.METADATA_FIELDS:
+                raise ValueError(f"Unsupported metadata filter: {field}")
+            if value is None or value == "":
+                continue
+            if isinstance(value, (list, tuple, set)):
+                values = list(value)
+                if not values:
+                    return []
+                conditions.append(f"{field} IN (" + ",".join("?" for _ in values) + ")")
+                params.extend(values)
+            else:
+                conditions.append(f"{field} = ?")
+                params.append(value)
         if conditions:
             sql += " WHERE " + " AND ".join(conditions)
 
@@ -161,6 +232,7 @@ class SearchEngine:
         video_id: str | None = None,
         media_ids: list[str] | None = None,
         speaker: str | None = None,
+        metadata_filters: dict | None = None,
     ) -> list[dict]:
         """Search the optional semantic index without changing lexical search."""
         semantic_index = SemanticSearchIndex(str(self.db.database_path))
@@ -172,6 +244,7 @@ class SearchEngine:
                 media_id=video_id,
                 media_ids=media_ids,
                 speaker=speaker,
+                metadata_filters=metadata_filters,
             )
         finally:
             semantic_index.close()
@@ -192,6 +265,7 @@ class SearchEngine:
         video_id: str | None = None,
         media_ids: list[str] | None = None,
         speaker: str | None = None,
+        metadata_filters: dict | None = None,
         fuzzy_threshold: int = 75,
         rrf_k: int = 60,
     ) -> list[dict]:
@@ -206,7 +280,7 @@ class SearchEngine:
         ):
             return []
 
-        lexical = self.exact_search(query, limit=limit * 3, video_id=video_id, media_ids=media_ids, speaker=speaker)
+        lexical = self.exact_search(query, limit=limit * 3, video_id=video_id, media_ids=media_ids, speaker=speaker, metadata_filters=metadata_filters)
         fuzzy = self.fuzzy_search(
             query,
             threshold=fuzzy_threshold,
@@ -214,6 +288,7 @@ class SearchEngine:
             video_id=video_id,
             media_ids=media_ids,
             speaker=speaker,
+            metadata_filters=metadata_filters,
         )
         semantic = self.semantic_search(
             query,
@@ -222,6 +297,7 @@ class SearchEngine:
             video_id=video_id,
             media_ids=media_ids,
             speaker=speaker,
+            metadata_filters=metadata_filters,
         )
         if not semantic:
             scope = f" for media '{video_id}'" if video_id else " for the archive"

@@ -204,11 +204,52 @@ class ArchiveQA:
         }
 
     @staticmethod
+    def _claim_tokens(value: str) -> set[str]:
+        """Normalize Arabic/Latin claim tokens for a conservative support check."""
+        import re
+        from src.indexing.text_processor import ArabicTextProcessor
+
+        normalized = ArabicTextProcessor.normalize(value).casefold()
+        tokens = set(re.findall(r"[\w]+", normalized, flags=re.UNICODE))
+        stop_words = {
+            "في", "من", "على", "الى", "إلى", "عن", "مع", "هذا", "هذه",
+            "ذلك", "تلك", "هو", "هي", "كان", "كانت", "تم", "ثم", "و",
+            "the", "a", "an", "is", "was", "were", "to", "of", "in", "on",
+            "and", "or", "at", "by", "for", "with",
+        }
+        return {token for token in tokens if len(token) > 1 and token not in stop_words}
+
+    @classmethod
+    def _claim_has_lexical_support(cls, claim_text: str, cited_sources: list[dict]) -> bool:
+        """Reject claims with weak lexical grounding or an obvious negation mismatch.
+
+        This is a conservative heuristic guard, not a semantic entailment proof.
+        """
+        claim_tokens = cls._claim_tokens(claim_text)
+        if not claim_tokens:
+            return False
+        evidence_tokens = set()
+        evidence_text = " ".join(source.get("text", "") for source in cited_sources)
+        for source in cited_sources:
+            evidence_tokens.update(cls._claim_tokens(source.get("text", "")))
+        overlap = claim_tokens & evidence_tokens
+        required = 1 if len(claim_tokens) == 1 else 2
+        if len(overlap) < required or len(overlap) / len(claim_tokens) < 0.5:
+            return False
+
+        negations = {"لا", "ليس", "لم", "لن", "ما", "غير", "بدون"}
+        claim_negated = bool(claim_tokens & negations)
+        evidence_negated = bool(cls._claim_tokens(evidence_text) & negations)
+        if claim_negated != evidence_negated:
+            return False
+        return True
+
+    @staticmethod
     def _validate_generated_claims(
         generated: dict,
         evidence: list[dict],
     ) -> tuple[list[dict], list[dict]] | None:
-        """Accept only non-empty claims citing exact retrieved media/segment pairs."""
+        """Accept only claims citing retrieved passages with conservative lexical support."""
         if not isinstance(generated, dict) or generated.get("abstain") is True:
             return None
         raw_claims = generated.get("claims")
@@ -237,6 +278,7 @@ class ArchiveQA:
                 return None
 
             citations = []
+            cited_sources = []
             seen = set()
             for raw_citation in raw_citations:
                 if not isinstance(raw_citation, dict):
@@ -254,6 +296,7 @@ class ArchiveQA:
                 if source is None or key in seen:
                     return None
                 seen.add(key)
+                cited_sources.append(source)
                 citation = {
                     "media_id": media_id,
                     "segment_id": segment_id,
@@ -262,6 +305,8 @@ class ArchiveQA:
                 }
                 citations.append(citation)
                 all_citations[key] = citation
+            if not ArchiveQA._claim_has_lexical_support(text.strip(), cited_sources):
+                return None
             claims.append({"text": text.strip(), "citations": citations})
 
         return claims, list(all_citations.values())

@@ -75,3 +75,18 @@ def test_transcript_metrics_reject_overflowing_timestamps():
             [segment("media-a", 10**400, 10**401)],
             k=1,
         )
+
+
+@pytest.mark.parametrize(
+    "relevant",
+    [
+        segment("a", float("nan"), 2),
+        segment("a", 0, float("inf")),
+        segment("a", -1, 2),
+        segment("a", 2, 2),
+        segment("a", 3, 2),
+    ],
+)
+def test_metrics_reject_non_finite_or_invalid_timestamp_ranges(relevant):
+    with pytest.raises(ValueError, match="timestamps"):
+        precision_at_k([], [relevant], k=1)

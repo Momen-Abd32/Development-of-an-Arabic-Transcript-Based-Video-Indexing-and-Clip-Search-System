@@ -163,3 +163,64 @@ def test_update_note_rejects_invalid_fields(notes):
         notes.update_note(created["note_id"], note_text="   ")
     with pytest.raises(ValueError):
         notes.update_note(created["note_id"], note_text="تعديل", updated_by=" ")
+
+
+def test_note_revision_prevents_lost_updates_between_reviewers(tmp_path):
+    database = tmp_path / "shared-notes.db"
+    first = ArchiveNotes(database)
+    second = ArchiveNotes(database)
+    try:
+        created = first.add_note(MEDIA_A, 5, "الملاحظة الأصلية", author="reviewer-a")
+        stale_copy = second.list_notes(MEDIA_A)[0]
+        updated = first.update_note(
+            created["note_id"],
+            note_text="تعديل المراجع الأول",
+            updated_by="reviewer-a",
+            expected_version=created["revision"],
+        )
+
+        assert updated["revision"] == 2
+        with pytest.raises(RuntimeError, match="modified by another reviewer"):
+            second.update_note(
+                stale_copy["note_id"],
+                note_text="تعديل المراجع الثاني",
+                updated_by="reviewer-b",
+                expected_version=stale_copy["revision"],
+            )
+        latest = second.list_notes(MEDIA_A)[0]
+        assert latest["note_text"] == "تعديل المراجع الأول"
+        assert latest["revision"] == 2
+    finally:
+        first.close()
+        second.close()
+
+
+def test_note_revision_migration_preserves_legacy_rows(tmp_path):
+    database = tmp_path / "legacy-notes.db"
+    connection = sqlite3.connect(database)
+    connection.execute("""
+        CREATE TABLE archive_notes (
+            note_id TEXT PRIMARY KEY,
+            media_id TEXT NOT NULL,
+            timestamp_seconds REAL NOT NULL,
+            note_text TEXT NOT NULL,
+            author TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            updated_by TEXT NOT NULL
+        )
+    """)
+    connection.execute(
+        """INSERT INTO archive_notes VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        ("c" * 32, MEDIA_A, 4.0, "ملاحظة قديمة", "reviewer", "now", "now", "reviewer"),
+    )
+    connection.commit()
+    connection.close()
+
+    manager = ArchiveNotes(database)
+    try:
+        note = manager.list_notes(MEDIA_A)[0]
+        assert note["note_text"] == "ملاحظة قديمة"
+        assert note["revision"] == 1
+    finally:
+        manager.close()

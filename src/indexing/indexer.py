@@ -40,9 +40,17 @@ class TranscriptIndexer:
                         end,
                         original_text,
                         normalized_text,
-                        speaker
+                        speaker,
+                        speaker_age,
+                        speaker_gender,
+                        speaker_dialect,
+                        environment,
+                        category,
+                        show_name,
+                        source_segment_id,
+                        segment_length
                     )
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         video_id,
@@ -51,6 +59,14 @@ class TranscriptIndexer:
                         original_text,
                         normalized_text,
                         segment.get("speaker"),
+                        segment.get("speaker_age"),
+                        segment.get("speaker_gender"),
+                        segment.get("speaker_dialect"),
+                        segment.get("environment"),
+                        segment.get("category"),
+                        segment.get("show_name"),
+                        segment.get("source_segment_id"),
+                        segment.get("segment_length", segment["end"] - segment["start"]),
                     ),
                 )
 

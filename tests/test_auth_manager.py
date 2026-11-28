@@ -269,3 +269,76 @@ def test_auth_manager_adds_session_version_to_legacy_user_schema(tmp_path):
         assert "session_version" in columns
     finally:
         manager.close()
+
+
+
+def test_concurrent_bootstrap_creates_exactly_one_initial_administrator(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    database = tmp_path / "concurrent-bootstrap.db"
+    barrier = Barrier(2)
+
+    def bootstrap(username):
+        manager = AuthManager(database, iterations=10_000)
+        try:
+            barrier.wait()
+            return manager.bootstrap_admin(username, PASSWORD)
+        finally:
+            manager.close()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(bootstrap, ["admin_one", "admin_two"]))
+
+    assert sorted(results) == [False, True]
+    manager = AuthManager(database, iterations=10_000)
+    try:
+        administrators = [
+            user for user in manager.list_users()
+            if user["role"] == "administrator" and user["is_active"]
+        ]
+        assert len(administrators) == 1
+    finally:
+        manager.close()
+
+
+def test_concurrent_role_changes_cannot_remove_both_active_administrators(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    database = tmp_path / "concurrent-admins.db"
+    setup = AuthManager(database, iterations=10_000)
+    setup.create_user("admin_one", PASSWORD, role="administrator")
+    setup.create_user("admin_two", PASSWORD, role="administrator")
+    setup.close()
+
+    barrier = Barrier(2)
+
+    def demote(target, actor):
+        manager = AuthManager(database, iterations=10_000)
+        try:
+            barrier.wait()
+            try:
+                manager.update_user_role(target, "editor", actor=actor)
+                return "updated"
+            except ValueError as error:
+                assert "last active administrator" in str(error)
+                return "protected"
+        finally:
+            manager.close()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(executor.map(
+            lambda args: demote(*args),
+            [("admin_two", "admin_one"), ("admin_one", "admin_two")],
+        ))
+
+    assert sorted(outcomes) == ["protected", "updated"]
+    check = AuthManager(database, iterations=10_000)
+    try:
+        assert sum(
+            user["role"] == "administrator" and user["is_active"]
+            for user in check.list_users()
+        ) == 1
+    finally:
+        check.close()

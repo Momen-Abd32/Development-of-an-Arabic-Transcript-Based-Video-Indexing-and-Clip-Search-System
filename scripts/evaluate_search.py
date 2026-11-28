@@ -5,7 +5,7 @@ import argparse
 import json
 from pathlib import Path
 
-from src.search.evaluation import evaluate_rankings
+from src.search.evaluation import evaluate_rankings, validate_relevant_segment
 from src.search.search_engine import SearchEngine
 
 
@@ -25,9 +25,43 @@ def load_dataset(path: Path) -> list[dict]:
             raise ValueError(
                 f"Evaluation query {index} needs query text and relevant_segments."
             )
+        for segment_index, segment in enumerate(case["relevant_segments"]):
+            try:
+                validate_relevant_segment(segment)
+            except (ValueError, TypeError) as error:
+                raise ValueError(
+                    f"Evaluation query {index}, relevant segment {segment_index}: {error}"
+                ) from error
     if not queries:
         raise ValueError("Evaluation dataset contains no judged queries.")
     return queries
+
+
+def collect_rankings(engine, cases, mode, top_k, provider=None):
+    """Run one retrieval mode so each ranker can be evaluated independently."""
+    if mode in ("semantic", "hybrid") and provider is None:
+        raise ValueError("A semantic embedding provider is required.")
+    if mode == "semantic":
+        return [engine.semantic_search(case["query"], provider, limit=top_k) for case in cases]
+    if mode == "hybrid":
+        return [engine.hybrid_search(case["query"], provider, limit=top_k) for case in cases]
+    if mode == "fuzzy":
+        return [engine.fuzzy_search(case["query"], limit=top_k) for case in cases]
+    if mode == "exact":
+        return [engine.exact_search(case["query"], limit=top_k) for case in cases]
+    raise ValueError("Unsupported search mode: " + mode)
+
+
+def evaluate_modes(engine, cases, modes, top_k, provider=None):
+    """Evaluate multiple rankers against the same human judgments."""
+    return {
+        mode: evaluate_rankings(
+            cases,
+            collect_rankings(engine, cases, mode, top_k, provider),
+            k=top_k,
+        )
+        for mode in modes
+    }
 
 
 def main() -> int:
@@ -40,7 +74,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--mode",
-        choices=("exact", "fuzzy", "hybrid"),
+        choices=("exact", "fuzzy", "semantic", "hybrid", "all"),
         default="exact",
     )
     parser.add_argument("--database", default="data/database/videos.db")
@@ -48,7 +82,7 @@ def main() -> int:
     parser.add_argument(
         "--build-semantic-index",
         action="store_true",
-        help="Build/refresh embeddings for all indexed media before hybrid evaluation.",
+        help="Build/refresh embeddings for all indexed media before semantic or hybrid evaluation.",
     )
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
@@ -59,7 +93,8 @@ def main() -> int:
 
     engine = SearchEngine(args.database)
     try:
-        if args.mode == "hybrid":
+        provider = None
+        if args.mode in ("semantic", "hybrid", "all"):
             from src.search.embedding_provider import SentenceTransformerProvider
 
             provider = SentenceTransformerProvider()
@@ -72,20 +107,10 @@ def main() -> int:
                 ]
                 for media_id in media_ids:
                     engine.index_semantic_media(media_id, provider)
-            rankings = [
-                engine.hybrid_search(case["query"], provider, limit=args.top_k)
-                for case in cases
-            ]
-        elif args.mode == "fuzzy":
-            rankings = [
-                engine.fuzzy_search(case["query"], limit=args.top_k)
-                for case in cases
-            ]
-        else:
-            rankings = [
-                engine.exact_search(case["query"], limit=args.top_k)
-                for case in cases
-            ]
+        modes = ("exact", "fuzzy", "semantic", "hybrid") if args.mode == "all" else (args.mode,)
+        mode_reports = evaluate_modes(
+            engine, cases, modes, args.top_k, provider=provider
+        )
     finally:
         engine.close()
 
@@ -94,7 +119,7 @@ def main() -> int:
         "database": args.database,
         "dataset": str(args.dataset),
         "top_k": args.top_k,
-        **evaluate_rankings(cases, rankings, k=args.top_k),
+        "results": mode_reports if args.mode == "all" else mode_reports[args.mode],
     }
     serialized = json.dumps(report, ensure_ascii=False, indent=2)
     print(serialized)

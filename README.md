@@ -43,27 +43,29 @@ The interface supports **Arabic and English**, with Arabic as the default langua
 - **Batch media import:** Recursively scan a local folder and process supported audio and video files one by one.
 - **Watched-folder ingestion:** Poll one or more local folders or mounted NAS shares, wait until new files remain unchanged across consecutive scans, and enqueue only new or changed files for background processing.
 - **Remote direct-media URL ingestion:** Download media over HTTPS only from exact operator-allowlisted hosts, validate redirects and public DNS answers, enforce size/time limits, then enqueue the file through the same processing pipeline.
+- **S3 cloud object ingestion:** Optionally download media objects from exact operator-allowlisted S3 buckets using boto3 credentials/profiles, enforce object-size and media-type checks, verify downloaded length and SHA-256, and enqueue through the same file-import worker.
 - **Durable processing queue:** Persist folder-import jobs in a separate SQLite database, track overall progress, the current file and processing stage, and stage start/completion indicators; retry failures, cancel queued jobs immediately, request cooperative cancellation of active jobs between files, and recover interrupted jobs after restart.
 - **Independent background worker:** Run the persistent processing queue as a separate CLI process with polling, worker heartbeats, and expired-lease recovery.
 - **Archive dashboard:** Summarize media counts, stored file size, transcript totals, processing and queue states, missing source files, database integrity, and runtime dependency availability.
 - **Archive backup and restore:** Create checksummed snapshots of data and exports, use SQLite's online backup API for live databases, verify every file before restore, and restore only into a new directory without overwriting existing data.
 - **Optional account authentication and RBAC:** Administrator, editor, and search-only roles; salted PBKDF2 password hashes; account activation and role management; failed-login throttling; and user-attributed note/audit actions.
 - **Media catalog:** Persist each media file's type, original filename, stored path, and processing status.
-- **Archive collections and tags:** Organize media with optional collection names and deduplicated tags; filter the archive by collection and selected tags.
+- **Archive collections and tags:** Organize media with optional collection names and deduplicated tags; filter the archive by collection and selected tags. Catalog reads and updates use an OS-level lock around the atomic JSON replacement so concurrent processes on the same host do not silently overwrite each other's metadata changes.
 - **Archive-wide search:** Search transcript segments across all imported media or limit the search to the currently selected file.
 - **Search filters:** Narrow exact, fuzzy, and hybrid results by media type, source filename, added-date range, collection, tags, and speaker (including segments without a speaker label).
 - **Duplicate detection:** Identify identical files using SHA-256 and avoid processing duplicate content within the same batch.
 - **Transcript reuse:** Reuse existing transcript JSON files and rebuild their search index instead of transcribing the same media again.
 - **Arabic speech recognition:** Generate timestamped transcript segments with Faster-Whisper.
-- **Transcript review and editing:** Review generated segments, correct their text, and save the updated transcript.
+- **Transcript review and editing:** Review generated segments, correct their text, and save the updated transcript. Each segment shows its start/end time and speaker label; its play action opens the source media at that segment's start time. Editing preserves segment metadata such as speaker and confidence.
 - **Timestamp-based transcript playback:** Start video or audio preview from a selected transcript segment.
-- **Optional speaker diarization:** Attach speaker labels to transcript segments using pyannote.audio when model access is configured.
-- **Extractive transcript insights:** Select representative original transcript sentences and rank frequent Arabic/Latin keywords; results are stored separately from the verbatim transcript and never rewrite dialect.
+- **Optional speaker diarization:** Attach speaker labels to transcript segments using pyannote.audio when model access is configured; validated timestamp overlap assigns the best-matching speaker, and missing/ambiguous matches or unavailable optional model initialization fall back to `UNKNOWN` without rewriting transcript text.
+- **Extractive transcript insights:** Select representative original transcript sentences, rank Arabic/Latin keywords using a term-frequency/document-frequency weighting, normalize Arabic diacritics, Alef variants, and punctuation boundaries for matching without changing the source transcript, and group segments into explainable topic candidates using keyword co-occurrence. Topic candidates retain source timestamps and original segment text; the UI lets reviewers jump from summary/topic source passages back to the corresponding media time. Topic grouping is explicitly heuristic (not semantic topic modeling); insights are stored separately from the verbatim transcript and never rewrite dialect.
 - **Video keyframes:** Extract sampled JPEG thumbnails with FFmpeg, preserve the actual frame presentation timestamps, safely replace prior generated frames, and preview them in the transcript workspace.
 - **Visual keyframe search:** Index extracted frames in SQLite and search across them using Arabic text descriptions or a reference image with an optional multilingual CLIP model; results include the source media and frame timestamp, with an option to preview the original video at the matched time.
 - **Unified cross-modal search:** Combine exact and fuzzy transcript matches with CLIP keyframe matches in one timestamped result list using Reciprocal Rank Fusion (RRF). The system fuses ranks rather than comparing uncalibrated text and image similarity scores; reference-image queries return visually similar frames.
-- **Evidence-first archive Q&A:** Ask questions over indexed transcripts, scope retrieval by current media or the entire archive, filter by media type, source name, added-date range, collection, tags, and speaker (including unassigned speakers), retrieve and rank verbatim transcript passages, cite the media ID, segment ID, speaker, and timestamps, and abstain when no evidence is found. Optional semantic retrieval and local Ollama multi-passage answer generation can supplement exact and fuzzy search.
-- **Timestamped review notes:** Create, edit, delete, and play back notes attached to a media item and timestamp. Note changes are recorded in the append-only audit history.
+- **Evidence-first archive Q&A:** Ask questions over indexed transcripts, scope retrieval by current media or the entire archive, filter by media type, source name, added-date range, collection, tags, and speaker (including unassigned speakers), retrieve and rank verbatim transcript passages, cite the media ID, segment ID, speaker, and timestamps, and abstain when no evidence is found. Optional semantic retrieval and local Ollama multi-passage answer generation can supplement exact and fuzzy search. Generated claims must cite retrieved segments and pass a conservative Arabic/Latin lexical-overlap and negation-consistency guard; this guard is not a semantic entailment proof, and rejected answers fall back to the verbatim quote.
+- **Visual-only archive Q&A:** Retrieve relevant keyframes with multilingual CLIP, ask an optional local Ollama vision-language model to describe only the supplied frames, and cite exact media IDs, frame indices, and timestamps. The adapter is loopback-only, sends at most four frames of up to 5 MiB each, and abstains when citations are missing or invalid.
+- **Timestamped review notes:** Create, edit, delete, and play back notes attached to a media item and timestamp. Note changes are recorded in the append-only audit history. Revision-based compare-and-swap updates prevent one reviewer from silently overwriting another reviewer’s newer edit.
 - **Arabic text normalization:** Normalize common Arabic character variations, remove diacritics and tatweel, and standardize whitespace to improve search consistency.
 - **Exact full-text search:** Find transcript segments using SQLite FTS5.
 - **Fuzzy search:** Find approximate matches using RapidFuzz.
@@ -301,6 +303,7 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │
 ├── app.py
 ├── requirements.txt
+├── requirements-cloud.txt  # Optional S3 object-storage adapter
 ├── README.md
 │
 ├── .streamlit/
@@ -328,6 +331,7 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   │   ├── audio_extractor.py
 │   │   ├── archive_metrics.py
 │   │   ├── batch_processor.py
+│   │   ├── cloud_ingestion.py
 │   │   ├── folder_watcher.py
 │   │   ├── url_ingestion.py
 │   │   ├── keyframe_extractor.py
@@ -338,6 +342,8 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   ├── search/
 │   │   ├── archive_qa.py
 │   │   ├── local_answer_provider.py
+│   │   ├── local_vision_answer_provider.py
+│   │   ├── visual_archive_qa.py
 │   │   ├── cross_modal_evaluation.py
 │   │   ├── cross_modal_evaluation_dataset.py
 │   │   ├── cross_modal_search.py
@@ -350,7 +356,8 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 │   │   └── visual_evaluation.py
 │   │
 │   ├── security/
-│   │   └── auth_manager.py
+│   │   ├── auth_manager.py
+│   │   └── permissions.py
 │   └── transcription/
 │       ├── faster_whisper_engine.py
 │       ├── transcript_exporter.py
@@ -360,9 +367,14 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
 ├── tests/
 │   ├── test_archive_metrics.py
 │   ├── test_archive_qa.py
+│   ├── test_visual_archive_qa.py
+│   ├── test_local_vision_answer_provider.py
+│   ├── test_permissions.py
 │   ├── test_evaluation_dataset.py
 │   ├── test_local_answer_provider.py
 │   ├── test_auth_manager.py
+│   ├── test_cloud_ingestion.py
+│   ├── test_cloud_ingestion_cli.py
 │   ├── test_archive_backup.py
 │   ├── test_archive_backup_cli.py
 │   ├── test_archive_notes.py
@@ -407,6 +419,7 @@ Development-of-an-Arabic-Transcript-Based-Video-Indexing-and-Clip-Search-System/
     ├── manage_archive_backup.py
     ├── run_processing_worker.py
     ├── import_media_url.py
+    ├── import_s3_media.py
     ├── watch_media_folders.py
     └── test_transcription.py
 ```
@@ -478,6 +491,26 @@ pip install -r requirements-semantic.txt
 
 In the Search tab, choose **Hybrid Semantic Search**, then select **Build / Refresh Semantic Index**. The first use downloads the configured multilingual embedding model. Model download and embedding generation require additional disk space, memory, and processing time.
 
+#### Optional: enable SQLite vector retrieval
+
+For a SQLite-native KNN execution path, install the separately pinned optional extension:
+
+```bash
+pip install -r requirements-vector.txt
+```
+
+The semantic search index will create and rebuild its derived `vec0` table automatically when needed. Existing JSON embeddings remain the source of truth, and the exact Python/SQLite heap implementation remains the fallback if the extension is unavailable or a query uses unsupported multi-media or speaker filters. The vector table is derived and can be recreated without changing the stored transcript or embedding format.
+
+This backend is an optional native KNN path, **not an approximate HNSW/ANN index**; do not interpret it as eliminating linear-scan behavior or as a measured latency improvement until benchmarked on representative archive sizes.
+
+A reproducible synthetic benchmark compares steady-state SQLite KNN latency with the exact heap fallback and checks top-k ID agreement (it excludes one-time vector-table construction):
+
+```bash
+python scripts/benchmark_semantic_search.py --segments 10000 --dimension 64 --queries 10 --top-k 10
+```
+
+The benchmark uses deterministic generated vectors and does not download models or claim real Dukkan Media relevance quality. Run it at several archive sizes and retain the JSON output when collecting performance evidence.
+
 ### Optional: enable visual keyframe search
 
 Visual search requires extracted video keyframes and two aligned optional CLIP encoders: the original image encoder and a multilingual text encoder that supports 50+ languages, including Arabic. The provider deliberately uses the image model for frames and the multilingual model for text queries:
@@ -516,7 +549,7 @@ Speaker diarization requires the optional dependencies, a Hugging Face access to
 pip install -r requirements-diarization.txt
 ```
 
-Set `HF_TOKEN` in your environment, then use **Identify Speakers** in the Transcript tab. Speaker labels are metadata attached to transcript segments; the original recognized words are not rewritten.
+Set `HF_TOKEN` in your environment, then use **Identify Speakers** in the Transcript tab. Speaker labels are metadata attached to transcript segments using greatest temporal overlap; segments with no overlapping diarization turn are labeled `UNKNOWN`. If the optional model cannot initialize because its package/token is unavailable, the UI marks segments `UNKNOWN` and allows transcript review to continue. Timestamp values and turn labels are validated before annotation, and the original recognized words are not rewritten.
 
 ### 6. Install and verify FFmpeg
 
@@ -543,6 +576,24 @@ http://localhost:8501
 ```
 
 On the first transcription run, Faster-Whisper may need to download its model files. An internet connection is therefore required for the initial model download unless the model is already available locally.
+
+## Importing the SADA 2022 Arabic Dataset
+
+A dedicated importer supports SADA's prepared timestamped Arabic transcripts and
+full-episode WAV files. It imports a bounded number of episodes directly into
+the existing archive and SQLite search index, preserves speaker/dialect and
+show metadata, and does not run Whisper over the supplied annotations.
+
+See [SADA dataset setup, attribution, license, and sample-download instructions](docs/SADA_DATASET.md).
+To download and import three training episodes with the Kaggle CLI, run:
+
+```bash
+python scripts/download_sada_sample.py --episodes 3 --split train
+```
+
+SADA is audio-only, so this integration supports archive-wide and
+selected-recording transcript search plus timestamped audio clip extraction.
+It does not provide original video frames for visual search or MP4 video clips.
 
 ## Batch Importing a Media Dataset
 
@@ -599,6 +650,28 @@ Repeat `--url` for multiple files and `--allowed-host` for each trusted host. Th
 
 Only allowlist domains controlled by the archive operator. DNS addresses are checked before each request but are not pinned at the socket layer, so use a trusted host allowlist and network egress controls for deployments exposed to untrusted users. This adapter downloads direct media files only; it does not scrape YouTube or authenticated streaming pages, playlists, or links that require browser cookies or custom authorization headers.
 
+## S3 Cloud Object Ingestion
+
+S3-compatible object storage is supported through an optional adapter. Install its dependencies separately so the core local archive does not require a cloud SDK:
+
+```bash
+pip install -r requirements-cloud.txt
+```
+
+Configure AWS credentials using the standard boto3 environment, shared credentials file, IAM role, or an explicitly selected profile. Then allowlist the exact bucket names and enqueue one or more objects:
+
+```bash
+python scripts/import_s3_media.py \
+  --bucket dukkan-archive \
+  --key "recordings/interview.mp4" \
+  --allowed-bucket dukkan-archive \
+  --region eu-central-1
+```
+
+Repeat `--bucket` and `--key` together for additional objects, and repeat `--allowed-bucket` for every trusted bucket. The CLI downloads each object to `data/incoming/cloud/`, checks the declared size and supported media type, verifies the complete byte count, calculates SHA-256, and queues a normal `file_import` job. The background worker then uses the same deduplication, transcription, catalog, and indexing pipeline as local and watched-folder imports.
+
+For an operator-managed S3-compatible service, `--endpoint-url` may be supplied explicitly. Treat that endpoint as trusted deployment configuration; never accept it from an untrusted user. Bucket allowlisting is exact, and the application does not store cloud credentials in the archive or Git repository. The adapter does not enumerate buckets, sync remote deletions, or implement provider-specific Google Drive/Azure integrations.
+
 ## Background Processing Worker
 
 The Streamlit queue tab can enqueue folder-import jobs and run one job on demand. For continuous processing independent of the browser session, start the worker in a separate terminal:
@@ -618,9 +691,9 @@ The worker claims jobs transactionally, reports per-file progress, retries faile
 
 ## Audit History
 
-The application stores an append-only audit trail in `data/database/processing_queue.db`. It records media registration and metadata/status changes, timestamped note creation/updates/deletions, plus processing-job enqueue, start, retry scheduling, failure, cancellation, manual retry, and completion events. Each event includes a UTC timestamp, actor (defaults to `system` until authentication is introduced), entity identity, and JSON before/after details where applicable.
+The application stores an append-only audit trail in `data/database/processing_queue.db`. SQLite triggers reject ordinary `UPDATE` and `DELETE` statements against existing audit events, and the triggers are added when opening older databases. It records media registration and metadata/status changes, timestamped note creation/updates/deletions, plus processing-job enqueue, start, retry scheduling, failure, cancellation, manual retry, and completion events. Each event includes a UTC timestamp, actor (defaults to `system` until authentication is introduced), entity identity, and JSON before/after details where applicable.
 
-Use the `AuditLog` service to query recent events or filter by entity type, entity ID, and actor. The audit history is local to this application instance; it is not yet a tamper-proof compliance log or a substitute for authenticated user identity.
+Use the `AuditLog` service to query recent events or filter by entity type, entity ID, and actor. The audit history is local to this application instance. Database-level triggers prevent routine mutation, but a privileged database operator can still alter the schema or file; this is not a tamper-proof compliance log or a substitute for authenticated user identity.
 
 ## Authentication and Role-Based Access
 
@@ -634,7 +707,7 @@ $env:ARCHIVE_ADMIN_DISPLAY_NAME = "Archive Administrator"
 python -m streamlit run app.py
 ```
 
-On first startup, the app creates the initial administrator only if the user table is empty. There is no built-in default account or password. Keep these environment variables out of source control and rotate/remove the bootstrap password after the account is created.
+On first startup, the app creates the initial administrator only if the user table is empty. Bootstrap uses a SQLite write transaction, so concurrent application starts cannot both claim to create the first administrator. Role changes and account activation also protect the last active administrator atomically across concurrent admin sessions. There is no built-in default account or password. Keep these environment variables out of source control and rotate/remove the bootstrap password after the account is created.
 
 | Role | Access |
 |---|---|
@@ -684,7 +757,7 @@ For more detailed output:
 python -m pytest tests -v
 ```
 
-The complete test suite should be run after pulling the current development branch. Automated tests help verify individual components and expected behavior; they do not by themselves establish real-world transcription accuracy or replace end-to-end testing with varied video and audio inputs.
+The complete test suite should be run after pulling the current development branch. Automated tests cover concurrent catalog writes, immutable audit-event enforcement, atomic administrator bootstrap and last-admin protection, S3 object-ingestion validation and queue handoff, as well as Arabic token normalization and weighted insight ranking, source-linked topic extraction, malformed timestamp rejection, diarization adapter behavior, speaker-overlap assignment, and UNKNOWN fallback. They do not by themselves establish real-world transcription accuracy or replace end-to-end testing with varied video and audio inputs.
 
 ## Timestamped Review Notes
 
@@ -704,23 +777,37 @@ The default mode is extractive and requires no local language model. For optiona
 ollama pull qwen2.5:3b
 ```
 
-Enable **Generate a multi-passage answer with local Ollama** in the Q&A workspace and enter the installed model name if it differs. The adapter connects only to the loopback Ollama service at `127.0.0.1:11434`; it does not send transcript evidence to a remote model endpoint. Every generated claim must cite media and segment IDs present in the retrieved evidence, otherwise the UI falls back to the verbatim extractive quote. This validates citation membership, not logical entailment: users must still review the cited context. Visual-only question answering is not implemented.
+Enable **Generate a multi-passage answer with local Ollama** in the Q&A workspace and enter the installed model name if it differs. The adapter connects only to the loopback Ollama service at `127.0.0.1:11434`; it does not send transcript evidence to a remote model endpoint. Every generated claim must cite media and segment IDs present in the retrieved evidence and pass a conservative normalized-token overlap and negation-consistency check. If a claim fails, the UI falls back to the verbatim extractive quote. This lexical guard reduces unsupported output but is not a semantic entailment model or proof; users must still review the cited context.
+
+### Visual-only question answering
+
+Visual Q&A first retrieves up to four candidate keyframes using the optional multilingual CLIP index, then sends only those local images and their media/frame/timestamp metadata to a local Ollama vision model. Install a vision-capable model:
+
+```bash
+ollama pull qwen2.5vl:3b
+```
+
+In **Ask the Archive**, use **Ask Questions About Visual Scenes** and select the local model name. The adapter accepts only the loopback Ollama endpoint, rejects redirects, limits the request to four images of at most 5 MiB each, and requires every answer to cite an exact retrieved `(media_id, frame_index)` pair. Invalid or missing citations cause abstention. The UI displays the cited frame thumbnails and source timestamps. The answer can describe only what is visible in the retrieved frames; it cannot establish events between sampled frames or prove facts outside the images. A CLIP match is a retrieval candidate, not a calibrated confidence score.
 
 ## Search Retrieval Evaluation
 
-The project includes macro-averaged Precision@k, Recall@k, and Mean Reciprocal Rank (MRR) for comparing exact, fuzzy, and hybrid transcript retrieval against human relevance judgments.
+The project includes macro-averaged Precision@k, Recall@k, and Mean Reciprocal Rank (MRR) for comparing exact, fuzzy, standalone semantic, and hybrid transcript retrieval against human relevance judgments.
 
-Use the **Search Evaluation** workspace in the Streamlit app to enter a query and choose exact, fuzzy, hybrid, or unified cross-modal retrieval. Hybrid mode can build the semantic index; cross-modal mode requires the optional visual dependencies and a built keyframe index. Mark relevant transcript passages and/or keyframes, inspect source playback, and save judgments. Transcript labels are written atomically to `data/evaluation/search_queries.json`; mixed transcript/keyframe labels are written to `data/evaluation/cross_modal_queries.json`. Both files are ignored by Git because they contain references to the local archive. Alternatively, create either file manually from its checked-in template and replace example IDs/timestamps/frame indices with human-reviewed results. Include varied Arabic queries: MSA wording, spelling variants, diacritics, and mixed Arabic/English phrases.
+Use the **Search Evaluation** workspace in the Streamlit app to enter a query and choose exact, fuzzy, semantic-only, hybrid, or unified cross-modal retrieval. Semantic-only and hybrid modes can build the semantic index; cross-modal mode requires the optional visual dependencies and a built keyframe index. Mark relevant transcript passages and/or keyframes, inspect source playback, and save judgments. Transcript labels are written atomically to `data/evaluation/search_queries.json`; mixed transcript/keyframe labels are written to `data/evaluation/cross_modal_queries.json`. Both files are ignored by Git because they contain references to the local archive. Alternatively, create either file manually from its checked-in template and replace example IDs/timestamps/frame indices with human-reviewed results. Include varied Arabic queries: MSA wording, spelling variants, diacritics, and mixed Arabic/English phrases.
 
-Run one retrieval mode:
+Run one retrieval mode, or use `all` to compare every transcript ranker against the exact same relevance judgments in a single report:
 
 ```bash
 python scripts/evaluate_search.py --mode exact --dataset data/evaluation/search_queries.json --top-k 5
 python scripts/evaluate_search.py --mode fuzzy --dataset data/evaluation/search_queries.json --top-k 5
+python scripts/evaluate_search.py --mode semantic --dataset data/evaluation/search_queries.json --top-k 5
 python scripts/evaluate_search.py --mode hybrid --dataset data/evaluation/search_queries.json --top-k 5
+python scripts/evaluate_search.py --mode all --dataset data/evaluation/search_queries.json --top-k 5 --build-semantic-index --output reports/retrieval-comparison.json
 ```
 
-Hybrid evaluation requires the optional semantic dependencies and an existing semantic index. Add `--build-semantic-index` to build/refresh embeddings before evaluation. Use `--output reports/hybrid-evaluation.json` to save a machine-readable report.
+Standalone semantic and hybrid evaluation require the optional semantic dependencies and an existing semantic index. Add `--build-semantic-index` to build/refresh embeddings before either evaluation mode. The `semantic` mode measures vector retrieval by itself; `hybrid` measures the fused lexical, fuzzy, and semantic ranking. Use `--output reports/semantic-evaluation.json` or `--output reports/hybrid-evaluation.json` to save individual reports. The `all` mode emits a `results` object containing all four metric summaries, making side-by-side comparison reproducible. Semantic and hybrid modes require the optional semantic dependencies and an existing semantic index; `--build-semantic-index` builds/refreshes it before evaluation.
+
+Before any search runs, the evaluator validates every human-labeled segment: it must include a non-empty media ID (media_id or video_id), finite numeric timestamps, and a valid non-negative interval where 0 <= start < end. Invalid labels are rejected with the query and segment index so malformed judgments do not silently distort the metrics.
 
 The checked-in file is a template, not a measured benchmark. Do not report its results as real archive performance until the relevance judgments have been reviewed and populated using representative Dukkan Media content.
 
@@ -764,16 +851,16 @@ Uploaded videos, original audio files, normalized audio, transcript JSON files, 
 - Transcription quality depends on audio clarity, accents, background noise, and the selected speech-recognition model.
 - The default `tiny` model favors lower resource usage; it may not provide the highest transcription accuracy.
 - Fuzzy search compares transcript segments and can require more processing as the indexed transcript collection grows.
-- Semantic and hybrid transcript search are optional and require installing `requirements-semantic.txt` and explicitly building the semantic index. Visual keyframe search separately requires `requirements-visual.txt`, extracted keyframes, and a built visual index. Both embedding stores are separate from the existing FTS5 and RapidFuzz indexes.
+- Semantic and hybrid transcript search are optional and require installing `requirements-semantic.txt` and explicitly building the semantic index. An additional optional `sqlite-vec` backend can execute KNN retrieval inside SQLite; the JSON embedding table remains authoritative and the existing exact heap implementation remains the fallback. Visual keyframe search separately requires `requirements-visual.txt`, extracted keyframes, and a built visual index.
 - Speaker diarization is optional, requires a Hugging Face token and access to the gated pyannote model, and has not yet been evaluated on Dukkan Media recordings.
-- The initial semantic and visual search implementations rank stored embeddings in application code. Very large archives will need a dedicated vector index and retrieval-performance evaluation.
-- Archive Q&A defaults to a verbatim transcript quote and can optionally use a local Ollama model to generate multi-passage claims with references to retrieved segments. Citation IDs are checked against retrieved evidence, but this does not prove logical entailment; visual-only question answering is not implemented.
+- The optional `sqlite-vec` backend currently provides SQLite-native KNN execution for unfiltered or single-media semantic queries; multi-media and speaker-filtered queries retain the exact heap fallback. It is not an approximate HNSW/ANN index, so large-archive latency and scaling gains are not yet established. A true ANN backend and retrieval-performance/recall benchmarks remain future work.
+- Transcript archive Q&A defaults to a verbatim quote. Optional local Ollama claims must cite retrieved segments and pass a conservative lexical-overlap/negation guard; this is not a semantic entailment proof. Visual-only Q&A is optional and requires a local vision-capable Ollama model plus the CLIP keyframe index. It validates frame citation membership but cannot prove that a generated description is visually correct.
 - Visual search uses multilingual CLIP embeddings, but its retrieval quality has not yet been measured against a human-judged Dukkan Media visual-search dataset. Keyframes are sampled every 30 seconds and capped at 300 frames per video by default, so very long recordings may need a configurable sampling policy to cover their full duration. Frame timestamps are sampled from FFmpeg presentation timestamps.
-- The application currently uses local file storage and a local SQLite database; it is not designed as a multi-user hosted service.
-- Timestamped notes provide a local review workflow with audit events. Author/editor values are authenticated when optional account authentication is enabled and are user-entered labels otherwise; simultaneous multi-instance collaboration is not implemented.
-- Batch import reads local or mounted folders. The polling watcher supports continuous monitoring of local/mounted folders, and direct-media URL ingestion supports HTTPS files from explicitly allowlisted hosts. Direct cloud-provider APIs, authenticated streaming pages, and playlist downloads are not implemented.
+- The application currently uses local file storage and a local SQLite database; it is not designed as a multi-user hosted service. Role permissions are centralized and tested for the local Streamlit UI, but this is not a substitute for a hardened public API authorization boundary.
+- Timestamped notes provide a local review workflow with audit events. Note revisions use optimistic concurrency checks so stale edits fail instead of overwriting a newer review. Author/editor values are authenticated when optional account authentication is enabled and are user-entered labels otherwise. This is conflict-safe shared-database editing, not live push synchronization or real-time multi-instance collaboration.
+- Batch import reads local or mounted folders. The polling watcher supports continuous monitoring of local/mounted folders, direct-media URL ingestion supports HTTPS files from explicitly allowlisted hosts, and optional S3 ingestion supports exact allowlisted buckets. Provider-specific Google Drive/Azure integrations, remote deletion synchronization, authenticated streaming pages, and playlist downloads are not implemented.
 - The SQLite segment table retains the legacy `video_id` column name; for audio records, it stores the SHA-256 media identifier as well.
-- The media catalog is a local JSON file intended for the current single-instance application; concurrent multi-process writes are not coordinated.
+- The media catalog remains a backward-compatible local JSON file. An OS-level advisory lock serializes catalog reads and updates between processes on the same host; this is not distributed locking for multiple hosts sharing an unreliable network filesystem, nor does it provide live multi-instance UI synchronization.
 - Active application session state is not automatically reconstructed after a process restart.
 - WER and CER require reference transcripts and are not standalone measures of application quality.
 

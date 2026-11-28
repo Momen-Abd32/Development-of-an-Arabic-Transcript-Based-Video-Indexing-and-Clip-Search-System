@@ -42,10 +42,19 @@ class ArchiveNotes:
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 updated_by TEXT NOT NULL,
+                revision INTEGER NOT NULL DEFAULT 1 CHECK(revision >= 1),
                 CHECK(timestamp_seconds >= 0),
                 CHECK(length(note_text) BETWEEN 1 AND 5000)
             )
         """)
+        note_columns = {
+            row["name"]
+            for row in self.connection.execute("PRAGMA table_info(archive_notes)")
+        }
+        if "revision" not in note_columns:
+            self.connection.execute(
+                "ALTER TABLE archive_notes ADD COLUMN revision INTEGER NOT NULL DEFAULT 1"
+            )
         self.connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_archive_notes_media_time
             ON archive_notes(media_id, timestamp_seconds, created_at)
@@ -153,18 +162,19 @@ class ArchiveNotes:
             "created_at": now,
             "updated_at": now,
             "updated_by": author,
+            "revision": 1,
         }
         self.connection.execute(
             """
             INSERT INTO archive_notes (
                 note_id, media_id, timestamp_seconds, note_text, author,
-                created_at, updated_at, updated_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                created_at, updated_at, updated_by, revision
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 note["note_id"], note["media_id"], note["timestamp_seconds"],
                 note["note_text"], note["author"], note["created_at"],
-                note["updated_at"], note["updated_by"],
+                note["updated_at"], note["updated_by"], note["revision"],
             ),
         )
         self._record_audit("note_created", note, actor=author)
@@ -192,6 +202,7 @@ class ArchiveNotes:
         timestamp_seconds: float | None = None,
         note_text: str | None = None,
         updated_by: str = "local_user",
+        expected_version: int | None = None,
     ) -> dict:
         note_id = self._validate_note_id(note_id)
         updated_by = self._validate_author(updated_by, "Updated by")
@@ -202,6 +213,18 @@ class ArchiveNotes:
         if before_row is None:
             raise KeyError(f"Archive note not found: {note_id}")
         before = self._row_to_dict(before_row)
+        current_revision = int(before.get("revision", 1))
+        if expected_version is not None:
+            if (
+                isinstance(expected_version, bool)
+                or not isinstance(expected_version, int)
+                or expected_version < 1
+            ):
+                raise ValueError("Expected note version must be a positive integer.")
+            if expected_version != current_revision:
+                raise RuntimeError(
+                    "Note was modified by another reviewer. Reload the latest version before editing."
+                )
 
         if timestamp_seconds is None and note_text is None:
             raise ValueError("At least one note field must be supplied.")
@@ -219,17 +242,23 @@ class ArchiveNotes:
         self.connection.execute(
             """
             UPDATE archive_notes
-            SET timestamp_seconds = ?, note_text = ?, updated_at = ?, updated_by = ?
-            WHERE note_id = ?
+            SET timestamp_seconds = ?, note_text = ?, updated_at = ?, updated_by = ?,
+                revision = revision + 1
+            WHERE note_id = ? AND revision = ?
             """,
-            (timestamp, text, now, updated_by, note_id),
+            (timestamp, text, now, updated_by, note_id, current_revision),
         )
+        if self.connection.execute("SELECT changes()").fetchone()[0] != 1:
+            raise RuntimeError(
+                "Note was modified by another reviewer. Reload the latest version before editing."
+            )
         updated = {
             **before,
             "timestamp_seconds": timestamp,
             "note_text": text,
             "updated_at": now,
             "updated_by": updated_by,
+            "revision": current_revision + 1,
         }
         self._record_audit("note_updated", updated, actor=updated_by, before={
             "timestamp_seconds": before["timestamp_seconds"],

@@ -366,3 +366,46 @@ def test_filter_media_rejects_invalid_type_and_date_range(tmp_path):
             start_date="2026-11-22",
             end_date="2026-11-20",
         )
+
+
+
+def test_concurrent_catalog_instances_do_not_lose_media_records(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+
+    path = tmp_path / "database" / "media_catalog.json"
+
+    def register(index):
+        catalog = MediaCatalog(str(path), str(tmp_path / "audit.db"))
+        media_id = f"{index:064x}"
+        return catalog.register_media(
+            media_id,
+            "video" if index % 2 else "audio",
+            f"recording-{index}.mp4",
+            f"archive/recording-{index}.mp4",
+        )
+
+    with ThreadPoolExecutor(max_workers=12) as executor:
+        records = list(executor.map(register, range(48)))
+
+    catalog = MediaCatalog(str(path), str(tmp_path / "audit.db"))
+    stored = catalog.get_all()
+    assert len(records) == 48
+    assert len(stored) == 48
+    assert {item["media_id"] for item in stored} == {
+        f"{index:064x}" for index in range(48)
+    }
+
+
+def test_catalog_lock_file_is_stable_and_reads_remain_backward_compatible(tmp_path):
+    path = tmp_path / "media_catalog.json"
+    catalog = MediaCatalog(str(path), str(tmp_path / "audit.db"))
+    catalog.register_media(
+        MEDIA_ID,
+        "audio",
+        "legacy.mp3",
+        "data/audio/legacy.mp3",
+    )
+
+    lock_path = path.with_name(path.name + ".lock")
+    assert lock_path.exists()
+    assert catalog.get_by_id(MEDIA_ID)["source_name"] == "legacy.mp3"

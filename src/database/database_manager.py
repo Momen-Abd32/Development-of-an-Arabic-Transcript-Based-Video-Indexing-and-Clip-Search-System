@@ -29,15 +29,37 @@ class DatabaseManager:
                 end REAL NOT NULL,
                 original_text TEXT NOT NULL,
                 normalized_text TEXT NOT NULL,
-                speaker TEXT
+                speaker TEXT,
+                speaker_age TEXT,
+                speaker_gender TEXT,
+                speaker_dialect TEXT,
+                environment TEXT,
+                category TEXT,
+                show_name TEXT,
+                source_segment_id TEXT,
+                segment_length REAL
             )
         """)
 
         columns = {
             row["name"] for row in cursor.execute("PRAGMA table_info(segments)")
         }
-        if "speaker" not in columns:
-            cursor.execute("ALTER TABLE segments ADD COLUMN speaker TEXT")
+        migrations = {
+            "speaker": "TEXT",
+            "speaker_age": "TEXT",
+            "speaker_gender": "TEXT",
+            "speaker_dialect": "TEXT",
+            "environment": "TEXT",
+            "category": "TEXT",
+            "show_name": "TEXT",
+            "source_segment_id": "TEXT",
+            "segment_length": "REAL",
+        }
+        for column, column_type in migrations.items():
+            if column not in columns:
+                cursor.execute(
+                    f"ALTER TABLE segments ADD COLUMN {column} {column_type}"
+                )
 
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_segments_video_id

@@ -15,9 +15,10 @@ from src.media.processing_queue import ProcessingQueue
 from src.media.batch_processor import MediaBatchProcessor
 from src.media.archive_metrics import ArchiveMetrics
 from src.security.auth_manager import AuthManager, AuthRateLimitError
+from src.security.permissions import has_role_permission
 from src.transcription.faster_whisper_engine import FasterWhisperEngine
 from src.transcription.transcript_manager import TranscriptManager
-from src.transcription.speaker_diarizer import PyannoteSpeakerDiarizer
+from src.transcription.speaker_diarizer import PyannoteSpeakerDiarizer, apply_speaker_turns
 from src.transcription.transcript_insights import TranscriptInsights
 from src.transcription.transcript_exporter import TranscriptExporter
 from src.indexing.indexer import TranscriptIndexer
@@ -27,6 +28,8 @@ from src.search.archive_qa import ArchiveQA
 from src.search.evaluation_dataset import EvaluationDatasetStore
 from src.search.cross_modal_evaluation_dataset import CrossModalEvaluationDatasetStore
 from src.search.local_answer_provider import OllamaAnswerProvider
+from src.search.local_vision_answer_provider import OllamaVisionAnswerProvider
+from src.search.visual_archive_qa import VisualArchiveQA
 from src.search.keyframe_search import KeyframeSearchIndex
 from src.search.visual_embedding_provider import SentenceTransformerVisualProvider
 from src.search.embedding_provider import SentenceTransformerProvider
@@ -231,12 +234,17 @@ TEXT = {
         "play_segment": "تشغيل من هذا التوقيت",
         "selected_segment": "معاينة من التوقيت المحدد",
         "diarize_speakers": "تمييز المتحدثين",
-        "speaker_diarization_help": "تتطلب هذه الميزة تثبيت requirements-diarization.txt وإعداد HF_TOKEN مع صلاحية الوصول إلى نموذج pyannote.",
+        "speaker_diarization_help": "تتطلب هذه الميزة تثبيت requirements-diarization.txt وإعداد HF_TOKEN مع صلاحية الوصول إلى نموذج pyannote. المقاطع التي لا يمكن إسنادها بوضوح ستظهر كمتحدث غير معروف.",
+        "diarization_unavailable": "تعذر تشغيل نموذج تمييز المتحدثين؛ تم وضع المقاطع كمتحدث غير معروف بدلاً من إيقاف مراجعة التفريغ.",
         "speaker": "المتحدث",
         "generate_insights": "إنشاء ملخص واستخراج الكلمات المفتاحية",
         "insights_saved": "تم إنشاء وحفظ الملخص والكلمات المفتاحية.",
         "insights_title": "ملخص استخراجي",
+        "insight_sources_title": "المقاطع التي بُني عليها الملخص",
+        "topic_sources_title": "المقاطع المصدرية لهذا المحور",
         "keywords_title": "الكلمات المفتاحية",
+        "topic_candidates_title": "محاور مستخلصة (مقترحة)",
+        "topic_candidates_note": "تجميع إرشادي حسب تكرار الكلمات وظهورها معاً في المقاطع، وليس نموذجاً دلالياً لفهم الموضوعات.",
         "extractive_note": "هذا ملخص استخراجي مكوّن من جمل أصلية من التفريغ؛ لا يعيد صياغة الكلام أو يحوّل اللهجة إلى الفصحى.",
         "extract_keyframes": "استخراج الصور المصغّرة من الفيديو",
         "keyframes_done": "تم استخراج الصور المصغّرة.",
@@ -268,7 +276,7 @@ TEXT = {
         "evaluation_mode": "طريقة الاسترجاع",
         "evaluation_cross_modal": "بحث موحّد (نص + لقطات)",
         "evaluation_frame_index": "رقم اللقطة",
-        "evaluation_build_semantic": "بناء / تحديث الفهرس الدلالي لكل الأرشيف قبل البحث الهجين",
+        "evaluation_build_semantic": "بناء / تحديث الفهرس الدلالي لكل الأرشيف قبل البحث الدلالي أو الهجين",
         "evaluation_search": "اعرض المقاطع لتقييمها",
         "evaluation_relevant": "هذه النتيجة ذات صلة",
         "evaluation_play": "تشغيل المصدر عند هذا التوقيت",
@@ -300,6 +308,15 @@ TEXT = {
         "archive_qa_model": "اسم نموذج Ollama المحلي",
         "archive_qa_generated_note": "إجابة مولّدة محلياً؛ كل ادعاء مرتبط بمقطع مسترجع. تحقق من السياق لأن وجود الاستشهاد لا يثبت صحة الاستنتاج منطقياً.",
         "archive_qa_citations": "استشهادات الإجابة",
+        "visual_qa_title": "اسأل الأرشيف عن محتوى المشاهد",
+        "visual_qa_desc": "استرجاع لقطات مرشحة عبر CLIP ثم تحليلها بنموذج رؤية محلي من Ollama. تُعرض الإجابة فقط مع معرّفات الإطارات وتوقيتها، ويُمتنع عند غياب الدليل.",
+        "visual_qa_question": "ما الذي يظهر في هذه المشاهد؟",
+        "visual_qa_model": "نموذج الرؤية المحلي (مثال: qwen2.5vl:3b)",
+        "visual_qa_button": "اسأل عن المشاهد",
+        "visual_qa_answer": "الإجابة البصرية المستندة إلى اللقطات",
+        "visual_qa_abstain": "لم تتوفر أدلة بصرية كافية للإجابة ضمن النطاق المحدد.",
+        "visual_qa_citations": "مصادر اللقطات",
+        "visual_qa_note": "الإجابة تصف ما يظهر في الإطارات المسترجعة فقط؛ لا تثبت أحداثاً خارج الإطارات ولا تضمن صحة الاستنتاجات غير المرئية.",
         "cross_modal_tab": "البحث الموحّد",
         "cross_modal_title": "بحث موحّد في النصوص واللقطات",
         "cross_modal_desc": "اجمع نتائج التفريغ النصي واللقطات البصرية في قائمة مرتبة واحدة. تُدمج الرتب ولا تُقارن درجات التشابه الخام بين النماذج.",
@@ -359,10 +376,11 @@ TEXT = {
         "similarity": "نسبة التشابه",
         "save_clip": "حفظ هذا المقطع",
         "clip_saved": "تم حفظ المقطع بنجاح.",
+        "download_clip": "تنزيل المقطع",
         "clip_failed": "تعذر حفظ المقطع",
         "clips_title": "المقاطع المحفوظة",
-        "clips_desc": "شاهد المقاطع التي استخرجتها من الفيديو الحالي.",
-        "no_clips": "لا توجد مقاطع محفوظة لهذا الفيديو حتى الآن.",
+        "clips_desc": "شاهد المقاطع التي استخرجتها من الملف الحالي.",
+        "no_clips": "لا توجد مقاطع محفوظة لهذا الملف حتى الآن.",
         "clip": "المقطع",
         "missing_clip": "ملف المقطع غير موجود",
         "export_clips": "تجهيز قائمة المقاطع CSV",
@@ -374,7 +392,7 @@ TEXT = {
         "status_transcribed": "اكتمل التفريغ",
         "video_status": "حالة الملف",
         "duration_note": "تظهر نتائج البحث مع توقيتاتها لتسهيل الوصول إلى اللحظة المطلوبة.",
-        "audio_clip_unavailable": "استخراج المقاطع متاح للفيديوهات فقط؛ يمكن البحث في هذا التسجيل الصوتي وعرض توقيتاته.",
+        "audio_clip_unavailable": "يمكن استخراج مقاطع صوتية من التسجيل الحالي.",
         "search_scope": "نطاق البحث",
         "current_media": "الملف الحالي",
         "entire_archive": "كامل الأرشيف",
@@ -390,6 +408,12 @@ TEXT = {
         "filter_date": "تاريخ الإضافة",
         "filter_speaker": "المتحدث",
         "filter_no_speaker": "غير محدد",
+        "filter_speaker_age": "عمر المتحدث",
+        "filter_speaker_gender": "جنس المتحدث",
+        "filter_speaker_dialect": "لهجة المتحدث",
+        "filter_environment": "البيئة الصوتية",
+        "filter_category": "التصنيف",
+        "filter_show_name": "اسم البرنامج",
     },
     "en": {
         "page_title": "Arabic Media Archiving & Search",
@@ -445,7 +469,7 @@ TEXT = {
         "evaluation_mode": "Retrieval mode",
         "evaluation_cross_modal": "Unified cross-modal (text + frames)",
         "evaluation_frame_index": "Frame index",
-        "evaluation_build_semantic": "Build / refresh the archive-wide semantic index before hybrid search",
+        "evaluation_build_semantic": "Build / refresh the archive-wide semantic index before semantic or hybrid search",
         "evaluation_search": "Find segments to judge",
         "evaluation_relevant": "This result is relevant",
         "evaluation_play": "Play source at this timestamp",
@@ -494,6 +518,15 @@ TEXT = {
         "archive_qa_model": "Local Ollama model name",
         "archive_qa_generated_note": "Locally generated answer; each claim references a retrieved segment. Review the context because citation membership does not prove logical entailment.",
         "archive_qa_citations": "Answer citations",
+        "visual_qa_title": "Ask Questions About Visual Scenes",
+        "visual_qa_desc": "Retrieve candidate keyframes with CLIP, then analyze them with a local Ollama vision model. Answers cite exact frame IDs and timestamps and abstain without visual evidence.",
+        "visual_qa_question": "What appears in these scenes?",
+        "visual_qa_model": "Local vision model (for example: qwen2.5vl:3b)",
+        "visual_qa_button": "Ask About the Scenes",
+        "visual_qa_answer": "Visual answer grounded in keyframes",
+        "visual_qa_abstain": "No sufficient visual evidence was found in the selected scope.",
+        "visual_qa_citations": "Keyframe sources",
+        "visual_qa_note": "The answer describes only the retrieved frames; it cannot establish events outside those frames or guarantee unseen conclusions.",
         "clips_tab": "Saved Clips",
         "archive_tab": "Archive Management",
         "dashboard_tab": "Dashboard",
@@ -607,12 +640,17 @@ TEXT = {
         "play_segment": "Play from this timestamp",
         "selected_segment": "Preview from selected timestamp",
         "diarize_speakers": "Identify Speakers",
-        "speaker_diarization_help": "Requires requirements-diarization.txt, HF_TOKEN, and access to the pyannote model.",
+        "speaker_diarization_help": "Requires requirements-diarization.txt, HF_TOKEN, and access to the pyannote model. Segments without a confident temporal match are labeled UNKNOWN.",
+        "diarization_unavailable": "The speaker model could not be initialized; segments were marked UNKNOWN so transcript review can continue.",
         "speaker": "Speaker",
         "generate_insights": "Generate Summary and Keywords",
         "insights_saved": "Summary and keywords generated and saved.",
         "insights_title": "Extractive Summary",
+        "insight_sources_title": "Summary Source Segments",
+        "topic_sources_title": "Source Segments for This Topic",
         "keywords_title": "Keywords",
+        "topic_candidates_title": "Extracted Topic Candidates (Heuristic)",
+        "topic_candidates_note": "Groups segments by keyword frequency and co-occurrence; this is not semantic topic modeling.",
         "extractive_note": "This summary selects original transcript sentences. It does not rewrite speech or convert dialect into Modern Standard Arabic.",
         "extract_keyframes": "Extract Video Keyframes",
         "keyframes_done": "Video keyframes extracted.",
@@ -678,6 +716,7 @@ TEXT = {
         "similarity": "Similarity",
         "save_clip": "Save This Clip",
         "clip_saved": "Clip saved successfully.",
+        "download_clip": "Download clip",
         "clip_failed": "Failed to save clip",
         "clips_title": "Saved Clips",
         "clips_desc": "Watch the clips extracted from the current video.",
@@ -709,6 +748,12 @@ TEXT = {
         "filter_date": "Added date range",
         "filter_speaker": "Speaker",
         "filter_no_speaker": "Unspecified",
+        "filter_speaker_age": "Speaker age",
+        "filter_speaker_gender": "Speaker gender",
+        "filter_speaker_dialect": "Speaker dialect",
+        "filter_environment": "Audio environment",
+        "filter_category": "Category",
+        "filter_show_name": "Show name",
     },
 }
 
@@ -894,24 +939,13 @@ else:
         "is_active": True,
     }
 
-ROLE_PERMISSIONS = {
-    "administrator": {
-        "upload", "transcript", "search", "visual", "cross_modal",
-        "qa", "evaluation", "notes", "clips", "archive", "queue", "dashboard",
-        "audit", "users",
-    },
-    "editor": {
-        "upload", "transcript", "search", "visual", "cross_modal",
-        "qa", "evaluation", "notes", "clips", "archive", "queue", "dashboard", "audit",
-    },
-    "search_only": {"search", "visual", "cross_modal", "qa", "dashboard"},
-}
-
-
 def has_permission(permission: str) -> bool:
-    if permission == "users" and not auth_enabled:
-        return False
-    return permission in ROLE_PERMISSIONS.get(current_user["role"], set())
+    return has_role_permission(
+        current_user["role"],
+        permission,
+        authentication_enabled=auth_enabled,
+    )
+
 
 
 st.markdown(
@@ -1340,11 +1374,18 @@ with tab_transcript:
                     with st.spinner(t["loading_model"]):
                         if not audio_path.is_file():
                             AudioExtractor.prepare(str(media_path), str(audio_path))
-                        diarizer = PyannoteSpeakerDiarizer()
-                        annotated_segments = diarizer.annotate(
-                            st.session_state.segments,
-                            str(audio_path),
-                        )
+                        try:
+                            diarizer = PyannoteSpeakerDiarizer()
+                        except RuntimeError:
+                            annotated_segments = apply_speaker_turns(
+                                st.session_state.segments, []
+                            )
+                            st.warning(t["diarization_unavailable"])
+                        else:
+                            annotated_segments = diarizer.annotate(
+                                st.session_state.segments,
+                                str(audio_path),
+                            )
                         TranscriptManager.save(
                             annotated_segments,
                             f"data/transcripts/{video_id}.json",
@@ -1385,9 +1426,36 @@ with tab_transcript:
                 st.markdown(f'#### {t["insights_title"]}')
                 st.caption(t["extractive_note"])
                 st.write(current_insights["summary"] or t["no_results"])
+                if current_insights.get("source_segments"):
+                    with st.expander(t["insight_sources_title"]):
+                        for source in current_insights["source_segments"]:
+                            st.caption(f'{source["start"]:.1f}s – {source["end"]:.1f}s')
+                            st.write(source["text"])
+                            if st.button(
+                                t["play_segment"],
+                                key=f'insight_source_{video_id}_{source["index"]}',
+                            ):
+                                st.session_state.transcript_seek = float(source["start"])
                 if current_insights["keywords"]:
                     st.markdown(f'**{t["keywords_title"]}**')
                     st.write(", ".join(item["term"] for item in current_insights["keywords"]))
+                if current_insights.get("topic_candidates"):
+                    st.markdown(f'**{t["topic_candidates_title"]}**')
+                    st.caption(t["topic_candidates_note"])
+                    for topic_index, topic in enumerate(current_insights["topic_candidates"]):
+                        with st.expander(
+                            f'{topic["label"]} · {topic["segment_count"]} segments'
+                        ):
+                            st.write(", ".join(topic["keywords"]))
+                            st.caption(t["topic_sources_title"])
+                            for source in topic["source_segments"]:
+                                st.caption(f'{source["start"]:.1f}s – {source["end"]:.1f}s')
+                                st.write(source["text"])
+                                if st.button(
+                                    t["play_segment"],
+                                    key=f'topic_source_{video_id}_{topic_index}_{source["index"]}',
+                                ):
+                                    st.session_state.transcript_seek = float(source["start"])
 
             if st.session_state.get("media_type") == "video":
                 keyframe_dir = Path("data/keyframes") / video_id
@@ -1459,12 +1527,9 @@ with tab_transcript:
                             key=f"segment_{video_id}_{index}",
                         )
 
-                    edited_segments.append({
-                        "start": segment["start"],
-                        "end": segment["end"],
-                        "text": edited_text,
-                        **({"speaker": segment["speaker"]} if segment.get("speaker") else {}),
-                    })
+                    updated_segment = dict(segment)
+                    updated_segment["text"] = edited_text
+                    edited_segments.append(updated_segment)
 
             if st.session_state.get("transcript_seek") is not None:
                 seek_time = max(0, int(st.session_state.transcript_seek))
@@ -1542,12 +1607,17 @@ with tab_search:
             key=f"search_scope_{st.session_state.video_id or 'archive'}",
         )
 
-        if st.session_state.get("search_results_scope") != search_scope:
-            st.session_state.search_results = []
-            st.session_state.visual_search_results = None
-            st.session_state.search_results_scope = search_scope
-
         current_scope = search_scope == t["current_media"]
+        search_context = (
+            search_scope,
+            st.session_state.get("video_id") if current_scope else None,
+        )
+        if st.session_state.get("search_results_context") != search_context:
+            st.session_state.search_results = []
+            st.session_state.search_performed = False
+            st.session_state.visual_search_results = None
+            st.session_state.search_results_context = search_context
+            st.session_state.search_results_scope = search_scope
         if current_scope and not st.session_state.transcribed:
             st.info(t["no_transcript"])
         else:
@@ -1564,7 +1634,7 @@ with tab_search:
             )
             search_type = st.radio(
                 t["search_type"],
-                [t["exact"], t["fuzzy"], t["hybrid"]],
+                [t["exact"], t["fuzzy"], t["semantic"], t["hybrid"]],
                 horizontal=True,
                 key=f"search_type_{scope_key}",
             )
@@ -1613,6 +1683,28 @@ with tab_search:
                     [t["filter_all"], t["filter_no_speaker"]] + speaker_values,
                     key=f"search_speaker_{scope_key}",
                 )
+                filter_db = SearchEngine()
+                try:
+                    metadata_choices = {}
+                    metadata_labels = {
+                        "speaker_age": "filter_speaker_age",
+                        "speaker_gender": "filter_speaker_gender",
+                        "speaker_dialect": "filter_speaker_dialect",
+                        "environment": "filter_environment",
+                        "category": "filter_category",
+                        "show_name": "filter_show_name",
+                    }
+                    for field, label_key in metadata_labels.items():
+                        metadata_choices[field] = st.multiselect(
+                            t[label_key],
+                            filter_db.list_metadata_values(
+                                field,
+                                media_ids=[st.session_state.video_id] if current_scope else None,
+                            ),
+                            key=f"search_metadata_{field}_{scope_key}",
+                        )
+                finally:
+                    filter_db.close()
 
             selected_media_type = (
                 None if media_type_choice == t["filter_all"]
@@ -1654,11 +1746,16 @@ with tab_search:
                 else speaker_choice
             )
             only_unspecified_speaker = speaker_choice == t["filter_no_speaker"]
+            metadata_filters = {
+                field: values
+                for field, values in metadata_choices.items()
+                if values
+            }
 
-            if search_type == t["hybrid"]:
+            if search_type in (t["semantic"], t["hybrid"]):
                 st.caption(t["semantic_index_hint"])
 
-            if search_type == t["hybrid"] and st.button(t["build_semantic_index"]):
+            if search_type in (t["semantic"], t["hybrid"]) and st.button(t["build_semantic_index"]):
                 search_engine = None
                 try:
                     provider = SentenceTransformerProvider()
@@ -1696,11 +1793,17 @@ with tab_search:
                             "video_id": media_filter,
                             "media_ids": allowed_media_ids,
                             "speaker": speaker_filter,
+                            "metadata_filters": metadata_filters,
                         }
                         if search_type == t["exact"]:
                             results = search_engine.exact_search(query, **search_options)
                         elif search_type == t["fuzzy"]:
                             results = search_engine.fuzzy_search(query, **search_options)
+                        elif search_type == t["semantic"]:
+                            provider = SentenceTransformerProvider()
+                            results = search_engine.semantic_search(
+                                query, provider, **search_options
+                            )
                         else:
                             provider = SentenceTransformerProvider()
                             results = search_engine.hybrid_search(
@@ -1709,6 +1812,8 @@ with tab_search:
 
                         st.session_state.search_results = results
                         st.session_state.search_results_scope = search_scope
+                        st.session_state.search_results_context = search_context
+                        st.session_state.search_performed = True
                     except Exception as error:
                         st.error(f'{t["search_failed"]}: {error}')
                     finally:
@@ -1748,6 +1853,21 @@ with tab_search:
                         st.caption(f'{t["media_source"]}: {source_name}')
                         if result.get("speaker"):
                             st.caption(f'{t["speaker"]}: {result["speaker"]}')
+                        dataset_metadata = [
+                            ("show_name", "البرنامج / Show"),
+                            ("speaker_dialect", "اللهجة / Dialect"),
+                            ("speaker_age", "العمر / Age"),
+                            ("speaker_gender", "الجنس / Gender"),
+                            ("category", "التصنيف / Category"),
+                            ("environment", "البيئة / Environment"),
+                        ]
+                        metadata_labels = [
+                            f"{label}: {result[key]}"
+                            for key, label in dataset_metadata
+                            if result.get(key)
+                        ]
+                        if metadata_labels:
+                            st.caption(" · ".join(metadata_labels))
                         st.markdown(f'**{t["text"]}:** {result["original_text"]}')
                         st.markdown(
                             f'**{t["time"]}:** {result["start"]}s – {result["end"]}s'
@@ -1758,23 +1878,33 @@ with tab_search:
                                 max(0, min(100, int(result["similarity"]))) / 100,
                                 text=f'{t["similarity"]}: {result["similarity"]}%',
                             )
+                        if "semantic_score" in result:
+                            st.caption(f'{t["semantic"]}: {result["semantic_score"]:.3f}')
+                        if "hybrid_score" in result:
+                            st.caption(f'{t["hybrid"]}: {result["hybrid_score"]:.4f}')
 
                         if media_path and media_path.exists():
                             with st.expander(t["media_preview"]):
                                 if media_type == "video":
-                                    st.video(str(media_path))
+                                    st.video(str(media_path), start_time=int(result["start"]))
                                 else:
-                                    st.audio(str(media_path))
+                                    st.audio(str(media_path), start_time=int(result["start"]))
                         else:
                             st.caption(t["missing_clip"])
 
-                        if media_type == "video" and media_path and media_path.exists():
+                        if media_type in ("video", "audio") and media_path and media_path.exists():
                             if st.button(
                                 "✂️ " + t["save_clip"],
                                 key=f"save_clip_{media_id}_{result['id']}",
                             ):
                                 try:
-                                    clip_path = ClipManager().create_clip(
+                                    clip_manager = ClipManager()
+                                    create_clip = (
+                                        clip_manager.create_clip
+                                        if media_type == "video"
+                                        else clip_manager.create_audio_clip
+                                    )
+                                    clip_path = create_clip(
                                         str(media_path),
                                         result["start"],
                                         result["end"],
@@ -1788,11 +1918,22 @@ with tab_search:
                                         result["original_text"],
                                     )
                                     st.success(t["clip_saved"])
+                                    if media_type == "video":
+                                        st.video(str(clip_path))
+                                        clip_mime = "video/mp4"
+                                    else:
+                                        st.audio(str(clip_path))
+                                        clip_mime = "audio/mp4"
+                                    st.download_button(
+                                        t["download_clip"],
+                                        data=clip_path.read_bytes(),
+                                        file_name=clip_path.name,
+                                        mime=clip_mime,
+                                        key=f"download_search_clip_{media_id}_{result['id']}",
+                                    )
                                 except Exception as error:
                                     st.error(f'{t["clip_failed"]}: {error}')
-                        elif media_type == "audio":
-                            st.caption(t["audio_clip_unavailable"])
-            else:
+            elif st.session_state.get("search_performed", False):
                 st.info(t["no_results"])
 
 
@@ -2437,6 +2578,77 @@ with tab_qa:
                 st.info(t["archive_qa_abstain"])
 
 
+        st.divider()
+        st.markdown(f'### {t["visual_qa_title"]}')
+        st.caption(t["visual_qa_desc"])
+        visual_qa_question = st.text_area(
+            t["visual_qa_question"],
+            key="visual_qa_question_input",
+            height=80,
+        )
+        visual_qa_model = st.text_input(
+            t["visual_qa_model"],
+            value="qwen2.5vl:3b",
+            key="visual_qa_model_input",
+        )
+        if st.button(
+            t["visual_qa_button"],
+            key="run_visual_archive_qa",
+        ):
+            if not visual_qa_question.strip():
+                st.warning(t["empty_query"])
+            elif not visual_qa_model.strip():
+                st.warning(t["visual_qa_model"])
+            else:
+                visual_index = None
+                try:
+                    visual_provider = SentenceTransformerVisualProvider()
+                    vision_answer_provider = OllamaVisionAnswerProvider(
+                        model=visual_qa_model.strip()
+                    )
+                    visual_index = KeyframeSearchIndex()
+                    visual_result = VisualArchiveQA(visual_index).ask(
+                        visual_qa_question,
+                        visual_provider=visual_provider,
+                        answer_provider=vision_answer_provider,
+                        media_ids=qa_media_ids,
+                        limit=4,
+                    )
+                    st.session_state.visual_archive_qa_result = visual_result
+                except Exception as error:
+                    st.error(f'{t["search_failed"]}: {error}')
+                finally:
+                    if visual_index is not None:
+                        visual_index.close()
+
+        visual_result = st.session_state.get("visual_archive_qa_result")
+        if visual_result:
+            if visual_result["status"] == "evidence_found":
+                st.markdown(f'#### {t["visual_qa_answer"]}')
+                st.success(visual_result["answer"])
+                st.caption(t["visual_qa_note"])
+                st.caption(
+                    f'{t["visual_qa_citations"]}: '
+                    + ", ".join(
+                        f'{item["media_id"]} · frame #{item["frame_index"]} '
+                        f'({item["timestamp_seconds"]:.2f}s)'
+                        for item in visual_result["citations"]
+                    )
+                )
+                for frame in visual_result["evidence"]:
+                    with st.container(border=True):
+                        st.caption(
+                            f'{frame["media_id"]} · frame #{frame["frame_index"]} · '
+                            f'{frame["timestamp_seconds"]:.2f}s · '
+                            f'CLIP {frame["visual_score"]:.3f}'
+                        )
+                        frame_path = Path(frame["image_path"])
+                        if frame_path.is_file():
+                            st.image(str(frame_path), use_container_width=True)
+            else:
+                st.info(visual_result["message"] or t["visual_qa_abstain"])
+
+
     # 7. Human-judged search evaluation
 # --------------------------------------------------
 
@@ -2455,7 +2667,7 @@ with tab_evaluation:
         )
         evaluation_mode_label = st.selectbox(
             t["evaluation_mode"],
-            [t["exact"], t["fuzzy"], t["hybrid"], t["evaluation_cross_modal"]],
+            [t["exact"], t["fuzzy"], t["semantic"], t["hybrid"], t["evaluation_cross_modal"]],
             key="evaluation_mode",
         )
         evaluation_is_cross_modal = (
@@ -2467,7 +2679,7 @@ with tab_evaluation:
                 value=False,
                 key="evaluation_build_semantic",
             )
-            if evaluation_mode_label == t["hybrid"] else False
+            if evaluation_mode_label in (t["semantic"], t["hybrid"]) else False
         )
         if evaluation_is_cross_modal:
             st.info(t["cross_modal_visual_note"])
@@ -2520,7 +2732,7 @@ with tab_evaluation:
                             visual_provider=evaluation_visual_provider,
                             include_visual=True,
                         )
-                    elif evaluation_mode_label == t["hybrid"]:
+                    elif evaluation_mode_label in (t["semantic"], t["hybrid"]):
                         evaluation_provider = SentenceTransformerProvider()
                         if evaluation_build_semantic:
                             media_ids = [
@@ -2534,11 +2746,18 @@ with tab_evaluation:
                                     evaluation_engine.index_semantic_media(
                                         media_id, evaluation_provider
                                     )
-                        found_results = evaluation_engine.hybrid_search(
-                            evaluation_query,
-                            evaluation_provider,
-                            limit=10,
-                        )
+                        if evaluation_mode_label == t["semantic"]:
+                            found_results = evaluation_engine.semantic_search(
+                                evaluation_query,
+                                evaluation_provider,
+                                limit=10,
+                            )
+                        else:
+                            found_results = evaluation_engine.hybrid_search(
+                                evaluation_query,
+                                evaluation_provider,
+                                limit=10,
+                            )
                     elif evaluation_mode_label == t["fuzzy"]:
                         found_results = evaluation_engine.fuzzy_search(
                             evaluation_query, limit=10
@@ -2734,7 +2953,8 @@ with tab_notes:
                 )
                 new_note_author = st.text_input(
                     t["archive_notes_author"],
-                    value="local_user",
+                    value=current_user["username"],
+                    disabled=auth_enabled,
                     key="archive_note_new_author",
                 )
                 new_note_text = st.text_area(
@@ -2754,7 +2974,9 @@ with tab_notes:
                         selected_note_media_id,
                         new_note_timestamp,
                         new_note_text,
-                        author=new_note_author,
+                        author=(
+                            current_user["username"] if auth_enabled else new_note_author
+                        ),
                     )
                     st.success(t["archive_notes_saved"])
                 except Exception as error:
@@ -2779,7 +3001,8 @@ with tab_notes:
                     ):
                         st.caption(
                             f'{t["archive_notes_created"]}: {note["created_at"]} · '
-                            f'{t["archive_notes_updated_by"]}: {note["updated_by"]}'
+                            f'{t["archive_notes_updated_by"]}: {note["updated_by"]} · '
+                            f'Version: {note.get("revision", 1)}'
                         )
                         with st.form(f'archive_note_edit_form_{note["note_id"]}'):
                             edited_timestamp = st.number_input(
@@ -2797,7 +3020,8 @@ with tab_notes:
                             )
                             edited_by = st.text_input(
                                 t["archive_notes_updated_by"],
-                                value="local_user",
+                                value=current_user["username"],
+                                disabled=auth_enabled,
                                 key=f'archive_note_editor_{note["note_id"]}',
                             )
                             update_note = st.form_submit_button(
@@ -2810,7 +3034,10 @@ with tab_notes:
                                     note["note_id"],
                                     timestamp_seconds=edited_timestamp,
                                     note_text=edited_text,
-                                    updated_by=edited_by,
+                                    updated_by=(
+                                        current_user["username"] if auth_enabled else edited_by
+                                    ),
+                                    expected_version=note.get("revision", 1),
                                 )
                                 st.success(t["archive_notes_updated"])
                                 st.rerun()
@@ -2868,10 +3095,9 @@ with tab_clips:
 
         if not st.session_state.video_id:
             st.info(t["need_video"])
-        elif st.session_state.media_type != "video":
-            st.info(t["audio_clip_unavailable"])
         else:
             video_id = st.session_state.video_id
+            media_type = st.session_state.media_type
 
             try:
                 clips = ClipMetadata().get_all_clips()
@@ -2895,7 +3121,10 @@ with tab_clips:
                         clip_file = Path(clip["clip_path"])
 
                         if clip_file.exists():
-                            st.video(str(clip_file))
+                            if media_type == "video":
+                                st.video(str(clip_file))
+                            else:
+                                st.audio(str(clip_file))
                         else:
                             st.warning(f'{t["missing_clip"]}: {clip_file.name}')
 

@@ -1,11 +1,83 @@
+
 import json
 import os
 import re
 import tempfile
+import errno
+import time
+
+from contextlib import contextmanager
+from functools import wraps
 from datetime import date, datetime, timezone
 from pathlib import Path
 
 from src.media.audit_log import AuditLog
+
+
+@contextmanager
+def _catalog_file_lock(catalog_path: Path):
+    """Serialize catalog reads and read-modify-write operations across processes."""
+    lock_path = catalog_path.with_name(catalog_path.name + ".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with lock_path.open("a+b") as lock_file:
+        lock_file.seek(0, os.SEEK_END)
+        if lock_file.tell() == 0:
+            lock_file.write(b"0")
+            lock_file.flush()
+
+        lock_file.seek(0)
+
+        if os.name == "nt":
+            import msvcrt
+
+            while True:
+                try:
+                    lock_file.seek(0)
+                    msvcrt.locking(
+                        lock_file.fileno(),
+                        msvcrt.LK_NBLCK,
+                        1,
+                    )
+                    break
+                except OSError as exc:
+                    if (
+                        exc.errno not in {
+                            errno.EACCES,
+                            errno.EAGAIN,
+                            errno.EDEADLK,
+                        }
+                        and getattr(exc, "winerror", None) != 33
+                    ):
+                        raise
+                    time.sleep(0.05)
+
+            try:
+                yield
+            finally:
+                lock_file.seek(0)
+                msvcrt.locking(
+                    lock_file.fileno(),
+                    msvcrt.LK_UNLCK,
+                    1,
+                )
+        else:
+            import fcntl
+
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def _catalog_locked(method):
+    @wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with _catalog_file_lock(self.catalog_path):
+            return method(self, *args, **kwargs)
+
+    return wrapper
 
 
 class MediaCatalog:
@@ -108,7 +180,8 @@ class MediaCatalog:
                     not isinstance(tag, str) or not tag.strip()
                     for tag in item["tags"]
                 )
-                or len({tag.casefold() for tag in item["tags"]}) != len(item["tags"])
+                or len({tag.casefold() for tag in item["tags"]})
+                != len(item["tags"])
             ):
                 raise ValueError(
                     f"Media catalog item {index} has invalid tags."
@@ -118,6 +191,7 @@ class MediaCatalog:
                 raise ValueError(
                     f"Media catalog contains duplicate ID: {item['media_id']}"
                 )
+
             seen_ids.add(item["media_id"])
 
         return data
@@ -158,7 +232,10 @@ class MediaCatalog:
         ):
             raise ValueError("Media ID must be a lowercase SHA-256 hash.")
 
-        if not isinstance(media_type, str) or media_type not in MediaCatalog.VALID_TYPES:
+        if (
+            not isinstance(media_type, str)
+            or media_type not in MediaCatalog.VALID_TYPES
+        ):
             raise ValueError("Media type must be 'audio' or 'video'.")
 
         if not isinstance(source_name, str) or not source_name.strip():
@@ -170,6 +247,7 @@ class MediaCatalog:
         if not isinstance(status, str) or status not in MediaCatalog.VALID_STATUSES:
             raise ValueError("Invalid media processing status.")
 
+    @_catalog_locked
     def register_media(
         self,
         media_id: str,
@@ -224,6 +302,7 @@ class MediaCatalog:
         )
         return dict(record)
 
+    @_catalog_locked
     def update_status(
         self,
         media_id: str,
@@ -256,9 +335,16 @@ class MediaCatalog:
             record.pop("error", None)
 
         self._save(items)
-        self._record_audit("media_status_updated", media_id, before, dict(record), actor)
+        self._record_audit(
+            "media_status_updated",
+            media_id,
+            before,
+            dict(record),
+            actor,
+        )
         return dict(record)
 
+    @_catalog_locked
     def get_by_id(self, media_id: str) -> dict | None:
         return next(
             (
@@ -269,6 +355,7 @@ class MediaCatalog:
             None,
         )
 
+    @_catalog_locked
     def get_all(self) -> list[dict]:
         return [dict(item) for item in self._load()]
 
@@ -282,13 +369,16 @@ class MediaCatalog:
         for tag in tags:
             if not isinstance(tag, str) or not tag.strip():
                 raise ValueError("Tags must be non-empty strings.")
+
             value = tag.strip()
             key = value.casefold()
             if key not in seen:
                 normalized.append(value)
                 seen.add(key)
+
         return normalized
 
+    @_catalog_locked
     def update_archive_metadata(
         self,
         media_id: str,
@@ -299,10 +389,12 @@ class MediaCatalog:
         """Update optional collection and tags without changing legacy fields."""
         if not isinstance(media_id, str) or not media_id.strip():
             raise ValueError("Media ID cannot be empty.")
+
         if collection is not None:
             if not isinstance(collection, str):
                 raise TypeError("Collection must be a string or None.")
             collection = collection.strip() or None
+
         normalized_tags = None if tags is None else self._normalize_tags(tags)
 
         items = self._load()
@@ -318,6 +410,7 @@ class MediaCatalog:
             record.pop("collection", None)
         else:
             record["collection"] = collection
+
         if normalized_tags is None:
             record.pop("tags", None)
         else:
@@ -325,24 +418,35 @@ class MediaCatalog:
 
         self._save(items)
         self._record_audit(
-            "media_metadata_updated", media_id, before, dict(record), actor
+            "media_metadata_updated",
+            media_id,
+            before,
+            dict(record),
+            actor,
         )
         return dict(record)
 
+    @_catalog_locked
     def get_collections(self) -> list[str]:
-        return sorted({
-            item["collection"]
-            for item in self._load()
-            if item.get("collection")
-        }, key=str.casefold)
+        return sorted(
+            {
+                item["collection"]
+                for item in self._load()
+                if item.get("collection")
+            },
+            key=str.casefold,
+        )
 
+    @_catalog_locked
     def get_all_tags(self) -> list[str]:
         tags = {}
         for item in self._load():
             for tag in item.get("tags", []):
                 tags.setdefault(tag.casefold(), tag)
+
         return sorted(tags.values(), key=str.casefold)
 
+    @_catalog_locked
     def filter_media(
         self,
         collection: str | None = None,
@@ -357,34 +461,51 @@ class MediaCatalog:
             not isinstance(collection, str) or not collection.strip()
         ):
             raise ValueError("Collection filter must be a non-empty string.")
+
         if media_type is not None and media_type not in self.VALID_TYPES:
             raise ValueError("Media type filter must be 'audio' or 'video'.")
+
         if source_contains is not None and not isinstance(source_contains, str):
             raise TypeError("Source filter must be a string or None.")
+
         parsed_start = date.fromisoformat(start_date) if start_date else None
         parsed_end = date.fromisoformat(end_date) if end_date else None
+
         if parsed_start and parsed_end and parsed_start > parsed_end:
             raise ValueError("Start date cannot be after end date.")
 
         required_tags = self._normalize_tags(tags or [])
         records = self._load()
         filtered = []
+
         for item in records:
             if collection is not None and (
-                item.get("collection", "").casefold() != collection.strip().casefold()
+                item.get("collection", "").casefold()
+                != collection.strip().casefold()
             ):
                 continue
+
             if media_type is not None and item["media_type"] != media_type:
                 continue
-            if source_contains and source_contains.casefold() not in item["source_name"].casefold():
+
+            if (
+                source_contains
+                and source_contains.casefold()
+                not in item["source_name"].casefold()
+            ):
                 continue
+
             created = item["created_at"][:10]
             if parsed_start and created < parsed_start.isoformat():
                 continue
+
             if parsed_end and created > parsed_end.isoformat():
                 continue
+
             item_tags = {tag.casefold() for tag in item.get("tags", [])}
             if not all(tag.casefold() in item_tags for tag in required_tags):
                 continue
+
             filtered.append(dict(item))
+
         return filtered
