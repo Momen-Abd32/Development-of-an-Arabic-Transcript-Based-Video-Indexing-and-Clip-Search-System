@@ -144,10 +144,11 @@ class SemanticSearchIndex:
         media_id: str | None,
         media_ids: list[str] | None,
         speaker: str | None,
+        metadata_filters: dict | None,
     ) -> list[dict] | None:
-        # vec0 supports exact equality metadata filters. Keep more complex
-        # multi-media and speaker scopes on the established SQLite fallback.
-        if speaker is not None or (media_ids is not None and len(media_ids) != 1):
+        # vec0 supports only its own indexed columns. Apply metadata filters
+        # through the complete SQLite fallback to avoid dropping candidates.
+        if metadata_filters or speaker is not None or (media_ids is not None and len(media_ids) != 1):
             return None
         selected_media = media_id
         if media_ids:
@@ -338,6 +339,7 @@ class SemanticSearchIndex:
         media_id: str | None = None,
         media_ids: list[str] | None = None,
         speaker: str | None = None,
+        metadata_filters: dict | None = None,
     ) -> list[dict]:
         if not isinstance(query, str) or not query.strip() or media_ids == []:
             return []
@@ -352,13 +354,15 @@ class SemanticSearchIndex:
             media_id,
             media_ids,
             speaker,
+            metadata_filters,
         )
         if vector_results is not None:
             return vector_results
 
         sql = """
             SELECT s.id, s.video_id, s.start, s.end, s.original_text,
-                   s.speaker, e.embedding_json
+                   s.speaker, s.speaker_age, s.speaker_gender, s.speaker_dialect,
+                   s.environment, s.category, s.show_name, e.embedding_json
             FROM segment_embeddings e
             JOIN segments s ON s.id = e.segment_id
             WHERE e.model_name = ?
@@ -375,6 +379,26 @@ class SemanticSearchIndex:
         elif speaker is not None:
             sql += " AND s.speaker = ?"
             params.append(speaker)
+        allowed_fields = {
+            "speaker_age", "speaker_gender", "speaker_dialect",
+            "environment", "category", "show_name",
+        }
+        if metadata_filters is not None and not isinstance(metadata_filters, dict):
+            raise TypeError("metadata_filters must be a dictionary.")
+        for field, value in (metadata_filters or {}).items():
+            if field not in allowed_fields:
+                raise ValueError(f"Unsupported metadata filter: {field}")
+            if value is None or value == "":
+                continue
+            if isinstance(value, (list, tuple, set)):
+                values = list(value)
+                if not values:
+                    return []
+                sql += f" AND s.{field} IN (" + ",".join("?" for _ in values) + ")"
+                params.extend(values)
+            else:
+                sql += f" AND s.{field} = ?"
+                params.append(value)
 
         # Keep only the best k candidates while streaming SQLite rows. The
         # previous implementation retained every embedding and result in
@@ -386,7 +410,11 @@ class SemanticSearchIndex:
             score = self._cosine_similarity(query_vector, stored)
             result = {
                 key: row[key]
-                for key in ("id", "video_id", "start", "end", "original_text", "speaker")
+                for key in (
+                    "id", "video_id", "start", "end", "original_text", "speaker",
+                    "speaker_age", "speaker_gender", "speaker_dialect",
+                    "environment", "category", "show_name",
+                )
             }
             result["semantic_score"] = round(score, 6)
             candidate = (score, -row["id"], result)
