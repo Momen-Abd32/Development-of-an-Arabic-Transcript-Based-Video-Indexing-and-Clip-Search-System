@@ -1690,7 +1690,10 @@ with tab_search:
                     for field, label_key in metadata_labels.items():
                         metadata_choices[field] = st.multiselect(
                             t[label_key],
-                            filter_db.list_metadata_values(field),
+                            filter_db.list_metadata_values(
+                                field,
+                                media_ids=[st.session_state.video_id] if current_scope else None,
+                            ),
                             key=f"search_metadata_{field}_{scope_key}",
                         )
                 finally:
