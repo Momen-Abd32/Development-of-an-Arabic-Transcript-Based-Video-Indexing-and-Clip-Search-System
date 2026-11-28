@@ -115,6 +115,14 @@ def _segments_for_episodes(csv_path: Path, selected: set[str]) -> dict[str, list
                 "end": end,
                 "text": raw_text,
                 "speaker": speaker,
+                "speaker_age": (row.get("SpeakerAge") or "").strip() or None,
+                "speaker_gender": (row.get("SpeakerGender") or "").strip() or None,
+                "speaker_dialect": (row.get("SpeakerDialect") or "").strip() or None,
+                "environment": (row.get("Environment") or "").strip() or None,
+                "category": (row.get("Category") or "").strip() or None,
+                "show_name": (row.get("ShowName") or "").strip() or None,
+                "source_segment_id": (row.get("SegmentID") or "").strip() or None,
+                "segment_length": float(row["SegmentLength"]) if (row.get("SegmentLength") or "").strip() else end - start,
             })
 
     for name, segments in grouped.items():
@@ -202,6 +210,11 @@ class SadaDatasetImporter:
 
                 self.catalog.update_status(media_id, "transcribed")
                 tags = ["SADA2022", f"split:{self.split}"]
+                for field in ("speaker_dialect", "category", "show_name"):
+                    values = sorted({
+                        segment[field] for segment in segments if segment.get(field)
+                    })
+                    tags.extend(f"{field}:{value}" for value in values[:10])
                 self.catalog.update_archive_metadata(
                     media_id,
                     collection="SADA 2022",
