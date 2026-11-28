@@ -338,3 +338,33 @@ def test_semantic_search_filters_by_sada_metadata(search_engine):
     )
     assert results
     assert {item["video_id"] for item in results} == {"video1"}
+
+
+def test_hybrid_search_filters_by_sada_metadata(search_engine):
+    provider = FakeEmbeddingProvider()
+    search_engine.db.connection.execute(
+        "UPDATE segments SET speaker_dialect = 'Najdi' WHERE video_id = 'video1'"
+    )
+    search_engine.db.connection.commit()
+    search_engine.index_semantic_media("video1", provider)
+    search_engine.index_semantic_media("video2", provider)
+
+    results = search_engine.hybrid_search(
+        "البرمجة", provider,
+        metadata_filters={"speaker_dialect": "Najdi"},
+    )
+    assert results
+    assert {item["video_id"] for item in results} == {"video1"}
+
+
+def test_empty_metadata_selection_returns_no_results(search_engine):
+    assert search_engine.exact_search(
+        "البرمجة", metadata_filters={"speaker_dialect": []}
+    ) == []
+    assert search_engine.fuzzy_search(
+        "البرمجة", threshold=0, metadata_filters={"speaker_dialect": []}
+    ) == []
+    assert search_engine.semantic_search(
+        "البرمجة", FakeEmbeddingProvider(),
+        metadata_filters={"speaker_dialect": []},
+    ) == []
