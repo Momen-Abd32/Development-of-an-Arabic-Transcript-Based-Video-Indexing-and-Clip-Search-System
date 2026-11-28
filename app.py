@@ -1799,6 +1799,21 @@ with tab_search:
                         st.caption(f'{t["media_source"]}: {source_name}')
                         if result.get("speaker"):
                             st.caption(f'{t["speaker"]}: {result["speaker"]}')
+                        dataset_metadata = [
+                            ("show_name", "البرنامج / Show"),
+                            ("speaker_dialect", "اللهجة / Dialect"),
+                            ("speaker_age", "العمر / Age"),
+                            ("speaker_gender", "الجنس / Gender"),
+                            ("category", "التصنيف / Category"),
+                            ("environment", "البيئة / Environment"),
+                        ]
+                        metadata_labels = [
+                            f"{label}: {result[key]}"
+                            for key, label in dataset_metadata
+                            if result.get(key)
+                        ]
+                        if metadata_labels:
+                            st.caption(" · ".join(metadata_labels))
                         st.markdown(f'**{t["text"]}:** {result["original_text"]}')
                         st.markdown(
                             f'**{t["time"]}:** {result["start"]}s – {result["end"]}s'
