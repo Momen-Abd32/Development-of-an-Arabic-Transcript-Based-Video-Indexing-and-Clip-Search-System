@@ -577,6 +577,24 @@ http://localhost:8501
 
 On the first transcription run, Faster-Whisper may need to download its model files. An internet connection is therefore required for the initial model download unless the model is already available locally.
 
+## Importing the SADA 2022 Arabic Dataset
+
+A dedicated importer supports SADA's prepared timestamped Arabic transcripts and
+full-episode WAV files. It imports a bounded number of episodes directly into
+the existing archive and SQLite search index, preserves speaker/dialect and
+show metadata, and does not run Whisper over the supplied annotations.
+
+See [SADA dataset setup, attribution, license, and sample-download instructions](docs/SADA_DATASET.md).
+To download and import three training episodes with the Kaggle CLI, run:
+
+```bash
+python scripts/download_sada_sample.py --episodes 3 --split train
+```
+
+SADA is audio-only, so this integration supports archive-wide and
+selected-recording transcript search plus timestamped audio clip extraction.
+It does not provide original video frames for visual search or MP4 video clips.
+
 ## Batch Importing a Media Dataset
 
 Place the media files in a local folder, external drive, or a directory that is accessible to the machine running the application. The importer scans subdirectories by default and supports the video and audio formats listed above.
