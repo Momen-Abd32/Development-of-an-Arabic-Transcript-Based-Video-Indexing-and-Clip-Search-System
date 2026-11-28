@@ -376,6 +376,7 @@ TEXT = {
         "similarity": "نسبة التشابه",
         "save_clip": "حفظ هذا المقطع",
         "clip_saved": "تم حفظ المقطع بنجاح.",
+        "download_clip": "تنزيل المقطع",
         "clip_failed": "تعذر حفظ المقطع",
         "clips_title": "المقاطع المحفوظة",
         "clips_desc": "شاهد المقاطع التي استخرجتها من الملف الحالي.",
@@ -715,6 +716,7 @@ TEXT = {
         "similarity": "Similarity",
         "save_clip": "Save This Clip",
         "clip_saved": "Clip saved successfully.",
+        "download_clip": "Download clip",
         "clip_failed": "Failed to save clip",
         "clips_title": "Saved Clips",
         "clips_desc": "Watch the clips extracted from the current video.",
@@ -1605,12 +1607,17 @@ with tab_search:
             key=f"search_scope_{st.session_state.video_id or 'archive'}",
         )
 
-        if st.session_state.get("search_results_scope") != search_scope:
-            st.session_state.search_results = []
-            st.session_state.visual_search_results = None
-            st.session_state.search_results_scope = search_scope
-
         current_scope = search_scope == t["current_media"]
+        search_context = (
+            search_scope,
+            st.session_state.get("video_id") if current_scope else None,
+        )
+        if st.session_state.get("search_results_context") != search_context:
+            st.session_state.search_results = []
+            st.session_state.search_performed = False
+            st.session_state.visual_search_results = None
+            st.session_state.search_results_context = search_context
+            st.session_state.search_results_scope = search_scope
         if current_scope and not st.session_state.transcribed:
             st.info(t["no_transcript"])
         else:
@@ -1627,7 +1634,7 @@ with tab_search:
             )
             search_type = st.radio(
                 t["search_type"],
-                [t["exact"], t["fuzzy"], t["hybrid"]],
+                [t["exact"], t["fuzzy"], t["semantic"], t["hybrid"]],
                 horizontal=True,
                 key=f"search_type_{scope_key}",
             )
@@ -1745,10 +1752,10 @@ with tab_search:
                 if values
             }
 
-            if search_type == t["hybrid"]:
+            if search_type in (t["semantic"], t["hybrid"]):
                 st.caption(t["semantic_index_hint"])
 
-            if search_type == t["hybrid"] and st.button(t["build_semantic_index"]):
+            if search_type in (t["semantic"], t["hybrid"]) and st.button(t["build_semantic_index"]):
                 search_engine = None
                 try:
                     provider = SentenceTransformerProvider()
@@ -1792,6 +1799,11 @@ with tab_search:
                             results = search_engine.exact_search(query, **search_options)
                         elif search_type == t["fuzzy"]:
                             results = search_engine.fuzzy_search(query, **search_options)
+                        elif search_type == t["semantic"]:
+                            provider = SentenceTransformerProvider()
+                            results = search_engine.semantic_search(
+                                query, provider, **search_options
+                            )
                         else:
                             provider = SentenceTransformerProvider()
                             results = search_engine.hybrid_search(
@@ -1800,6 +1812,8 @@ with tab_search:
 
                         st.session_state.search_results = results
                         st.session_state.search_results_scope = search_scope
+                        st.session_state.search_results_context = search_context
+                        st.session_state.search_performed = True
                     except Exception as error:
                         st.error(f'{t["search_failed"]}: {error}')
                     finally:
@@ -1864,13 +1878,17 @@ with tab_search:
                                 max(0, min(100, int(result["similarity"]))) / 100,
                                 text=f'{t["similarity"]}: {result["similarity"]}%',
                             )
+                        if "semantic_score" in result:
+                            st.caption(f'{t["semantic"]}: {result["semantic_score"]:.3f}')
+                        if "hybrid_score" in result:
+                            st.caption(f'{t["hybrid"]}: {result["hybrid_score"]:.4f}')
 
                         if media_path and media_path.exists():
                             with st.expander(t["media_preview"]):
                                 if media_type == "video":
-                                    st.video(str(media_path))
+                                    st.video(str(media_path), start_time=int(result["start"]))
                                 else:
-                                    st.audio(str(media_path))
+                                    st.audio(str(media_path), start_time=int(result["start"]))
                         else:
                             st.caption(t["missing_clip"])
 
@@ -1900,9 +1918,22 @@ with tab_search:
                                         result["original_text"],
                                     )
                                     st.success(t["clip_saved"])
+                                    if media_type == "video":
+                                        st.video(str(clip_path))
+                                        clip_mime = "video/mp4"
+                                    else:
+                                        st.audio(str(clip_path))
+                                        clip_mime = "audio/mp4"
+                                    st.download_button(
+                                        t["download_clip"],
+                                        data=clip_path.read_bytes(),
+                                        file_name=clip_path.name,
+                                        mime=clip_mime,
+                                        key=f"download_search_clip_{media_id}_{result['id']}",
+                                    )
                                 except Exception as error:
                                     st.error(f'{t["clip_failed"]}: {error}')
-            else:
+            elif st.session_state.get("search_performed", False):
                 st.info(t["no_results"])
 
 
