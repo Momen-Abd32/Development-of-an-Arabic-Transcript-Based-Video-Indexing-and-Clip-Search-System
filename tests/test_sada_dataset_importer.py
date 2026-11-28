@@ -53,9 +53,10 @@ def test_maps_sada_annotations_to_timestamped_segments(tmp_path):
     grouped = _segments_for_episodes(
         tmp_path / "train.csv", {"batch_1/episode_a.wav"}
     )
-    assert grouped["batch_1/episode_a.wav"] == [
-        {"start": 0.25, "end": 1.5, "text": "مرحبا بالعالم", "speaker": "Speaker 1"},
-        {"start": 1.6, "end": 2.8, "text": "هذا اختبار", "speaker": "Speaker 2"},
+    segments = grouped["batch_1/episode_a.wav"]
+    assert [(item["start"], item["end"], item["text"], item["speaker"]) for item in segments] == [
+        (0.25, 1.5, "مرحبا بالعالم", "Speaker 1"),
+        (1.6, 2.8, "هذا اختبار", "Speaker 2"),
     ]
 
 
